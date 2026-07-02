@@ -500,6 +500,34 @@ func TestWebmailFlow(t *testing.T) {
 		t.Errorf("invalid uid = %d", rec.Code)
 	}
 
+	// Message actions.
+	if len(msgs) > 0 {
+		uid := int(msgs[0]["uid"].(float64))
+		flagBody := fmt.Sprintf(`{"folder":"INBOX","uid":%d,"flag":"flagged","set":true}`, uid)
+		if r2 := do(h, http.MethodPost, "/api/webmail/flag", tok, flagBody); r2.Code != http.StatusOK {
+			t.Errorf("flag = %d", r2.Code)
+		}
+	}
+	if r2 := do(h, http.MethodPost, "/api/webmail/flag", tok, "{bad"); r2.Code != http.StatusBadRequest {
+		t.Errorf("malformed flag = %d", r2.Code)
+	}
+	if r2 := do(h, http.MethodPost, "/api/webmail/folders", tok, `{"name":"TestBox"}`); r2.Code != http.StatusOK {
+		t.Errorf("create folder = %d", r2.Code)
+	}
+	if r2 := do(h, http.MethodPost, "/api/webmail/folders", tok, `{"name":""}`); r2.Code != http.StatusBadRequest {
+		t.Errorf("create folder with empty name = %d", r2.Code)
+	}
+	if len(msgs) > 0 {
+		uid := int(msgs[0]["uid"].(float64))
+		moveBody := fmt.Sprintf(`{"folder":"INBOX","uid":%d,"target":"TestBox"}`, uid)
+		if r2 := do(h, http.MethodPost, "/api/webmail/move", tok, moveBody); r2.Code != http.StatusOK {
+			t.Errorf("move = %d", r2.Code)
+		}
+	}
+	if r2 := do(h, http.MethodPost, "/api/webmail/delete", tok, "{bad"); r2.Code != http.StatusBadRequest {
+		t.Errorf("malformed delete = %d", r2.Code)
+	}
+
 	// Send with no SMTP address configured surfaces an upstream error.
 	if rec := do(h, http.MethodPost, "/api/webmail/send", tok, `{"to":["x@y.z"],"subject":"s","text":"t"}`); rec.Code != http.StatusBadGateway {
 		t.Errorf("send without SMTP = %d, want 502", rec.Code)

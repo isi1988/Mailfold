@@ -351,3 +351,62 @@ paths:
         "200": { description: Message submitted. }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "502": { description: Submission failed. }
+  /api/webmail/flag:
+    post:
+      tags: [webmail]
+      summary: Add or remove a system flag on a message
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                folder: { type: string, default: INBOX }
+                uid: { type: integer }
+                flag: { type: string, enum: [seen, flagged, answered, deleted, draft] }
+                set: { type: boolean }
+      responses: { "200": { description: OK. }, "401": { $ref: "#/components/responses/Unauthorized" } }
+  /api/webmail/move:
+    post:
+      tags: [webmail]
+      summary: Move a message to another folder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                folder: { type: string, default: INBOX }
+                uid: { type: integer }
+                target: { type: string }
+      responses: { "200": { description: OK. }, "401": { $ref: "#/components/responses/Unauthorized" } }
+  /api/webmail/delete:
+    post:
+      tags: [webmail]
+      summary: Permanently delete a message
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                folder: { type: string, default: INBOX }
+                uid: { type: integer }
+      responses: { "200": { description: OK. }, "401": { $ref: "#/components/responses/Unauthorized" } }
+  /api/webmail/folders:
+    post:
+      tags: [webmail]
+      summary: Create a mail folder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+      responses: { "200": { description: Created. }, "400": { description: Missing name. }, "401": { $ref: "#/components/responses/Unauthorized" } }

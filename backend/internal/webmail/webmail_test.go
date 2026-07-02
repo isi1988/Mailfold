@@ -57,6 +57,64 @@ func TestClientReadFlow(t *testing.T) {
 	}
 }
 
+func TestActions(t *testing.T) {
+	c := NewClient(startIMAP(t), "", false, false)
+	const u, p = "username", "password"
+
+	msgs, err := c.Messages(u, p, "INBOX", 10)
+	if err != nil || len(msgs) == 0 {
+		t.Fatalf("Messages: err=%v n=%d", err, len(msgs))
+	}
+	uid := msgs[0].UID
+
+	if err := c.SetFlag(u, p, "INBOX", uid, "flagged", true); err != nil {
+		t.Fatalf("SetFlag set: %v", err)
+	}
+	if err := c.SetFlag(u, p, "INBOX", uid, "flagged", false); err != nil {
+		t.Fatalf("SetFlag unset: %v", err)
+	}
+	if err := c.SetFlag(u, p, "INBOX", uid, "bogus", true); err == nil {
+		t.Error("SetFlag with an unknown flag should fail")
+	}
+
+	if err := c.CreateFolder(u, p, "Archive"); err != nil {
+		t.Fatalf("CreateFolder: %v", err)
+	}
+	if err := c.Move(u, p, "INBOX", uid, "Archive"); err != nil {
+		t.Fatalf("Move: %v", err)
+	}
+	if after, _ := c.Messages(u, p, "INBOX", 10); len(after) != 0 {
+		t.Errorf("INBOX should be empty after move, has %d", len(after))
+	}
+
+	arch, err := c.Messages(u, p, "Archive", 10)
+	if err != nil || len(arch) == 0 {
+		t.Fatalf("Archive messages: err=%v n=%d", err, len(arch))
+	}
+	if err := c.Delete(u, p, "Archive", arch[0].UID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if final, _ := c.Messages(u, p, "Archive", 10); len(final) != 0 {
+		t.Errorf("Archive should be empty after delete, has %d", len(final))
+	}
+}
+
+func TestActionErrorPaths(t *testing.T) {
+	c := NewClient("127.0.0.1:1", "", false, false) // unreachable
+	if err := c.SetFlag("u", "p", "INBOX", 1, "seen", true); err == nil {
+		t.Error("SetFlag should fail when unreachable")
+	}
+	if err := c.Move("u", "p", "INBOX", 1, "X"); err == nil {
+		t.Error("Move should fail when unreachable")
+	}
+	if err := c.Delete("u", "p", "INBOX", 1); err == nil {
+		t.Error("Delete should fail when unreachable")
+	}
+	if err := c.CreateFolder("u", "p", "X"); err == nil {
+		t.Error("CreateFolder should fail when unreachable")
+	}
+}
+
 func TestConfigured(t *testing.T) {
 	if NewClient("", "", true, false).Configured() {
 		t.Error("empty IMAP address should not be configured")

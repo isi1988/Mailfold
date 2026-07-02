@@ -21,6 +21,10 @@ func (s *Server) registerWebmailRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/webmail/messages", s.requireWebmail(s.handleWebmailMessages))
 	mux.HandleFunc("GET /api/webmail/message", s.requireWebmail(s.handleWebmailMessage))
 	mux.HandleFunc("POST /api/webmail/send", s.requireWebmail(s.handleWebmailSend))
+	mux.HandleFunc("POST /api/webmail/flag", s.requireWebmail(s.handleWebmailFlag))
+	mux.HandleFunc("POST /api/webmail/move", s.requireWebmail(s.handleWebmailMove))
+	mux.HandleFunc("POST /api/webmail/delete", s.requireWebmail(s.handleWebmailDelete))
+	mux.HandleFunc("POST /api/webmail/folders", s.requireWebmail(s.handleWebmailCreateFolder))
 }
 
 // requireWebmail authenticates a webmail request from its bearer token and
@@ -132,10 +136,101 @@ func (s *Server) handleWebmailSend(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "sent"})
 }
 
+type webmailFlagRequest struct {
+	Folder string `json:"folder"`
+	UID    uint32 `json:"uid"`
+	Flag   string `json:"flag"`
+	Set    bool   `json:"set"`
+}
+
+// handleWebmailFlag adds or removes a system flag on a message.
+func (s *Server) handleWebmailFlag(w http.ResponseWriter, r *http.Request) {
+	cred := webmailCreds(r)
+	var req webmailFlagRequest
+	if err := decodeJSON(r, &req); err != nil {
+		s.writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := s.webmail.SetFlag(cred.Email, cred.Password, orInbox(req.Folder), req.UID, req.Flag, req.Set); err != nil {
+		s.writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+type webmailMoveRequest struct {
+	Folder string `json:"folder"`
+	UID    uint32 `json:"uid"`
+	Target string `json:"target"`
+}
+
+// handleWebmailMove moves a message to another folder.
+func (s *Server) handleWebmailMove(w http.ResponseWriter, r *http.Request) {
+	cred := webmailCreds(r)
+	var req webmailMoveRequest
+	if err := decodeJSON(r, &req); err != nil {
+		s.writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := s.webmail.Move(cred.Email, cred.Password, orInbox(req.Folder), req.UID, req.Target); err != nil {
+		s.writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+type webmailUIDRequest struct {
+	Folder string `json:"folder"`
+	UID    uint32 `json:"uid"`
+}
+
+// handleWebmailDelete permanently deletes a message.
+func (s *Server) handleWebmailDelete(w http.ResponseWriter, r *http.Request) {
+	cred := webmailCreds(r)
+	var req webmailUIDRequest
+	if err := decodeJSON(r, &req); err != nil {
+		s.writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := s.webmail.Delete(cred.Email, cred.Password, orInbox(req.Folder), req.UID); err != nil {
+		s.writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+type webmailFolderRequest struct {
+	Name string `json:"name"`
+}
+
+// handleWebmailCreateFolder creates a new mail folder.
+func (s *Server) handleWebmailCreateFolder(w http.ResponseWriter, r *http.Request) {
+	cred := webmailCreds(r)
+	var req webmailFolderRequest
+	if err := decodeJSON(r, &req); err != nil {
+		s.writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if req.Name == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "folder name is required"})
+		return
+	}
+	if err := s.webmail.CreateFolder(cred.Email, cred.Password, req.Name); err != nil {
+		s.writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "created"})
+}
+
 // folderParam returns the ?folder= query value, defaulting to INBOX.
 func folderParam(r *http.Request) string {
-	if f := r.URL.Query().Get("folder"); f != "" {
-		return f
+	return orInbox(r.URL.Query().Get("folder"))
+}
+
+// orInbox returns folder, or "INBOX" when folder is empty.
+func orInbox(folder string) string {
+	if folder != "" {
+		return folder
 	}
 	return "INBOX"
 }
