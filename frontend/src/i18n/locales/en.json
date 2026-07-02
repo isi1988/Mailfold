@@ -378,7 +378,7 @@
       "title": "Server",
       "version": "mailcow version",
       "storage": "Mail storage",
-      "storageUsed": "{{pct}}% used",
+      "storageUsed": "{{pct}} used",
       "unknown": "Unknown"
     },
     "signOut": {
