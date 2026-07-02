@@ -108,6 +108,19 @@ The UI is being built from a dedicated design project and will live in
 - Host: `mail.cortexus.ru` (mailcow on UpCloud, `/opt/mailcow-dockerized`).
 - Serviced mail domains: `cortexus.ru`, `agentum.digital`, `proteus-vpn.cloud`.
 
+## Groupware (CardDAV / CalDAV)
+
+Mailfold ships a self-hosted CardDAV server (calendars via CalDAV are on the way)
+so contacts can be stored and synced without SOGo. It is backed by a local
+SQLite database (`MAILFOLD_DB_PATH`) and is disabled when that path is empty.
+
+- CardDAV endpoint: `/dav/carddav/` (discovery at `/.well-known/carddav`).
+- Authentication: HTTP Basic with the user's own mailbox credentials (verified
+  against IMAP, then cached briefly).
+
+Point a standard client (Thunderbird, iOS/macOS Contacts, DAVx⁵) at the endpoint
+to sync.
+
 ## License
 
 Mailfold is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE).

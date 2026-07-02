@@ -82,6 +82,9 @@ type Config struct {
 	MailInsecureTLS bool
 	// WebmailSessionTTL is the lifetime of an authenticated webmail session.
 	WebmailSessionTTL time.Duration
+	// DBPath is the path to the SQLite database backing the CardDAV/CalDAV
+	// groupware store. When empty, the DAV endpoints are disabled.
+	DBPath string
 }
 
 // Load reads every configuration value from the environment, applies sensible
@@ -108,6 +111,7 @@ func Load() (*Config, error) {
 		MailUseTLS:         getbool("MAILFOLD_MAIL_TLS", true),
 		MailInsecureTLS:    getbool("MAILFOLD_MAIL_INSECURE_TLS", false),
 		WebmailSessionTTL:  getdur("MAILFOLD_WEBMAIL_SESSION_TTL", 12*time.Hour),
+		DBPath:             os.Getenv("MAILFOLD_DB_PATH"),
 	}
 
 	// The following three values have no safe default: without an upstream

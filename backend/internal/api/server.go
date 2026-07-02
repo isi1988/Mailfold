@@ -12,6 +12,7 @@ import (
 
 	"github.com/isi1988/Mailfold/backend/internal/auth"
 	"github.com/isi1988/Mailfold/backend/internal/config"
+	"github.com/isi1988/Mailfold/backend/internal/dav"
 	"github.com/isi1988/Mailfold/backend/internal/metrics"
 	"github.com/isi1988/Mailfold/backend/internal/ratelimit"
 	"github.com/isi1988/Mailfold/backend/internal/webmail"
@@ -28,6 +29,8 @@ type Server struct {
 	metrics         *metrics.Metrics
 	webmail         *webmail.Client
 	webmailSessions *webmail.Sessions
+	davStore        *dav.Store
+	davAuth         *davVerifier
 	logger          *slog.Logger
 }
 
@@ -36,14 +39,32 @@ type Server struct {
 // throttles login attempts per client IP. The webmail client and session store
 // are built from cfg (webmail is disabled when no IMAP address is configured).
 func NewServer(cfg *config.Config, mc Mailcow, authn *auth.Authenticator, limiter *ratelimit.Limiter, logger *slog.Logger) *Server {
+	wm := webmail.NewClient(cfg.IMAPAddr, cfg.SMTPAddr, cfg.MailUseTLS, cfg.MailInsecureTLS)
+
+	// Open the CardDAV/CalDAV store when a database path is configured. A failure
+	// here disables DAV rather than preventing the whole backend from starting.
+	var davStore *dav.Store
+	var davAuth *davVerifier
+	if cfg.DBPath != "" {
+		st, err := dav.Open(cfg.DBPath)
+		if err != nil {
+			logger.Error("failed to open DAV store; DAV disabled", "error", err)
+		} else {
+			davStore = st
+			davAuth = newDavVerifier(wm.Verify, 5*time.Minute)
+		}
+	}
+
 	return &Server{
 		cfg:             cfg,
 		mc:              mc,
 		auth:            authn,
 		loginLimiter:    limiter,
 		metrics:         metrics.New(),
-		webmail:         webmail.NewClient(cfg.IMAPAddr, cfg.SMTPAddr, cfg.MailUseTLS, cfg.MailInsecureTLS),
+		webmail:         wm,
 		webmailSessions: webmail.NewSessions(cfg.WebmailSessionTTL),
+		davStore:        davStore,
+		davAuth:         davAuth,
 		logger:          logger,
 	}
 }
@@ -68,6 +89,9 @@ func (s *Server) Handler() http.Handler {
 
 	// End-user webmail (IMAP/SMTP-backed).
 	s.registerWebmailRoutes(mux)
+
+	// Self-hosted CardDAV/CalDAV (contacts/calendar), when configured.
+	s.registerDAV(mux)
 
 	// Management resources (all require authentication).
 	s.registerStatusRoutes(mux)

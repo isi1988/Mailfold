@@ -105,7 +105,9 @@ func (s *Server) withCommon(next http.Handler) http.Handler {
 		// A CORS preflight (OPTIONS) is answered immediately with 204 and no
 		// body; the headers set above are all the browser needs, so the request
 		// must not fall through to the real handler.
-		if r.Method == http.MethodOptions {
+		// Answer CORS preflight for API routes; DAV clients use OPTIONS for
+		// capability discovery, so let those fall through to the DAV handler.
+		if r.Method == http.MethodOptions && !strings.HasPrefix(r.URL.Path, "/dav/") {
 			rw.WriteHeader(http.StatusNoContent)
 			return
 		}
