@@ -14,6 +14,7 @@ export const NAV = [
   { group: 'system' },
   { key: 'syncjobs' },
   { key: 'logs' },
+  { key: 'settings' },
   { group: 'apps' },
   { key: 'webmail' },
 ];

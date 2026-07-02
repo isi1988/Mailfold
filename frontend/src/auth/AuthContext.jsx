@@ -50,6 +50,14 @@ export function AuthProvider({ children }) {
     return res;
   }, []);
 
+  // applySession commits a token already obtained elsewhere (the unified login
+  // tries admin and webmail in parallel, then commits the chosen one).
+  const applySession = useCallback((token, userName) => {
+    setToken(token);
+    setUser(userName);
+    setStatus('authed');
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       await api.post('/api/auth/logout');
@@ -62,7 +70,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   return (
-    <AuthCtx.Provider value={{ user, status, login, logout, refresh }}>
+    <AuthCtx.Provider value={{ user, status, login, logout, refresh, applySession }}>
       {children}
     </AuthCtx.Provider>
   );

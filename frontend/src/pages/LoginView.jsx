@@ -4,31 +4,63 @@ import { Input } from '../ds/components/atoms/Input.jsx';
 import { Label } from '../ds/components/atoms/Label.jsx';
 import { Button } from '../ds/components/atoms/Button.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
+import { useWebmailAuth } from '../auth/WebmailAuthContext.jsx';
+import { api } from '../api/client.js';
+import { wm } from '../api/webmail.js';
 import { useT } from '../i18n/index.jsx';
 import markUrl from '../ds/assets/mailfold-mark.png';
 
-// Sign-in screen — the only view without the app chrome. Wires the design's
-// Login markup to the /api/auth/login flow.
+// The one login screen. It tries the admin and the webmail (mailbox) logins with
+// the same credentials in parallel: whichever succeeds decides where the user
+// goes, and when both succeed the user is asked which to open.
 export function LoginView() {
-  const { login } = useAuth();
+  const { applySession: applyAdmin } = useAuth();
+  const { applySession: applyWebmail } = useWebmailAuth();
   const t = useT();
   const [user, setUser] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [choice, setChoice] = useState(null); // { admin, web } when both succeed
 
   async function submit(e) {
     e.preventDefault();
     if (busy) return;
     setBusy(true);
     setError('');
-    try {
-      await login(user.trim(), password);
-    } catch (err) {
-      setError(err && err.status === 401 ? t('login.invalidCredentials') : (err.message || t('login.failed')));
-    } finally {
+    const id = user.trim();
+    const [adminR, webR] = await Promise.allSettled([
+      api.post('/api/auth/login', { user: id, password }),
+      wm.login(id, password),
+    ]);
+    const admin = adminR.status === 'fulfilled' ? adminR.value : null;
+    const web = webR.status === 'fulfilled' ? webR.value : null;
+
+    if (admin && web) {
+      setChoice({ admin, web });
       setBusy(false);
+      return;
     }
+    if (admin) {
+      applyAdmin(admin.token, admin.user);
+      return;
+    }
+    if (web) {
+      applyWebmail(web.token, web.email || id);
+      return;
+    }
+    setError(t('login.invalidCredentials'));
+    setBusy(false);
+  }
+
+  // Both access levels: opening the admin panel keeps the webmail session too, so
+  // the in-panel Webmail page works; opening webmail commits only that session.
+  function openAdmin() {
+    applyWebmail(choice.web.token, choice.web.email || user.trim());
+    applyAdmin(choice.admin.token, choice.admin.user);
+  }
+  function openWebmail() {
+    applyWebmail(choice.web.token, choice.web.email || user.trim());
   }
 
   return (
@@ -51,39 +83,33 @@ export function LoginView() {
       </div>
 
       <div className="mf-login__panel">
-        <form className="mf-login__form" onSubmit={submit}>
-          <div className="mf-login__title">{t('login.signIn')}</div>
-          <div className="mf-login__sub">{t('login.welcome')}</div>
-          <div style={{ marginTop: 28 }}>
-            <Label strong style={{ marginBottom: 7 }}>{t('login.emailOrUsername')}</Label>
-            <Input
-              size="lg"
-              placeholder={t('login.usernamePlaceholder')}
-              autoComplete="username"
-              value={user}
-              onChange={e => setUser(e.target.value)}
-            />
+        {choice ? (
+          <div className="mf-login__form">
+            <div className="mf-login__title">{t('login.choose.title')}</div>
+            <div className="mf-login__sub">{t('login.choose.sub')}</div>
+            <Button variant="primary" block size="lg" style={{ marginTop: 26 }} onClick={openAdmin}>{t('login.choose.admin')}</Button>
+            <Button variant="secondary" block size="lg" style={{ marginTop: 12 }} onClick={openWebmail}>{t('login.choose.webmail')}</Button>
           </div>
-          <div style={{ marginTop: 16 }}>
-            <div className="mf-row" style={{ marginBottom: 7 }}>
-              <Label strong style={{ marginBottom: 0 }}>{t('login.password')}</Label>
+        ) : (
+          <form className="mf-login__form" onSubmit={submit}>
+            <div className="mf-login__title">{t('login.signIn')}</div>
+            <div className="mf-login__sub">{t('login.welcome')}</div>
+            <div style={{ marginTop: 28 }}>
+              <Label strong style={{ marginBottom: 7 }}>{t('login.emailOrUsername')}</Label>
+              <Input size="lg" placeholder={t('login.usernamePlaceholder')} autoComplete="username" value={user} onChange={e => setUser(e.target.value)} />
             </div>
-            <Input
-              size="lg"
-              type="password"
-              placeholder="••••••••••"
-              autoComplete="current-password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-            />
-          </div>
-          {error && (
-            <div className="mf-u-danger" style={{ marginTop: 14, fontSize: 13 }} role="alert">{error}</div>
-          )}
-          <Button variant="primary" block size="lg" type="submit" disabled={busy} style={{ marginTop: 22 }}>
-            {busy ? t('login.signingIn') : t('login.signIn')}
-          </Button>
-        </form>
+            <div style={{ marginTop: 16 }}>
+              <div className="mf-row" style={{ marginBottom: 7 }}>
+                <Label strong style={{ marginBottom: 0 }}>{t('login.password')}</Label>
+              </div>
+              <Input size="lg" type="password" placeholder="••••••••••" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} />
+            </div>
+            {error && <div className="mf-u-danger" style={{ marginTop: 14, fontSize: 13 }} role="alert">{error}</div>}
+            <Button variant="primary" block size="lg" type="submit" disabled={busy} style={{ marginTop: 22 }}>
+              {busy ? t('login.signingIn') : t('login.signIn')}
+            </Button>
+          </form>
+        )}
       </div>
     </div>
   );

@@ -47,6 +47,38 @@
       "dark": "Dark"
     }
   },
+  "webmail": {
+    "signInTitle": "Sign in to webmail",
+    "signInSub": "Enter your mailbox address and password.",
+    "mailbox": "Mailbox",
+    "password": "Password",
+    "signIn": "Open mailbox",
+    "signingIn": "Signing in…",
+    "invalid": "Invalid mailbox credentials.",
+    "compose": "Compose",
+    "search": "Search mail…",
+    "empty": "No messages in this folder.",
+    "selectPrompt": "Select a message to read.",
+    "loadingMessage": "Loading…",
+    "reply": "Reply",
+    "star": "Star",
+    "unstar": "Unstar",
+    "delete": "Delete",
+    "attachments_one": "{{count}} attachment",
+    "attachments_other": "{{count}} attachments",
+    "signOut": "Sign out",
+    "sent": "Message sent",
+    "sendFailed": "Could not send the message",
+    "deleted": "Message deleted",
+    "actionFailed": "Action failed",
+    "to": "To",
+    "subject": "Subject",
+    "body": "Write your message…",
+    "send": "Send",
+    "sending": "Sending…",
+    "newMessage": "New message",
+    "noSubject": "(no subject)"
+  },
   "login": {
     "signIn": "Sign in",
     "welcome": "Welcome back — enter your admin credentials.",
@@ -59,7 +91,13 @@
     "headline": "A calm shell for your mail server.",
     "lede": "Domains and mailboxes are your herd. Mailfold is the fold that keeps them — every letter, every gate, in one quiet place.",
     "badgePrefix": "A modern admin UI for",
-    "foot": "self-hosted · powered by mailcow"
+    "foot": "self-hosted · powered by mailcow",
+    "choose": {
+      "title": "Where would you like to go?",
+      "sub": "Your credentials work for both the admin panel and webmail.",
+      "admin": "Admin panel",
+      "webmail": "Webmail"
+    }
   },
   "mailboxes": {
     "title": "Mailboxes",
@@ -134,5 +172,219 @@
     },
     "empty": "No aliases yet.",
     "emptyFilter": "No aliases match your filter."
+  },
+  "dashboard": {
+    "title": "Overview",
+    "sub": "Live status of your mailcow deployment",
+    "subVersion": "mailcow {{version}} · live deployment status",
+    "kpi": {
+      "mailboxes": "Mailboxes",
+      "domains": "Domains",
+      "storage": "Storage used",
+      "queue": "Mail queue",
+      "view": "View all →",
+      "storageNote": "{{pct}}% of {{total}}",
+      "storagePctOnly": "{{pct}}% used",
+      "queueBacklog": "Messages waiting",
+      "queueClear": "Queue clear",
+      "storageValue": "{{used}}"
+    },
+    "health": {
+      "title": "Service health",
+      "summary": "{{running}} of {{total}} running",
+      "running": "running",
+      "down": "stopped",
+      "empty": "No container status available."
+    },
+    "storage": {
+      "title": "Mail storage",
+      "vmail": "vmail volume",
+      "usedPct": "{{pct}}% of the mail volume in use",
+      "of": "of {{total}}"
+    }
+  },
+  "queue": {
+    "title": "Mail queue",
+    "count_one": "{{count}} message waiting",
+    "count_other": "{{count}} messages waiting",
+    "filter": "Filter queue…",
+    "empty": "Queue is empty",
+    "emptyFilter": "No messages match your filter.",
+    "col": {
+      "sender": "Sender",
+      "recipient": "Recipient",
+      "size": "Size",
+      "age": "Age",
+      "status": "Status"
+    },
+    "flush": {
+      "cta": "Flush queue",
+      "busy": "Flushing…",
+      "confirmTitle": "Flush the mail queue?",
+      "confirmMsg": "This asks Postfix to attempt immediate redelivery of every message currently in the queue.",
+      "done": "Queue flush requested",
+      "failed": "Could not flush the queue"
+    }
+  },
+  "quarantine": {
+    "title": "Quarantine",
+    "count_one": "{{count}} message held",
+    "count_other": "{{count}} messages held",
+    "filter": "Filter quarantine…",
+    "empty": "Nothing is held in quarantine.",
+    "emptyFilter": "No held messages match your filter.",
+    "col": {
+      "subject": "Subject",
+      "recipient": "Recipient",
+      "score": "Score",
+      "reason": "Reason",
+      "held": "Held"
+    },
+    "release": "Release selected",
+    "releaseHint": "Releasing is not supported by the mail server API.",
+    "delete": "Delete",
+    "deleteN_one": "Delete {{count}} selected",
+    "deleteN_other": "Delete {{count}} selected",
+    "selectAll": "Select all",
+    "selectRow": "Select message",
+    "noSubject": "(no subject)",
+    "deleteTitle": "Delete held messages?",
+    "deleteMsg_one": "{{count}} held message will be permanently deleted. This cannot be undone.",
+    "deleteMsg_other": "{{count}} held messages will be permanently deleted. This cannot be undone.",
+    "deleting": "Deleting…",
+    "deleted_one": "{{count}} message deleted",
+    "deleted_other": "{{count}} messages deleted",
+    "failed": "Action failed"
+  },
+  "spam": {
+    "title": "Spam & policy",
+    "subtitle": "Per-domain sender allow and block lists.",
+    "domain": "Domain",
+    "noDomains": "No domains found. Add a domain first.",
+    "addPlaceholder": "sender@example.com or *@example.com",
+    "add": "Add",
+    "adding": "Adding…",
+    "remove": "Remove entry",
+    "entryCount_one": "{{count}} entry",
+    "entryCount_other": "{{count}} entries",
+    "allow": {
+      "title": "Allowlist",
+      "hint": "Senders here bypass spam checks and are always accepted for this domain.",
+      "empty": "No allowlist entries yet."
+    },
+    "block": {
+      "title": "Blocklist",
+      "hint": "Senders here are rejected before delivery for this domain.",
+      "empty": "No blocklist entries yet."
+    },
+    "form": {
+      "added": "Added \"{{value}}\"",
+      "removed": "Removed \"{{value}}\"",
+      "failed": "Something went wrong",
+      "removeTitle": "Remove policy entry",
+      "removeMsg": "Remove \"{{value}}\" from this list? Senders matching it will no longer be affected.",
+      "remove": "Remove"
+    }
+  },
+  "syncjobs": {
+    "title": "Sync jobs",
+    "count_one": "{{count}} IMAP/POP import",
+    "count_other": "{{count}} IMAP/POP imports",
+    "new": "New sync job",
+    "filter": "Filter sync jobs…",
+    "empty": "No sync jobs yet. Create one to pull mail from a remote IMAP account.",
+    "emptyFilter": "No sync jobs match your search.",
+    "unnamed": "Sync job",
+    "never": "Never",
+    "everyMin_one": "{{count}} min",
+    "everyMin_other": "{{count}} min",
+    "status": {
+      "running": "running",
+      "idle": "idle",
+      "paused": "paused"
+    },
+    "col": {
+      "job": "Job",
+      "target": "Target mailbox",
+      "every": "Every",
+      "lastRun": "Last run",
+      "status": "Status"
+    },
+    "form": {
+      "newTitle": "New sync job",
+      "editTitle": "Edit sync job",
+      "host": "Source host",
+      "port": "Port",
+      "encryption": "Encryption",
+      "user": "Source username",
+      "password": "Source password",
+      "resetPassword": "Reset password",
+      "leaveBlank": "Leave blank to keep",
+      "target": "Target mailbox",
+      "selectTarget": "Select a mailbox…",
+      "interval": "Interval (minutes)",
+      "active": "Active",
+      "create": "Create sync job",
+      "saving": "Saving…",
+      "invalid": "Please fill in the source host, username, password and target mailbox.",
+      "created": "Sync job \"{{job}}\" created.",
+      "updated": "Sync job \"{{job}}\" updated.",
+      "deleted": "Sync job \"{{job}}\" deleted.",
+      "failed": "Could not save the sync job.",
+      "deleteTitle": "Delete sync job",
+      "deleteMsg": "Delete the sync job \"{{job}}\"? This stops importing mail from that account."
+    }
+  },
+  "logs": {
+    "title": "Logs",
+    "sub": "Recent {{service}} log entries",
+    "refresh": "Refresh",
+    "download": "Download",
+    "filter": "Filter log lines…",
+    "downloaded": "Downloaded {{service}} logs",
+    "empty": "No {{service}} log entries.",
+    "emptyFilter": "No log lines match your filter.",
+    "linesShown_one": "{{count}} line",
+    "linesShown_other": "{{count}} of {{total}} lines"
+  },
+  "settings": {
+    "title": "Settings",
+    "sub": "Your session, appearance and this Mailfold instance",
+    "signedOut": "Signed out",
+    "signOutFailed": "Could not sign out",
+    "profile": {
+      "title": "Profile",
+      "username": "Admin username",
+      "expires": "Session expires"
+    },
+    "appearance": {
+      "title": "Appearance",
+      "theme_light": "Light",
+      "theme_dark": "Dark",
+      "themeTitle": "Theme",
+      "themeDesc": "Switch between warm light and warm dark",
+      "accentTitle": "Accent",
+      "accentDesc": "The colour of buttons, links and highlights",
+      "accent_ochre": "Ochre",
+      "accent_sage": "Sage",
+      "accent_ink": "Ink",
+      "accent_clay": "Clay"
+    },
+    "language": {
+      "title": "Language",
+      "desc": "Applies to the Mailfold interface. More languages are on the way."
+    },
+    "server": {
+      "title": "Server",
+      "version": "mailcow version",
+      "storage": "Mail storage",
+      "storageUsed": "{{pct}}% used",
+      "unknown": "Unknown"
+    },
+    "signOut": {
+      "title": "Sign out",
+      "desc": "End this admin session on this device",
+      "cta": "Sign out"
+    }
   }
 }

@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { AppShell } from '../ds/components/organisms/AppShell.jsx';
-import { PageHeader } from '../ds/components/molecules/PageHeader.jsx';
 import { NAV } from './nav.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { getTheme, applyTheme } from './theme.js';
@@ -10,11 +9,14 @@ import { useT } from '../i18n/index.jsx';
 import { MailboxesPage } from '../pages/MailboxesPage.jsx';
 import { DomainsPage } from '../pages/DomainsPage.jsx';
 import { AliasesPage } from '../pages/AliasesPage.jsx';
-
-// Temporary placeholder until each page is wired to live data.
-function Placeholder({ title }) {
-  return <PageHeader title={title} sub="Wiring in progress…" />;
-}
+import { DashboardPage } from '../pages/DashboardPage.jsx';
+import { QueuePage } from '../pages/QueuePage.jsx';
+import { QuarantinePage } from '../pages/QuarantinePage.jsx';
+import { SpamPage } from '../pages/SpamPage.jsx';
+import { SyncJobsPage } from '../pages/SyncJobsPage.jsx';
+import { LogsPage } from '../pages/LogsPage.jsx';
+import { SettingsPage } from '../pages/SettingsPage.jsx';
+import { WebmailPage } from '../pages/WebmailPage.jsx';
 
 // The authenticated application chrome: one AppShell (sidebar + top bar) with the
 // routed page content inside. Nav keys map directly to routes.
@@ -63,17 +65,17 @@ export function Shell() {
     >
       <Routes>
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
-        <Route path="/dashboard" element={<Placeholder title={t('nav.dashboard')} />} />
+        <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/mailboxes" element={<MailboxesPage />} />
         <Route path="/domains" element={<DomainsPage />} />
         <Route path="/aliases" element={<AliasesPage />} />
-        <Route path="/queue" element={<Placeholder title={t('nav.queue')} />} />
-        <Route path="/quarantine" element={<Placeholder title={t('nav.quarantine')} />} />
-        <Route path="/spam" element={<Placeholder title={t('nav.spam')} />} />
-        <Route path="/syncjobs" element={<Placeholder title={t('nav.syncjobs')} />} />
-        <Route path="/logs" element={<Placeholder title={t('nav.logs')} />} />
-        <Route path="/webmail" element={<Placeholder title={t('nav.webmail')} />} />
-        <Route path="/settings" element={<Placeholder title={t('nav.settings')} />} />
+        <Route path="/queue" element={<QueuePage />} />
+        <Route path="/quarantine" element={<QuarantinePage />} />
+        <Route path="/spam" element={<SpamPage />} />
+        <Route path="/syncjobs" element={<SyncJobsPage />} />
+        <Route path="/logs" element={<LogsPage />} />
+        <Route path="/webmail" element={<WebmailPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </AppShell>
