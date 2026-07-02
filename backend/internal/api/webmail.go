@@ -25,6 +25,8 @@ func (s *Server) registerWebmailRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/webmail/move", s.requireWebmail(s.handleWebmailMove))
 	mux.HandleFunc("POST /api/webmail/delete", s.requireWebmail(s.handleWebmailDelete))
 	mux.HandleFunc("POST /api/webmail/folders", s.requireWebmail(s.handleWebmailCreateFolder))
+	mux.HandleFunc("GET /api/webmail/search", s.requireWebmail(s.handleWebmailSearch))
+	mux.HandleFunc("GET /api/webmail/attachment", s.requireWebmail(s.handleWebmailAttachment))
 }
 
 // requireWebmail authenticates a webmail request from its bearer token and
@@ -220,6 +222,46 @@ func (s *Server) handleWebmailCreateFolder(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "created"})
+}
+
+// handleWebmailSearch returns message headers matching a free-text query.
+func (s *Server) handleWebmailSearch(w http.ResponseWriter, r *http.Request) {
+	cred := webmailCreds(r)
+	q := r.URL.Query().Get("q")
+	if q == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "query parameter q is required"})
+		return
+	}
+	msgs, err := s.webmail.Search(cred.Email, cred.Password, folderParam(r), q)
+	if err != nil {
+		s.writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, msgs)
+}
+
+// handleWebmailAttachment streams a message attachment as a download.
+func (s *Server) handleWebmailAttachment(w http.ResponseWriter, r *http.Request) {
+	cred := webmailCreds(r)
+	uid, err := strconv.ParseUint(r.URL.Query().Get("uid"), 10, 32)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid uid"})
+		return
+	}
+	index, _ := strconv.Atoi(r.URL.Query().Get("index"))
+	filename, contentType, data, err := s.webmail.Attachment(cred.Email, cred.Password, folderParam(r), uint32(uid), index)
+	if err != nil {
+		s.writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", contentType)
+	if filename != "" {
+		w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+	}
+	_, _ = w.Write(data)
 }
 
 // folderParam returns the ?folder= query value, defaulting to INBOX.

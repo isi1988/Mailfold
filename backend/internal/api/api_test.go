@@ -507,6 +507,17 @@ func TestWebmailFlow(t *testing.T) {
 		t.Errorf("invalid uid = %d", rec.Code)
 	}
 
+	// Search and attachments.
+	if rec := do(h, http.MethodGet, "/api/webmail/search?folder=INBOX&q=hello", tok, ""); rec.Code != http.StatusOK {
+		t.Errorf("search = %d", rec.Code)
+	}
+	if rec := do(h, http.MethodGet, "/api/webmail/search?folder=INBOX", tok, ""); rec.Code != http.StatusBadRequest {
+		t.Errorf("search without q = %d", rec.Code)
+	}
+	if rec := do(h, http.MethodGet, "/api/webmail/attachment?uid=notanumber", tok, ""); rec.Code != http.StatusBadRequest {
+		t.Errorf("attachment with invalid uid = %d", rec.Code)
+	}
+
 	// Message actions.
 	if len(msgs) > 0 {
 		uid := int(msgs[0]["uid"].(float64))

@@ -1,12 +1,15 @@
 package webmail
 
 import (
+	"bytes"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/emersion/go-imap/backend/memory"
 	"github.com/emersion/go-imap/server"
+	"github.com/emersion/go-message/mail"
 )
 
 // startIMAP launches an in-memory IMAP server and returns its address. The
@@ -55,6 +58,73 @@ func TestClientReadFlow(t *testing.T) {
 	if msg.UID != uid {
 		t.Errorf("Message UID = %d, want %d", msg.UID, uid)
 	}
+}
+
+func TestSearch(t *testing.T) {
+	c := NewClient(startIMAP(t), "", false, false)
+	if _, err := c.Search("username", "password", "INBOX", "message"); err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if _, err := NewClient("127.0.0.1:1", "", false, false).Search("u", "p", "INBOX", "x"); err == nil {
+		t.Error("Search should fail when the server is unreachable")
+	}
+}
+
+func TestAttachmentErrorPaths(t *testing.T) {
+	c := NewClient(startIMAP(t), "", false, false)
+	msgs, err := c.Messages("username", "password", "INBOX", 5)
+	if err != nil || len(msgs) == 0 {
+		t.Fatalf("Messages: err=%v n=%d", err, len(msgs))
+	}
+	// The sample message has no attachment.
+	if _, _, _, err := c.Attachment("username", "password", "INBOX", msgs[0].UID, 0); err == nil {
+		t.Error("expected an attachment-not-found error")
+	}
+	if _, _, _, err := NewClient("127.0.0.1:1", "", false, false).Attachment("u", "p", "INBOX", 1, 0); err == nil {
+		t.Error("Attachment should fail when unreachable")
+	}
+}
+
+func TestNthAttachment(t *testing.T) {
+	raw := buildMessageWithAttachment(t)
+	name, ct, data, err := nthAttachment(bytes.NewReader(raw), 0)
+	if err != nil {
+		t.Fatalf("nthAttachment: %v", err)
+	}
+	if name != "hello.txt" || !strings.HasPrefix(ct, "text/plain") || string(data) != "attached content" {
+		t.Errorf("got name=%q ct=%q data=%q", name, ct, string(data))
+	}
+	if _, _, _, err := nthAttachment(bytes.NewReader(raw), 5); err == nil {
+		t.Error("expected not-found for an out-of-range index")
+	}
+}
+
+func buildMessageWithAttachment(t *testing.T) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	var h mail.Header
+	h.SetSubject("with attachment")
+	h.SetAddressList("From", []*mail.Address{{Address: "a@b.c"}})
+	mw, err := mail.CreateWriter(&buf, h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tw, _ := mw.CreateInline()
+	var ih mail.InlineHeader
+	ih.SetContentType("text/plain", map[string]string{"charset": "utf-8"})
+	iw, _ := tw.CreatePart(ih)
+	_, _ = iw.Write([]byte("body"))
+	_ = iw.Close()
+	_ = tw.Close()
+
+	var ah mail.AttachmentHeader
+	ah.SetContentType("text/plain", map[string]string{"charset": "utf-8"})
+	ah.SetFilename("hello.txt")
+	aw, _ := mw.CreateAttachment(ah)
+	_, _ = aw.Write([]byte("attached content"))
+	_ = aw.Close()
+	_ = mw.Close()
+	return buf.Bytes()
 }
 
 func TestActions(t *testing.T) {

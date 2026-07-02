@@ -410,6 +410,26 @@ paths:
               properties:
                 name: { type: string }
       responses: { "200": { description: Created. }, "400": { description: Missing name. }, "401": { $ref: "#/components/responses/Unauthorized" } }
+  /api/webmail/search:
+    get:
+      tags: [webmail]
+      summary: Search messages in a folder (IMAP TEXT search)
+      parameters:
+        - { name: folder, in: query, schema: { type: string, default: INBOX } }
+        - { name: q, in: query, required: true, schema: { type: string } }
+      responses: { "200": { $ref: "#/components/responses/Upstream" }, "400": { description: Missing query. }, "401": { $ref: "#/components/responses/Unauthorized" } }
+  /api/webmail/attachment:
+    get:
+      tags: [webmail]
+      summary: Download a message attachment by index
+      parameters:
+        - { name: folder, in: query, schema: { type: string, default: INBOX } }
+        - { name: uid, in: query, required: true, schema: { type: integer } }
+        - { name: index, in: query, schema: { type: integer, default: 0 } }
+      responses:
+        "200": { description: Attachment bytes., content: { application/octet-stream: { schema: { type: string, format: binary } } } }
+        "400": { description: Invalid uid. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /api/filters:
     get: { tags: [filters], summary: List Sieve filters, responses: { "200": { $ref: "#/components/responses/Upstream" } } }
     post: { tags: [filters], summary: Create a Sieve filter, requestBody: { $ref: "#/components/requestBodies/Attr" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
