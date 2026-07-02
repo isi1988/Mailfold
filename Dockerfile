@@ -3,7 +3,9 @@
 # ---- frontend build stage ----
 # Build the Vite + React SPA. Its output (dist) is copied into the runtime image
 # and served by the Go backend from MAILFOLD_FRONTEND_DIR.
-FROM node:20-alpine AS frontend
+# Base images are pulled from the AWS ECR Public mirror of Docker Hub's official
+# images to avoid Docker Hub's anonymous pull rate limits in CI and deploys.
+FROM public.ecr.aws/docker/library/node:20-alpine AS frontend
 WORKDIR /web
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
@@ -12,7 +14,7 @@ RUN npm run build
 
 # ---- backend build stage ----
 # Compile a static Linux binary.
-FROM golang:1.25-alpine AS build
+FROM public.ecr.aws/docker/library/golang:1.25-alpine AS build
 WORKDIR /src/backend
 
 # Download modules first for better layer caching (rebuilds skip this unless
