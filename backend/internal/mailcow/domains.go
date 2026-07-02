@@ -29,11 +29,7 @@ type Domain struct {
 // Domain slice because the frontend renders these fields directly, so a strongly
 // typed result is preferable to raw passthrough here.
 func (c *Client) Domains(ctx context.Context) ([]Domain, error) {
-	var out []Domain
-	if err := c.get(ctx, "/api/v1/get/domain/all", &out); err != nil {
-		return nil, err
-	}
-	return out, nil
+	return getList[Domain](ctx, c, "/api/v1/get/domain/all")
 }
 
 // AddDomain creates a mail domain. attr is the mailcow add payload describing the

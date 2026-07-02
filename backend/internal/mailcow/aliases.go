@@ -29,11 +29,7 @@ type Alias struct {
 // slice because the UI displays these fields directly, so a typed result is
 // preferable to raw passthrough.
 func (c *Client) Aliases(ctx context.Context) ([]Alias, error) {
-	var out []Alias
-	if err := c.get(ctx, "/api/v1/get/alias/all", &out); err != nil {
-		return nil, err
-	}
-	return out, nil
+	return getList[Alias](ctx, c, "/api/v1/get/alias/all")
 }
 
 // AddAlias creates a new alias from the attributes in attr (source address and

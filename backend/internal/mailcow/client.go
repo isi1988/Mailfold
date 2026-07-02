@@ -109,3 +109,30 @@ func (c *Client) rawGet(ctx context.Context, path string) (json.RawMessage, erro
 	}
 	return out, nil
 }
+
+// getList decodes a mailcow "get .../all" response into a typed slice.
+//
+// It tolerates a mailcow quirk: several list endpoints return an empty JSON
+// object ("{}") — instead of an empty array ("[]") — when there are no results.
+// Decoding that object straight into a slice would fail, so this helper treats
+// "{}" (and "null") as an empty list. Every non-empty response decodes normally.
+//
+// It is a package function rather than a method because Go methods cannot carry
+// their own type parameters; callers pass the client explicitly.
+func getList[T any](ctx context.Context, c *Client, path string) ([]T, error) {
+	var raw json.RawMessage
+	if err := c.get(ctx, path, &raw); err != nil {
+		return nil, err
+	}
+	switch string(bytes.TrimSpace(raw)) {
+	case "", "{}", "null":
+		// Return a non-nil empty slice so it marshals as "[]" (not "null"),
+		// which is friendlier for the frontend to iterate over.
+		return []T{}, nil
+	}
+	var out []T
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, fmt.Errorf("mailcow GET %s: decode list: %w", path, err)
+	}
+	return out, nil
+}

@@ -28,11 +28,7 @@ type Mailbox struct {
 // Mailbox slice because the UI presents these fields directly, so a strongly
 // typed result is preferred over raw passthrough.
 func (c *Client) Mailboxes(ctx context.Context) ([]Mailbox, error) {
-	var out []Mailbox
-	if err := c.get(ctx, "/api/v1/get/mailbox/all", &out); err != nil {
-		return nil, err
-	}
-	return out, nil
+	return getList[Mailbox](ctx, c, "/api/v1/get/mailbox/all")
 }
 
 // AddMailbox creates a new mailbox from the attributes in attr (address, quota,

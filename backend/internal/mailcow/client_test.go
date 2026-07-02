@@ -195,3 +195,36 @@ func TestClientAllMethodsErrorPaths(t *testing.T) {
 		}
 	}
 }
+
+func TestGetListEmptyObject(t *testing.T) {
+	// mailcow returns "{}" (an object) instead of "[]" for empty lists; the
+	// typed listers must treat that as an empty slice rather than a decode error.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, "{}")
+	}))
+	defer srv.Close()
+	c := NewClient(srv.URL, "k", false)
+	ctx := context.Background()
+
+	if d, err := c.Domains(ctx); err != nil || len(d) != 0 {
+		t.Errorf("Domains on {}: got %v, err %v; want empty slice", d, err)
+	}
+	if m, err := c.Mailboxes(ctx); err != nil || len(m) != 0 {
+		t.Errorf("Mailboxes on {}: got %v, err %v; want empty slice", m, err)
+	}
+	if a, err := c.Aliases(ctx); err != nil || len(a) != 0 {
+		t.Errorf("Aliases on {}: got %v, err %v; want empty slice", a, err)
+	}
+}
+
+func TestGetListDecodeError(t *testing.T) {
+	// A non-empty object that is not a list must surface a decode error.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"unexpected":"object"}`)
+	}))
+	defer srv.Close()
+	if _, err := NewClient(srv.URL, "k", false).Domains(context.Background()); err == nil {
+		t.Error("expected a decode error for a non-empty, non-list object")
+	}
+}
