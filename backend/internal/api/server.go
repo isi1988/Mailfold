@@ -78,6 +78,13 @@ func (s *Server) Handler() http.Handler {
 	s.registerTLSPolicyRoutes(mux)
 	s.registerBCCRoutes(mux)
 	s.registerRecipientMapRoutes(mux)
+	s.registerAdminRoutes(mux)
+	s.registerDomainTemplateRoutes(mux)
+	s.registerMailboxTemplateRoutes(mux)
+	s.registerRspamdSettingRoutes(mux)
+	s.registerRateLimitMailboxRoutes(mux)
+	s.registerRateLimitDomainRoutes(mux)
+	s.registerPushoverRoutes(mux)
 
 	// Static SPA (served only when a build directory is present).
 	s.registerFrontend(mux)

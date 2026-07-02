@@ -210,6 +210,27 @@ func TestResourceEndpoints(t *testing.T) {
 		{http.MethodGet, "/api/recipient-maps", "", 200},
 		{http.MethodPost, "/api/recipient-maps", attr, 200},
 		{http.MethodDelete, "/api/recipient-maps", del, 200},
+		// Phase A2 resources.
+		{http.MethodGet, "/api/admins", "", 200},
+		{http.MethodPost, "/api/admins", attr, 200},
+		{http.MethodPut, "/api/admins", edit, 200},
+		{http.MethodDelete, "/api/admins", del, 200},
+		{http.MethodGet, "/api/domain-templates", "", 200},
+		{http.MethodPost, "/api/domain-templates", attr, 200},
+		{http.MethodPut, "/api/domain-templates", edit, 200},
+		{http.MethodDelete, "/api/domain-templates", del, 200},
+		{http.MethodGet, "/api/mailbox-templates", "", 200},
+		{http.MethodPost, "/api/mailbox-templates", attr, 200},
+		{http.MethodPut, "/api/mailbox-templates", edit, 200},
+		{http.MethodDelete, "/api/mailbox-templates", del, 200},
+		{http.MethodGet, "/api/rspamd-settings", "", 200},
+		{http.MethodPost, "/api/rspamd-settings", attr, 200},
+		{http.MethodDelete, "/api/rspamd-settings", del, 200},
+		{http.MethodGet, "/api/ratelimits/mailbox", "", 200},
+		{http.MethodPut, "/api/ratelimits/mailbox", edit, 200},
+		{http.MethodGet, "/api/ratelimits/domain", "", 200},
+		{http.MethodPut, "/api/ratelimits/domain", edit, 200},
+		{http.MethodPut, "/api/pushover", edit, 200},
 	}
 	for _, c := range cases {
 		rec := do(h, c.method, c.path, token, c.body)

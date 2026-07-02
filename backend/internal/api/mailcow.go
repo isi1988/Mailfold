@@ -129,6 +129,38 @@ type Mailcow interface {
 	RecipientMaps(ctx context.Context) (json.RawMessage, error)
 	AddRecipientMap(ctx context.Context, attr any) ([]mailcow.ActionResult, error)
 	DeleteRecipientMap(ctx context.Context, items []string) ([]mailcow.ActionResult, error)
+
+	// mailcow admin accounts.
+	Admins(ctx context.Context) (json.RawMessage, error)
+	AddAdmin(ctx context.Context, attr any) ([]mailcow.ActionResult, error)
+	EditAdmin(ctx context.Context, items []string, attr any) ([]mailcow.ActionResult, error)
+	DeleteAdmin(ctx context.Context, items []string) ([]mailcow.ActionResult, error)
+
+	// Domain templates.
+	DomainTemplates(ctx context.Context) (json.RawMessage, error)
+	AddDomainTemplate(ctx context.Context, attr any) ([]mailcow.ActionResult, error)
+	EditDomainTemplate(ctx context.Context, items []string, attr any) ([]mailcow.ActionResult, error)
+	DeleteDomainTemplate(ctx context.Context, items []string) ([]mailcow.ActionResult, error)
+
+	// Mailbox templates.
+	MailboxTemplates(ctx context.Context) (json.RawMessage, error)
+	AddMailboxTemplate(ctx context.Context, attr any) ([]mailcow.ActionResult, error)
+	EditMailboxTemplate(ctx context.Context, items []string, attr any) ([]mailcow.ActionResult, error)
+	DeleteMailboxTemplate(ctx context.Context, items []string) ([]mailcow.ActionResult, error)
+
+	// Rspamd settings.
+	RspamdSettings(ctx context.Context) (json.RawMessage, error)
+	AddRspamdSetting(ctx context.Context, attr any) ([]mailcow.ActionResult, error)
+	DeleteRspamdSetting(ctx context.Context, items []string) ([]mailcow.ActionResult, error)
+
+	// Rate limits (per mailbox and per domain).
+	RateLimitMailboxes(ctx context.Context) (json.RawMessage, error)
+	EditRateLimitMailbox(ctx context.Context, items []string, attr any) ([]mailcow.ActionResult, error)
+	RateLimitDomains(ctx context.Context) (json.RawMessage, error)
+	EditRateLimitDomain(ctx context.Context, items []string, attr any) ([]mailcow.ActionResult, error)
+
+	// Pushover (per mailbox push notifications; edit-only in mailcow).
+	EditPushover(ctx context.Context, items []string, attr any) ([]mailcow.ActionResult, error)
 }
 
 // Compile-time assertion that the concrete client satisfies the interface.

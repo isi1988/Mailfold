@@ -263,3 +263,30 @@ paths:
     get: { tags: [status], summary: mailcow version, responses: { "200": { $ref: "#/components/responses/Upstream" } } }
   /api/status/vmail:
     get: { tags: [status], summary: Mail storage usage, responses: { "200": { $ref: "#/components/responses/Upstream" } } }
+  /api/admins:
+    get: { tags: [admins], summary: List mailcow admins, responses: { "200": { $ref: "#/components/responses/Upstream" } } }
+    post: { tags: [admins], summary: Create an admin, requestBody: { $ref: "#/components/requestBodies/Attr" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+    put: { tags: [admins], summary: Edit admins, requestBody: { $ref: "#/components/requestBodies/Edit" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+    delete: { tags: [admins], summary: Delete admins, requestBody: { $ref: "#/components/requestBodies/Items" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+  /api/domain-templates:
+    get: { tags: [domain-templates], summary: List domain templates, responses: { "200": { $ref: "#/components/responses/Upstream" } } }
+    post: { tags: [domain-templates], summary: Create a domain template, requestBody: { $ref: "#/components/requestBodies/Attr" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+    put: { tags: [domain-templates], summary: Edit domain templates, requestBody: { $ref: "#/components/requestBodies/Edit" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+    delete: { tags: [domain-templates], summary: Delete domain templates, requestBody: { $ref: "#/components/requestBodies/Items" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+  /api/mailbox-templates:
+    get: { tags: [mailbox-templates], summary: List mailbox templates, responses: { "200": { $ref: "#/components/responses/Upstream" } } }
+    post: { tags: [mailbox-templates], summary: Create a mailbox template, requestBody: { $ref: "#/components/requestBodies/Attr" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+    put: { tags: [mailbox-templates], summary: Edit mailbox templates, requestBody: { $ref: "#/components/requestBodies/Edit" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+    delete: { tags: [mailbox-templates], summary: Delete mailbox templates, requestBody: { $ref: "#/components/requestBodies/Items" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+  /api/rspamd-settings:
+    get: { tags: [rspamd], summary: List rspamd settings maps, responses: { "200": { $ref: "#/components/responses/Upstream" } } }
+    post: { tags: [rspamd], summary: Add an rspamd settings map, requestBody: { $ref: "#/components/requestBodies/Attr" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+    delete: { tags: [rspamd], summary: Delete rspamd settings maps, requestBody: { $ref: "#/components/requestBodies/Items" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+  /api/ratelimits/mailbox:
+    get: { tags: [ratelimits], summary: List per-mailbox rate limits, responses: { "200": { $ref: "#/components/responses/Upstream" } } }
+    put: { tags: [ratelimits], summary: Edit per-mailbox rate limits, requestBody: { $ref: "#/components/requestBodies/Edit" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+  /api/ratelimits/domain:
+    get: { tags: [ratelimits], summary: List per-domain rate limits, responses: { "200": { $ref: "#/components/responses/Upstream" } } }
+    put: { tags: [ratelimits], summary: Edit per-domain rate limits, requestBody: { $ref: "#/components/requestBodies/Edit" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+  /api/pushover:
+    put: { tags: [pushover], summary: Edit Pushover settings, requestBody: { $ref: "#/components/requestBodies/Edit" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
