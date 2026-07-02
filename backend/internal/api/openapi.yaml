@@ -263,6 +263,8 @@ paths:
     get: { tags: [status], summary: mailcow version, responses: { "200": { $ref: "#/components/responses/Upstream" } } }
   /api/status/vmail:
     get: { tags: [status], summary: Mail storage usage, responses: { "200": { $ref: "#/components/responses/Upstream" } } }
+  /api/status/server:
+    get: { tags: [status], summary: Configured public mail-server hostname (MAILFOLD_SERVER_NAME), display-only, responses: { "200": { $ref: "#/components/responses/Upstream" } } }
   /api/admins:
     get: { tags: [admins], summary: List mailcow admins, responses: { "200": { $ref: "#/components/responses/Upstream" } } }
     post: { tags: [admins], summary: Create an admin, requestBody: { $ref: "#/components/requestBodies/Attr" }, responses: { "200": { $ref: "#/components/responses/Action" } } }

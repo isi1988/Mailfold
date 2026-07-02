@@ -112,6 +112,10 @@ type Config struct {
 	// APIKeyMaxRecipients caps the total To+Cc+Bcc count a single send may target,
 	// bounding an authorized key's use as a bulk mailer.
 	APIKeyMaxRecipients int
+	// ServerName is the public mail-server hostname shown in the UI's status
+	// indicator (for example "mail.example.com"). It is display-only and defaults
+	// to empty, in which case the UI simply omits the hostname.
+	ServerName string
 }
 
 // Load reads every configuration value from the environment, applies sensible
@@ -145,6 +149,7 @@ func Load() (*Config, error) {
 		APIKeyRateWindow:    getdur("MAILFOLD_APIKEY_RATE_WINDOW", time.Minute),
 		APIKeyDefaultTTL:    getdur("MAILFOLD_APIKEY_DEFAULT_TTL", 0),
 		APIKeyMaxRecipients: int(getint64("MAILFOLD_APIKEY_MAX_RECIPIENTS", 50)),
+		ServerName:          getenv("MAILFOLD_SERVER_NAME", ""),
 	}
 
 	// The following three values have no safe default: without an upstream

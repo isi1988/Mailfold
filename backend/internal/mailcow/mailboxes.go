@@ -17,13 +17,25 @@ type Mailbox struct {
 	// Active indicates whether the mailbox can send/receive mail. mailcow encodes
 	// this as an integer flag (1 = active, 0 = disabled).
 	Active int `json:"active"`
-	// QuotaKB is the mailbox storage quota expressed in kilobytes, matching the
-	// unit mailcow reports. mailcow may quote this value as a string, so it uses
-	// FlexInt64.
-	QuotaKB FlexInt64 `json:"quota"`
+	// QuotaBytes is the mailbox storage quota in bytes (0 = unlimited). Note that
+	// GET reports the quota in bytes even though add/edit accept it in megabytes.
+	// mailcow may quote this value as a string, so it uses FlexInt64.
+	QuotaBytes FlexInt64 `json:"quota"`
+	// QuotaUsedBytes is how much of the quota is currently used, in bytes, so the
+	// UI can render a usage bar. mailcow may quote it as a string.
+	QuotaUsedBytes FlexInt64 `json:"quota_used"`
+	// PercentInUse is mailcow's precomputed usage percentage (0–100), convenient
+	// for the usage bar without recomputing from the byte counts.
+	PercentInUse FlexInt64 `json:"percent_in_use"`
 	// MessagesTotal is the number of messages currently stored in the mailbox,
 	// which mailcow may also return as a quoted string.
 	MessagesTotal FlexInt64 `json:"messages"`
+	// LastIMAPLogin, LastSMTPLogin and LastPOP3Login are the unix timestamps of the
+	// mailbox's most recent login over each protocol (0 = never). The UI shows the
+	// latest of the three as the mailbox's "last login".
+	LastIMAPLogin FlexInt64 `json:"last_imap_login"`
+	LastSMTPLogin FlexInt64 `json:"last_smtp_login"`
+	LastPOP3Login FlexInt64 `json:"last_pop3_login"`
 }
 
 // Mailboxes returns every mailbox known to mailcow. It decodes into the typed

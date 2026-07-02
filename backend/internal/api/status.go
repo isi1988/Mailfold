@@ -20,6 +20,15 @@ func (s *Server) registerStatusRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/status/containers", s.requireAuth(s.handleContainers))
 	mux.HandleFunc("GET /api/status/version", s.requireAuth(s.handleVersion))
 	mux.HandleFunc("GET /api/status/vmail", s.requireAuth(s.handleVmail))
+	mux.HandleFunc("GET /api/status/server", s.requireAuth(s.handleServer))
+}
+
+// handleServer reports the configured public mail-server hostname (from
+// MAILFOLD_SERVER_NAME) so the UI can label its status indicator instead of a
+// placeholder. Unlike the other status handlers it reads local configuration
+// rather than proxying mailcow, and returns an empty name when unconfigured.
+func (s *Server) handleServer(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"name": s.cfg.ServerName})
 }
 
 // handleContainers serves the current state of the mailcow Docker containers.
