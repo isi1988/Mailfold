@@ -1,0 +1,25 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  # Start from the standard set (errcheck, govet, ineffassign, staticcheck,
+  # unused) and add a few high-signal linters on top.
+  default: standard
+  enable:
+    - misspell # catch common spelling mistakes in code and comments
+    - revive # golint successor: style and correctness rules
+    - unconvert # remove redundant type conversions
+    - unparam # report unused function parameters
+    - gocritic # opinionated correctness/style/performance diagnostics
+    - bodyclose # ensure HTTP response bodies are closed
+  settings:
+    revive:
+      rules:
+        - name: exported
+          disabled: true # exported doc-comment style is already enforced by review
+
+formatters:
+  enable:
+    - gofmt
