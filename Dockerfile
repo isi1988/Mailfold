@@ -3,12 +3,12 @@
 # ---- build stage ----
 # Compile a static Linux binary. The build context is the repository root so
 # that a built frontend (frontend/dist) can be copied in as well when present.
-FROM golang:1.24-alpine AS build
+FROM golang:1.25-alpine AS build
 WORKDIR /src/backend
 
 # Download modules first for better layer caching (rebuilds skip this unless
 # go.mod/go.sum change).
-COPY backend/go.mod ./
+COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 
 # Build the server. CGO is disabled to produce a fully static binary suitable
