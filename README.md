@@ -57,6 +57,21 @@ React SPA  ──▶  Mailfold Go backend  ──▶  mailcow API (/api/v1/...)
 The Go backend authenticates to mailcow with an API key, exposes a clean REST
 surface to the frontend, and serves the built SPA.
 
+## Editions (open-core)
+
+Mailfold is open-core. The community edition in this repository is complete and
+self-contained; it stores its groupware and API-key data in **SQLite** and needs
+no external database. The persistence layer is a small driver registry
+([`backend/storage`](backend/storage)), so the same store code runs on more than
+one database with no duplication.
+
+The **enterprise edition** adds a **PostgreSQL** backend for larger, multi-node
+deployments. It is a separate, private Go module that imports this core and
+registers a `postgres` driver — no forked backend, just one extra driver and
+entry point. PostgreSQL is strictly enterprise-only: the community binary has no
+PostgreSQL dependency and, asked for `MAILFOLD_DB_DRIVER=postgres`, fails fast
+with *"database driver \"postgres\" is not available in this build"*.
+
 ## Backend
 
 ### Configuration
