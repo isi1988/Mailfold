@@ -500,6 +500,14 @@ func TestWebmailFlow(t *testing.T) {
 		t.Errorf("invalid uid = %d", rec.Code)
 	}
 
+	// Send with no SMTP address configured surfaces an upstream error.
+	if rec := do(h, http.MethodPost, "/api/webmail/send", tok, `{"to":["x@y.z"],"subject":"s","text":"t"}`); rec.Code != http.StatusBadGateway {
+		t.Errorf("send without SMTP = %d, want 502", rec.Code)
+	}
+	if rec := do(h, http.MethodPost, "/api/webmail/send", tok, "{bad"); rec.Code != http.StatusBadRequest {
+		t.Errorf("malformed send = %d, want 400", rec.Code)
+	}
+
 	if rec := do(h, http.MethodPost, "/api/webmail/logout", tok, ""); rec.Code != http.StatusOK {
 		t.Errorf("logout = %d", rec.Code)
 	}

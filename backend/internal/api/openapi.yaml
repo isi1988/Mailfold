@@ -330,3 +330,24 @@ paths:
         - { name: folder, in: query, schema: { type: string, default: INBOX } }
         - { name: uid, in: query, required: true, schema: { type: integer } }
       responses: { "200": { $ref: "#/components/responses/Upstream" }, "400": { description: Invalid uid. } }
+  /api/webmail/send:
+    post:
+      tags: [webmail]
+      summary: Compose and submit a message
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                to: { type: array, items: { type: string } }
+                cc: { type: array, items: { type: string } }
+                bcc: { type: array, items: { type: string } }
+                subject: { type: string }
+                text: { type: string }
+                html: { type: string }
+      responses:
+        "200": { description: Message submitted. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { description: Submission failed. }

@@ -20,6 +20,7 @@ func (s *Server) registerWebmailRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/webmail/folders", s.requireWebmail(s.handleWebmailFolders))
 	mux.HandleFunc("GET /api/webmail/messages", s.requireWebmail(s.handleWebmailMessages))
 	mux.HandleFunc("GET /api/webmail/message", s.requireWebmail(s.handleWebmailMessage))
+	mux.HandleFunc("POST /api/webmail/send", s.requireWebmail(s.handleWebmailSend))
 }
 
 // requireWebmail authenticates a webmail request from its bearer token and
@@ -114,6 +115,21 @@ func (s *Server) handleWebmailMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, msg)
+}
+
+// handleWebmailSend composes and submits a message on behalf of the user.
+func (s *Server) handleWebmailSend(w http.ResponseWriter, r *http.Request) {
+	cred := webmailCreds(r)
+	var msg webmail.OutgoingMessage
+	if err := decodeJSON(r, &msg); err != nil {
+		s.writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := s.webmail.Send(cred.Email, cred.Password, &msg); err != nil {
+		s.writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "sent"})
 }
 
 // folderParam returns the ?folder= query value, defaulting to INBOX.
