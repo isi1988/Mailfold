@@ -13,6 +13,11 @@ import (
 	"github.com/isi1988/Mailfold/backend/storage"
 )
 
+// The owner column is named "user" in SQL. Because user is a reserved word in
+// PostgreSQL (the enterprise driver) it is always double-quoted; SQLite accepts
+// the same quoting and resolves it to the identical column, so the schema is
+// portable across both engines without a rename.
+
 // Book is a stored collection (an address book or a calendar).
 type Book struct {
 	ID          string
@@ -70,24 +75,24 @@ func (s *Store) queryRow(q string, args ...any) *sql.Row {
 func (s *Store) migrate() error {
 	schema := fmt.Sprintf(`
 CREATE TABLE IF NOT EXISTS address_books (
-    user TEXT NOT NULL, id TEXT NOT NULL,
+    "user" TEXT NOT NULL, id TEXT NOT NULL,
     name TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '',
-    PRIMARY KEY (user, id)
+    PRIMARY KEY ("user", id)
 );
 CREATE TABLE IF NOT EXISTS address_objects (
-    user TEXT NOT NULL, book_id TEXT NOT NULL, uid TEXT NOT NULL,
+    "user" TEXT NOT NULL, book_id TEXT NOT NULL, uid TEXT NOT NULL,
     etag TEXT NOT NULL, data TEXT NOT NULL, modified %[1]s NOT NULL,
-    PRIMARY KEY (user, book_id, uid)
+    PRIMARY KEY ("user", book_id, uid)
 );
 CREATE TABLE IF NOT EXISTS calendars (
-    user TEXT NOT NULL, id TEXT NOT NULL,
+    "user" TEXT NOT NULL, id TEXT NOT NULL,
     name TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '',
-    PRIMARY KEY (user, id)
+    PRIMARY KEY ("user", id)
 );
 CREATE TABLE IF NOT EXISTS calendar_objects (
-    user TEXT NOT NULL, calendar_id TEXT NOT NULL, uid TEXT NOT NULL,
+    "user" TEXT NOT NULL, calendar_id TEXT NOT NULL, uid TEXT NOT NULL,
     etag TEXT NOT NULL, data TEXT NOT NULL, modified %[1]s NOT NULL,
-    PRIMARY KEY (user, calendar_id, uid)
+    PRIMARY KEY ("user", calendar_id, uid)
 );`, s.d.IntType())
 	_, err := s.db.Exec(schema)
 	return err
@@ -114,12 +119,12 @@ var (
 )
 
 func (s *Store) ensure(c collection, user, id, name string) error {
-	_, err := s.exec(fmt.Sprintf(`INSERT INTO %s (user, id, name) VALUES (?, ?, ?) ON CONFLICT (user, id) DO NOTHING`, c.books), user, id, name)
+	_, err := s.exec(fmt.Sprintf(`INSERT INTO %s ("user", id, name) VALUES (?, ?, ?) ON CONFLICT ("user", id) DO NOTHING`, c.books), user, id, name)
 	return err
 }
 
 func (s *Store) listCollections(c collection, user string) ([]Book, error) {
-	rows, err := s.query(fmt.Sprintf(`SELECT id, name, description FROM %s WHERE user = ? ORDER BY id`, c.books), user)
+	rows, err := s.query(fmt.Sprintf(`SELECT id, name, description FROM %s WHERE "user" = ? ORDER BY id`, c.books), user)
 	if err != nil {
 		return nil, err
 	}
@@ -137,7 +142,7 @@ func (s *Store) listCollections(c collection, user string) ([]Book, error) {
 
 func (s *Store) getCollection(c collection, user, id string) (*Book, error) {
 	var b Book
-	err := s.queryRow(fmt.Sprintf(`SELECT id, name, description FROM %s WHERE user = ? AND id = ?`, c.books), user, id).
+	err := s.queryRow(fmt.Sprintf(`SELECT id, name, description FROM %s WHERE "user" = ? AND id = ?`, c.books), user, id).
 		Scan(&b.ID, &b.Name, &b.Description)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -149,22 +154,22 @@ func (s *Store) getCollection(c collection, user, id string) (*Book, error) {
 }
 
 func (s *Store) createCollection(c collection, user string, b Book) error {
-	_, err := s.exec(fmt.Sprintf(`INSERT INTO %s (user, id, name, description) VALUES (?, ?, ?, ?)`, c.books),
+	_, err := s.exec(fmt.Sprintf(`INSERT INTO %s ("user", id, name, description) VALUES (?, ?, ?, ?)`, c.books),
 		user, b.ID, b.Name, b.Description)
 	return err
 }
 
 func (s *Store) deleteCollection(c collection, user, id string) error {
-	if _, err := s.exec(fmt.Sprintf(`DELETE FROM %s WHERE user = ? AND %s = ?`, c.objects, c.fk), user, id); err != nil {
+	if _, err := s.exec(fmt.Sprintf(`DELETE FROM %s WHERE "user" = ? AND %s = ?`, c.objects, c.fk), user, id); err != nil {
 		return err
 	}
-	_, err := s.exec(fmt.Sprintf(`DELETE FROM %s WHERE user = ? AND id = ?`, c.books), user, id)
+	_, err := s.exec(fmt.Sprintf(`DELETE FROM %s WHERE "user" = ? AND id = ?`, c.books), user, id)
 	return err
 }
 
 func (s *Store) listObjectsIn(c collection, user, collID string) ([]Object, error) {
 	rows, err := s.query(
-		fmt.Sprintf(`SELECT uid, etag, data, modified FROM %s WHERE user = ? AND %s = ? ORDER BY uid`, c.objects, c.fk),
+		fmt.Sprintf(`SELECT uid, etag, data, modified FROM %s WHERE "user" = ? AND %s = ? ORDER BY uid`, c.objects, c.fk),
 		user, collID)
 	if err != nil {
 		return nil, err
@@ -183,7 +188,7 @@ func (s *Store) listObjectsIn(c collection, user, collID string) ([]Object, erro
 
 func (s *Store) getObjectIn(c collection, user, collID, uid string) (*Object, error) {
 	row := s.queryRow(
-		fmt.Sprintf(`SELECT uid, etag, data, modified FROM %s WHERE user = ? AND %s = ? AND uid = ?`, c.objects, c.fk),
+		fmt.Sprintf(`SELECT uid, etag, data, modified FROM %s WHERE "user" = ? AND %s = ? AND uid = ?`, c.objects, c.fk),
 		user, collID, uid)
 	o, err := scanObject(row)
 	if err == sql.ErrNoRows {
@@ -197,8 +202,8 @@ func (s *Store) getObjectIn(c collection, user, collID, uid string) (*Object, er
 
 func (s *Store) putObjectIn(c collection, user, collID, uid, data string) (Object, error) {
 	o := Object{UID: uid, ETag: etagOf(data), Data: data, Modified: time.Now().UTC()}
-	query := fmt.Sprintf(`INSERT INTO %s (user, %s, uid, etag, data, modified) VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(user, %s, uid) DO UPDATE SET etag = excluded.etag, data = excluded.data, modified = excluded.modified`,
+	query := fmt.Sprintf(`INSERT INTO %s ("user", %s, uid, etag, data, modified) VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT("user", %s, uid) DO UPDATE SET etag = excluded.etag, data = excluded.data, modified = excluded.modified`,
 		c.objects, c.fk, c.fk)
 	if _, err := s.exec(query, user, collID, uid, o.ETag, o.Data, storage.Unix(o.Modified)); err != nil {
 		return Object{}, err
@@ -207,7 +212,7 @@ func (s *Store) putObjectIn(c collection, user, collID, uid, data string) (Objec
 }
 
 func (s *Store) deleteObjectIn(c collection, user, collID, uid string) error {
-	res, err := s.exec(fmt.Sprintf(`DELETE FROM %s WHERE user = ? AND %s = ? AND uid = ?`, c.objects, c.fk), user, collID, uid)
+	res, err := s.exec(fmt.Sprintf(`DELETE FROM %s WHERE "user" = ? AND %s = ? AND uid = ?`, c.objects, c.fk), user, collID, uid)
 	if err != nil {
 		return err
 	}
