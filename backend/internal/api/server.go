@@ -55,6 +55,16 @@ func (s *Server) Handler() http.Handler {
 	s.registerFail2BanRoutes(mux)
 	s.registerQuarantineRoutes(mux)
 	s.registerPolicyRoutes(mux)
+	s.registerDomainAdminRoutes(mux)
+	s.registerResourceRoutes(mux)
+	s.registerAppPasswordRoutes(mux)
+	s.registerOAuth2Routes(mux)
+	s.registerForwardingHostRoutes(mux)
+	s.registerTransportRoutes(mux)
+	s.registerRelayhostRoutes(mux)
+	s.registerTLSPolicyRoutes(mux)
+	s.registerBCCRoutes(mux)
+	s.registerRecipientMapRoutes(mux)
 
 	// Static SPA (served only when a build directory is present).
 	s.registerFrontend(mux)

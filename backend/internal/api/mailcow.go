@@ -75,6 +75,60 @@ type Mailcow interface {
 	Containers(ctx context.Context) (json.RawMessage, error)
 	Version(ctx context.Context) (json.RawMessage, error)
 	Vmail(ctx context.Context) (json.RawMessage, error)
+
+	// Domain admins.
+	DomainAdmins(ctx context.Context) (json.RawMessage, error)
+	AddDomainAdmin(ctx context.Context, attr any) ([]mailcow.ActionResult, error)
+	EditDomainAdmin(ctx context.Context, items []string, attr any) ([]mailcow.ActionResult, error)
+	DeleteDomainAdmin(ctx context.Context, items []string) ([]mailcow.ActionResult, error)
+
+	// Resources (shared mailboxes / rooms).
+	Resources(ctx context.Context) (json.RawMessage, error)
+	AddResource(ctx context.Context, attr any) ([]mailcow.ActionResult, error)
+	EditResource(ctx context.Context, items []string, attr any) ([]mailcow.ActionResult, error)
+	DeleteResource(ctx context.Context, items []string) ([]mailcow.ActionResult, error)
+
+	// App passwords (per mailbox).
+	AppPasswords(ctx context.Context, mailbox string) (json.RawMessage, error)
+	AddAppPassword(ctx context.Context, attr any) ([]mailcow.ActionResult, error)
+	DeleteAppPassword(ctx context.Context, items []string) ([]mailcow.ActionResult, error)
+
+	// OAuth2 clients.
+	OAuth2Clients(ctx context.Context) (json.RawMessage, error)
+	AddOAuth2Client(ctx context.Context, attr any) ([]mailcow.ActionResult, error)
+	DeleteOAuth2Client(ctx context.Context, items []string) ([]mailcow.ActionResult, error)
+
+	// Forwarding hosts.
+	ForwardingHosts(ctx context.Context) (json.RawMessage, error)
+	AddForwardingHost(ctx context.Context, attr any) ([]mailcow.ActionResult, error)
+	DeleteForwardingHost(ctx context.Context, items []string) ([]mailcow.ActionResult, error)
+
+	// Transports (sender-dependent transport maps).
+	Transports(ctx context.Context) (json.RawMessage, error)
+	AddTransport(ctx context.Context, attr any) ([]mailcow.ActionResult, error)
+	EditTransport(ctx context.Context, items []string, attr any) ([]mailcow.ActionResult, error)
+	DeleteTransport(ctx context.Context, items []string) ([]mailcow.ActionResult, error)
+
+	// Relayhosts.
+	Relayhosts(ctx context.Context) (json.RawMessage, error)
+	AddRelayhost(ctx context.Context, attr any) ([]mailcow.ActionResult, error)
+	EditRelayhost(ctx context.Context, items []string, attr any) ([]mailcow.ActionResult, error)
+	DeleteRelayhost(ctx context.Context, items []string) ([]mailcow.ActionResult, error)
+
+	// Outbound TLS policy maps.
+	TLSPolicies(ctx context.Context) (json.RawMessage, error)
+	AddTLSPolicy(ctx context.Context, attr any) ([]mailcow.ActionResult, error)
+	DeleteTLSPolicy(ctx context.Context, items []string) ([]mailcow.ActionResult, error)
+
+	// BCC maps.
+	BCCMaps(ctx context.Context) (json.RawMessage, error)
+	AddBCC(ctx context.Context, attr any) ([]mailcow.ActionResult, error)
+	DeleteBCC(ctx context.Context, items []string) ([]mailcow.ActionResult, error)
+
+	// Recipient maps.
+	RecipientMaps(ctx context.Context) (json.RawMessage, error)
+	AddRecipientMap(ctx context.Context, attr any) ([]mailcow.ActionResult, error)
+	DeleteRecipientMap(ctx context.Context, items []string) ([]mailcow.ActionResult, error)
 }
 
 // Compile-time assertion that the concrete client satisfies the interface.
