@@ -1,0 +1,28 @@
+# Development / self-hosting compose for the Mailfold backend.
+#
+# The backend talks to a mailcow instance over HTTP; point MAILFOLD_MAILCOW_URL
+# at yours. For a mailcow running on the same host (for example the local dev
+# stack on :8443), the defaults below reach it via host.docker.internal with TLS
+# verification disabled.
+#
+# Usage:
+#   cp .env.example .env      # set MAILFOLD_ADMIN_PASSWORD, MAILFOLD_MAILCOW_API_KEY, ...
+#   docker compose up --build
+services:
+  backend:
+    build: .
+    image: mailfold-backend:latest
+    container_name: mailfold-backend
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Dev-friendly defaults; anything set in .env takes precedence.
+      MAILFOLD_MAILCOW_URL: ${MAILFOLD_MAILCOW_URL:-https://host.docker.internal:8443}
+      MAILFOLD_MAILCOW_INSECURE_TLS: ${MAILFOLD_MAILCOW_INSECURE_TLS:-true}
+    ports:
+      - "${MAILFOLD_PORT:-8080}:8080"
+    # Lets the container reach a mailcow bound to the host (Linux; native on macOS).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped

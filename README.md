@@ -75,6 +75,17 @@ docker run --rm -p 8080:8080 \
   mailfold-backend
 ```
 
+### Docker Compose
+
+For local development or simple self-hosting, [`docker-compose.yml`](docker-compose.yml)
+runs the backend and connects it to a mailcow instance (by default a mailcow on
+the host at `:8443`):
+
+```bash
+cp .env.example .env   # set the admin password, mailcow API key, etc.
+docker compose up --build
+```
+
 ## Continuous integration
 
 Every push and pull request runs [`.github/workflows/ci.yml`](.github/workflows/ci.yml):
