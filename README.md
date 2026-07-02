@@ -1,5 +1,7 @@
 # Mailfold
 
+[![CI](https://github.com/isi1988/Mailfold/actions/workflows/ci.yml/badge.svg)](https://github.com/isi1988/Mailfold/actions/workflows/ci.yml)
+
 A modern web frontend (admin panel + webmail) for [mailcow-dockerized](https://github.com/mailcow/mailcow-dockerized).
 
 **Website:** [mailfold.site](https://mailfold.site)
@@ -51,6 +53,32 @@ make run               # or: cd backend && go run ./cmd/mailfold
 | `GET` | `/api/health` | Liveness probe. |
 | `GET` | `/api/domains` | List mail domains. |
 | `GET` | `/api/mailboxes` | List mailboxes. |
+
+### Docker
+
+A multi-stage [`Dockerfile`](Dockerfile) builds a static binary into a
+distroless, non-root image:
+
+```bash
+docker build -t mailfold-backend .
+docker run --rm -p 8080:8080 \
+  -e MAILFOLD_MAILCOW_URL=https://mail.cortexus.ru \
+  -e MAILFOLD_MAILCOW_API_KEY=... \
+  -e MAILFOLD_ADMIN_PASSWORD=... \
+  mailfold-backend
+```
+
+## Continuous integration
+
+Every push and pull request runs [`.github/workflows/ci.yml`](.github/workflows/ci.yml):
+
+1. **Build & test** — `go build`, `go vet`, and `go test` with coverage, failing
+   the run if total coverage drops below **80%**.
+2. **SonarQube quality gate** — analysis is uploaded to SonarQube and the build
+   fails unless the project's quality gate is green.
+
+CI requires two repository settings: a `SONAR_TOKEN` secret and a
+`SONAR_HOST_URL` variable.
 
 ## Frontend
 
