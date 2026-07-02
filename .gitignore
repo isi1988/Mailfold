@@ -18,6 +18,9 @@ frontend/.next/
 # Go
 vendor/
 
+# SonarQube scanner working directory
+.scannerwork/
+
 # OS / editors
 .DS_Store
 .idea/

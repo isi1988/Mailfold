@@ -1,0 +1,197 @@
+package mailcow
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+// newTestClient returns a client wired to a mock mailcow server that returns
+// canned success responses for every endpoint.
+func newTestClient(t *testing.T) *Client {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-API-Key") != "testkey" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/api/v1/add/"),
+			strings.HasPrefix(r.URL.Path, "/api/v1/edit/"),
+			strings.HasPrefix(r.URL.Path, "/api/v1/delete/"):
+			_, _ = io.WriteString(w, `[{"type":"success","msg":["ok"]}]`)
+		default:
+			_, _ = io.WriteString(w, `[]`)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return NewClient(srv.URL, "testkey", false)
+}
+
+func TestClientGetters(t *testing.T) {
+	c := newTestClient(t)
+	ctx := context.Background()
+	getters := []struct {
+		name string
+		fn   func() error
+	}{
+		{"Domains", func() error { _, err := c.Domains(ctx); return err }},
+		{"Mailboxes", func() error { _, err := c.Mailboxes(ctx); return err }},
+		{"Aliases", func() error { _, err := c.Aliases(ctx); return err }},
+		{"SyncJobs", func() error { _, err := c.SyncJobs(ctx); return err }},
+		{"MailQueue", func() error { _, err := c.MailQueue(ctx); return err }},
+		{"Quarantine", func() error { _, err := c.Quarantine(ctx); return err }},
+		{"Fail2Ban", func() error { _, err := c.Fail2Ban(ctx); return err }},
+		{"Containers", func() error { _, err := c.Containers(ctx); return err }},
+		{"Version", func() error { _, err := c.Version(ctx); return err }},
+		{"Vmail", func() error { _, err := c.Vmail(ctx); return err }},
+		{"DKIM", func() error { _, err := c.DKIM(ctx, "example.com"); return err }},
+		{"Logs", func() error { _, err := c.Logs(ctx, "postfix", 50); return err }},
+		{"PolicyAllow", func() error { _, err := c.PolicyAllow(ctx, "example.com"); return err }},
+		{"PolicyDeny", func() error { _, err := c.PolicyDeny(ctx, "example.com"); return err }},
+	}
+	for _, g := range getters {
+		if err := g.fn(); err != nil {
+			t.Errorf("%s: %v", g.name, err)
+		}
+	}
+}
+
+func TestClientActions(t *testing.T) {
+	c := newTestClient(t)
+	ctx := context.Background()
+	attr := map[string]any{"x": "y"}
+	items := []string{"a", "b"}
+	actions := []struct {
+		name string
+		fn   func() ([]ActionResult, error)
+	}{
+		{"AddDomain", func() ([]ActionResult, error) { return c.AddDomain(ctx, attr) }},
+		{"EditDomain", func() ([]ActionResult, error) { return c.EditDomain(ctx, items, attr) }},
+		{"DeleteDomain", func() ([]ActionResult, error) { return c.DeleteDomain(ctx, items) }},
+		{"AddMailbox", func() ([]ActionResult, error) { return c.AddMailbox(ctx, attr) }},
+		{"EditMailbox", func() ([]ActionResult, error) { return c.EditMailbox(ctx, items, attr) }},
+		{"DeleteMailbox", func() ([]ActionResult, error) { return c.DeleteMailbox(ctx, items) }},
+		{"AddAlias", func() ([]ActionResult, error) { return c.AddAlias(ctx, attr) }},
+		{"EditAlias", func() ([]ActionResult, error) { return c.EditAlias(ctx, items, attr) }},
+		{"DeleteAlias", func() ([]ActionResult, error) { return c.DeleteAlias(ctx, items) }},
+		{"AddDKIM", func() ([]ActionResult, error) { return c.AddDKIM(ctx, attr) }},
+		{"DeleteDKIM", func() ([]ActionResult, error) { return c.DeleteDKIM(ctx, items) }},
+		{"AddSyncJob", func() ([]ActionResult, error) { return c.AddSyncJob(ctx, attr) }},
+		{"EditSyncJob", func() ([]ActionResult, error) { return c.EditSyncJob(ctx, items, attr) }},
+		{"DeleteSyncJob", func() ([]ActionResult, error) { return c.DeleteSyncJob(ctx, items) }},
+		{"FlushQueue", func() ([]ActionResult, error) { return c.FlushQueue(ctx) }},
+		{"EditFail2Ban", func() ([]ActionResult, error) { return c.EditFail2Ban(ctx, attr) }},
+		{"DeleteQuarantine", func() ([]ActionResult, error) { return c.DeleteQuarantine(ctx, items) }},
+		{"AddPolicy", func() ([]ActionResult, error) { return c.AddPolicy(ctx, attr) }},
+		{"DeletePolicy", func() ([]ActionResult, error) { return c.DeletePolicy(ctx, items) }},
+	}
+	for _, a := range actions {
+		res, err := a.fn()
+		if err != nil {
+			t.Errorf("%s: %v", a.name, err)
+			continue
+		}
+		if ok, _ := ResultsOK(res); !ok {
+			t.Errorf("%s: expected successful results", a.name)
+		}
+	}
+}
+
+func TestResultsOK(t *testing.T) {
+	if ok, _ := ResultsOK([]ActionResult{{Type: "success"}, {Type: "info"}}); !ok {
+		t.Error("expected ok for success/info")
+	}
+	ok, msg := ResultsOK([]ActionResult{{Type: "danger", Msg: json.RawMessage(`"boom"`)}})
+	if ok {
+		t.Error("expected not ok for danger")
+	}
+	if !strings.Contains(msg, "boom") {
+		t.Errorf("message=%q", msg)
+	}
+}
+
+func TestClientErrorPaths(t *testing.T) {
+	ctx := context.Background()
+
+	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer bad.Close()
+	if _, err := NewClient(bad.URL, "k", false).Domains(ctx); err == nil {
+		t.Error("expected error on HTTP 500")
+	}
+
+	badJSON := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "not json")
+	}))
+	defer badJSON.Close()
+	if _, err := NewClient(badJSON.URL, "k", false).Domains(ctx); err == nil {
+		t.Error("expected decode error")
+	}
+
+	if _, err := NewClient("http://127.0.0.1:0", "k", true).Domains(ctx); err == nil {
+		t.Error("expected transport error")
+	}
+
+	// A channel cannot be marshaled to JSON: exercises the post marshal error.
+	if _, err := newTestClient(t).AddDomain(ctx, make(chan int)); err == nil {
+		t.Error("expected marshal error")
+	}
+}
+
+func TestClientAllMethodsErrorPaths(t *testing.T) {
+	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer bad.Close()
+	c := NewClient(bad.URL, "k", false)
+	ctx := context.Background()
+	attr := map[string]any{"x": "y"}
+	items := []string{"a"}
+	calls := []func() error{
+		func() error { _, e := c.Domains(ctx); return e },
+		func() error { _, e := c.AddDomain(ctx, attr); return e },
+		func() error { _, e := c.EditDomain(ctx, items, attr); return e },
+		func() error { _, e := c.DeleteDomain(ctx, items); return e },
+		func() error { _, e := c.Mailboxes(ctx); return e },
+		func() error { _, e := c.AddMailbox(ctx, attr); return e },
+		func() error { _, e := c.EditMailbox(ctx, items, attr); return e },
+		func() error { _, e := c.DeleteMailbox(ctx, items); return e },
+		func() error { _, e := c.Aliases(ctx); return e },
+		func() error { _, e := c.AddAlias(ctx, attr); return e },
+		func() error { _, e := c.EditAlias(ctx, items, attr); return e },
+		func() error { _, e := c.DeleteAlias(ctx, items); return e },
+		func() error { _, e := c.DKIM(ctx, "d"); return e },
+		func() error { _, e := c.AddDKIM(ctx, attr); return e },
+		func() error { _, e := c.DeleteDKIM(ctx, items); return e },
+		func() error { _, e := c.SyncJobs(ctx); return e },
+		func() error { _, e := c.AddSyncJob(ctx, attr); return e },
+		func() error { _, e := c.EditSyncJob(ctx, items, attr); return e },
+		func() error { _, e := c.DeleteSyncJob(ctx, items); return e },
+		func() error { _, e := c.MailQueue(ctx); return e },
+		func() error { _, e := c.FlushQueue(ctx); return e },
+		func() error { _, e := c.Logs(ctx, "postfix", 10); return e },
+		func() error { _, e := c.Fail2Ban(ctx); return e },
+		func() error { _, e := c.EditFail2Ban(ctx, attr); return e },
+		func() error { _, e := c.Quarantine(ctx); return e },
+		func() error { _, e := c.DeleteQuarantine(ctx, items); return e },
+		func() error { _, e := c.PolicyAllow(ctx, "d"); return e },
+		func() error { _, e := c.PolicyDeny(ctx, "d"); return e },
+		func() error { _, e := c.AddPolicy(ctx, attr); return e },
+		func() error { _, e := c.DeletePolicy(ctx, items); return e },
+		func() error { _, e := c.Containers(ctx); return e },
+		func() error { _, e := c.Version(ctx); return e },
+		func() error { _, e := c.Vmail(ctx); return e },
+	}
+	for i, fn := range calls {
+		if err := fn(); err == nil {
+			t.Errorf("call %d: expected error against failing server", i)
+		}
+	}
+}

@@ -8,20 +8,24 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/isi1988/Mailfold/backend/internal/auth"
 	"github.com/isi1988/Mailfold/backend/internal/config"
-	"github.com/isi1988/Mailfold/backend/internal/mailcow"
 )
 
-// Server wires HTTP routes to the mailcow client.
+// Server wires HTTP routes to the mailcow API and the authenticator. It holds
+// its collaborators through interfaces/values so the transport layer stays
+// decoupled from concrete implementations.
 type Server struct {
 	cfg    *config.Config
-	mc     *mailcow.Client
+	mc     Mailcow
+	auth   *auth.Authenticator
 	logger *slog.Logger
 }
 
-// NewServer constructs a Server.
-func NewServer(cfg *config.Config, mc *mailcow.Client, logger *slog.Logger) *Server {
-	return &Server{cfg: cfg, mc: mc, logger: logger}
+// NewServer constructs a Server from its collaborators. mc is any type
+// satisfying the Mailcow interface (in production, *mailcow.Client).
+func NewServer(cfg *config.Config, mc Mailcow, authn *auth.Authenticator, logger *slog.Logger) *Server {
+	return &Server{cfg: cfg, mc: mc, auth: authn, logger: logger}
 }
 
 // Handler builds the HTTP handler with all routes registered.
@@ -29,26 +33,36 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /api/health", s.handleHealth)
-	mux.HandleFunc("GET /api/domains", s.handleDomains)
-	mux.HandleFunc("GET /api/mailboxes", s.handleMailboxes)
 
-	// Serve the built frontend (SPA) if a build directory is present.
+	// Authentication.
+	s.registerAuthRoutes(mux)
+
+	// Management resources (all require authentication).
+	s.registerStatusRoutes(mux)
+	s.registerDomainRoutes(mux)
+	s.registerMailboxRoutes(mux)
+	s.registerAliasRoutes(mux)
+	s.registerDKIMRoutes(mux)
+	s.registerSyncJobRoutes(mux)
+	s.registerQueueRoutes(mux)
+	s.registerLogRoutes(mux)
+	s.registerFail2BanRoutes(mux)
+	s.registerQuarantineRoutes(mux)
+	s.registerPolicyRoutes(mux)
+
+	// Static SPA (served only when a build directory is present).
 	s.registerFrontend(mux)
 
-	return s.withLogging(mux)
+	return s.withCommon(mux)
 }
 
-// withLogging logs one line per request.
-func (s *Server) withLogging(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		s.logger.Info("request", "method", r.Method, "path", r.URL.Path, "remote", r.RemoteAddr)
-		next.ServeHTTP(w, r)
-	})
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "service": "mailfold"})
 }
 
 // registerFrontend serves static SPA assets with an index.html fallback for
-// client-side routes. The UI comes from a separate design project, so this
-// only activates when a build directory exists.
+// client-side routes. The UI comes from a separate design project, so this only
+// activates when a build directory exists.
 func (s *Server) registerFrontend(mux *http.ServeMux) {
 	dir := s.cfg.FrontendDir
 	if dir == "" {

@@ -2,6 +2,7 @@
 package mailcow
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -12,7 +13,7 @@ import (
 	"time"
 )
 
-const maxResponseBytes = 8 << 20 // 8 MiB cap on API responses.
+const maxResponseBytes = 16 << 20 // 16 MiB cap on API responses.
 
 // Client wraps the mailcow HTTP API with API-key authentication.
 type Client struct {
@@ -31,18 +32,39 @@ func NewClient(baseURL, apiKey string, insecureTLS bool) *Client {
 	return &Client{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		apiKey:  apiKey,
-		http:    &http.Client{Timeout: 15 * time.Second, Transport: transport},
+		http:    &http.Client{Timeout: 30 * time.Second, Transport: transport},
 	}
 }
 
 // get performs an authenticated GET and decodes the JSON body into out.
 func (c *Client) get(ctx context.Context, path string, out any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
+	return c.do(ctx, http.MethodGet, path, nil, out)
+}
+
+// post performs an authenticated POST with a JSON body and decodes the JSON
+// response into out. out may be nil to ignore the response body.
+func (c *Client) post(ctx context.Context, path string, body, out any) error {
+	var reader io.Reader
+	if body != nil {
+		buf, err := json.Marshal(body)
+		if err != nil {
+			return fmt.Errorf("marshal request: %w", err)
+		}
+		reader = bytes.NewReader(buf)
+	}
+	return c.do(ctx, http.MethodPost, path, reader, out)
+}
+
+func (c *Client) do(ctx context.Context, method, path string, body io.Reader, out any) error {
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("X-API-Key", c.apiKey)
 	req.Header.Set("Accept", "application/json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -50,33 +72,40 @@ func (c *Client) get(ctx context.Context, path string, out any) error {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	if err != nil {
 		return err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("mailcow GET %s: status %d: %s", path, resp.StatusCode, strings.TrimSpace(string(body)))
+		return fmt.Errorf("mailcow %s %s: status %d: %s", method, path, resp.StatusCode, strings.TrimSpace(string(raw)))
 	}
-	if err := json.Unmarshal(body, out); err != nil {
-		return fmt.Errorf("mailcow GET %s: decode response: %w", path, err)
+	if out == nil {
+		return nil
+	}
+	if err := json.Unmarshal(raw, out); err != nil {
+		return fmt.Errorf("mailcow %s %s: decode response: %w", method, path, err)
 	}
 	return nil
 }
 
-// Domains returns all mail domains configured in mailcow.
-func (c *Client) Domains(ctx context.Context) ([]Domain, error) {
-	var domains []Domain
-	if err := c.get(ctx, "/api/v1/get/domain/all", &domains); err != nil {
+// action performs a mailcow add/edit/delete request and returns the resulting
+// action-result array. Every mutating resource method delegates here so the
+// request/response handling lives in exactly one place.
+func (c *Client) action(ctx context.Context, path string, body any) ([]ActionResult, error) {
+	var out []ActionResult
+	if err := c.post(ctx, path, body, &out); err != nil {
 		return nil, err
 	}
-	return domains, nil
+	return out, nil
 }
 
-// Mailboxes returns all mailboxes configured in mailcow.
-func (c *Client) Mailboxes(ctx context.Context) ([]Mailbox, error) {
-	var mailboxes []Mailbox
-	if err := c.get(ctx, "/api/v1/get/mailbox/all", &mailboxes); err != nil {
+// rawGet performs a mailcow GET and returns the upstream JSON untouched. It
+// backs every read-only endpoint whose payload the API layer passes straight
+// through to the frontend (status, logs, queue, quarantine, policy, ...).
+func (c *Client) rawGet(ctx context.Context, path string) (json.RawMessage, error) {
+	var out json.RawMessage
+	if err := c.get(ctx, path, &out); err != nil {
 		return nil, err
 	}
-	return mailboxes, nil
+	return out, nil
 }
