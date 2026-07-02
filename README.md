@@ -94,13 +94,13 @@ cp .env.example .env   # then edit values
 make run               # or: cd backend && go run ./cmd/mailfold
 ```
 
-### Current API
+### API
 
-| Method | Path | Description |
-| --- | --- | --- |
-| `GET` | `/api/health` | Liveness probe. |
-| `GET` | `/api/domains` | List mail domains. |
-| `GET` | `/api/mailboxes` | List mailboxes. |
+The backend exposes a broad REST surface over the mailcow API — domains,
+mailboxes, aliases, the mail queue, quarantine, spam policy, sync jobs, DKIM,
+per-service logs, container/version status, self-hosted CardDAV/CalDAV, the
+webmail endpoints, and the machine-to-machine API keys. Rather than duplicate
+that list here (and let it drift), the running server documents itself:
 
 ### API documentation
 
@@ -148,8 +148,12 @@ CI requires two repository settings: a `SONAR_TOKEN` secret and a
 
 ## Frontend
 
-The UI is being built from a dedicated design project and will live in
-[`frontend/`](frontend/). See [`frontend/README.md`](frontend/README.md).
+The UI is a Vite + React (JSX) single-page app in [`frontend/`](frontend/):
+`main.jsx` → `App.jsx` (auth gate) → the app shell and ~15 pages under
+`src/pages/`, talking to the backend through `src/api/client.js`. The design
+system is vendored under `src/ds/`, and all user-facing strings go through the
+i18n layer in `src/i18n/`. It builds to `frontend/dist/`, which the Go backend
+serves (`MAILFOLD_FRONTEND_DIR`). See [`frontend/README.md`](frontend/README.md).
 
 ## Target deployment
 
