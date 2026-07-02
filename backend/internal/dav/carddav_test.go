@@ -9,7 +9,7 @@ import (
 )
 
 func TestCardBackendRoundTrip(t *testing.T) {
-	b := &cardBackend{store: openTestStore(t), prefix: "/dav/carddav"}
+	b := &cardBackend{store: openTestStore(t), pathHelper: pathHelper{prefix: "/dav/carddav"}}
 	ctx := WithUser(context.Background(), "user@example.com")
 
 	if p, _ := b.CurrentUserPrincipal(ctx); p != "/dav/carddav/principals/user@example.com/" {

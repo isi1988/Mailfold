@@ -1,6 +1,6 @@
 // Package dav implements a self-hosted CardDAV/CalDAV groupware server backed by
-// a local SQLite database. It lets Mailfold store and sync contacts (and, later,
-// calendars) for mailbox users without depending on SOGo.
+// a local SQLite database. It lets Mailfold store and sync contacts and
+// calendars for mailbox users without depending on SOGo.
 package dav
 
 import (
@@ -13,14 +13,14 @@ import (
 	_ "modernc.org/sqlite" // pure-Go SQLite driver (no cgo)
 )
 
-// Book is a stored address book (or calendar collection).
+// Book is a stored collection (an address book or a calendar).
 type Book struct {
 	ID          string
 	Name        string
 	Description string
 }
 
-// Object is a stored DAV object (a vCard or iCalendar resource).
+// Object is a stored DAV object (a vCard or an iCalendar resource).
 type Object struct {
 	UID      string
 	ETag     string
@@ -84,19 +84,27 @@ func etagOf(data string) string {
 	return hex.EncodeToString(sum[:8])
 }
 
-// ---- address books ----
+// collection names the tables backing one DAV collection type. Address books and
+// calendars share the same shape, so all CRUD is written once and parameterized
+// by these (hardcoded, non-user) table/column names.
+type collection struct {
+	books   string // collection table
+	objects string // object table
+	fk      string // foreign-key column on the object table
+}
 
-// EnsureBook creates the named address book for user if it does not exist.
-func (s *Store) EnsureBook(user, id, name string) error {
-	_, err := s.db.Exec(
-		`INSERT OR IGNORE INTO address_books (user, id, name) VALUES (?, ?, ?)`,
-		user, id, name)
+var (
+	addressColl  = collection{books: "address_books", objects: "address_objects", fk: "book_id"}
+	calendarColl = collection{books: "calendars", objects: "calendar_objects", fk: "calendar_id"}
+)
+
+func (s *Store) ensure(c collection, user, id, name string) error {
+	_, err := s.db.Exec(fmt.Sprintf(`INSERT OR IGNORE INTO %s (user, id, name) VALUES (?, ?, ?)`, c.books), user, id, name)
 	return err
 }
 
-// ListBooks returns the user's address books.
-func (s *Store) ListBooks(user string) ([]Book, error) {
-	rows, err := s.db.Query(`SELECT id, name, description FROM address_books WHERE user = ? ORDER BY id`, user)
+func (s *Store) listCollections(c collection, user string) ([]Book, error) {
+	rows, err := s.db.Query(fmt.Sprintf(`SELECT id, name, description FROM %s WHERE user = ? ORDER BY id`, c.books), user)
 	if err != nil {
 		return nil, err
 	}
@@ -112,10 +120,9 @@ func (s *Store) ListBooks(user string) ([]Book, error) {
 	return out, rows.Err()
 }
 
-// GetBook returns one address book, or nil if absent.
-func (s *Store) GetBook(user, id string) (*Book, error) {
+func (s *Store) getCollection(c collection, user, id string) (*Book, error) {
 	var b Book
-	err := s.db.QueryRow(`SELECT id, name, description FROM address_books WHERE user = ? AND id = ?`, user, id).
+	err := s.db.QueryRow(fmt.Sprintf(`SELECT id, name, description FROM %s WHERE user = ? AND id = ?`, c.books), user, id).
 		Scan(&b.ID, &b.Name, &b.Description)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -126,30 +133,24 @@ func (s *Store) GetBook(user, id string) (*Book, error) {
 	return &b, nil
 }
 
-// CreateBook creates an address book.
-func (s *Store) CreateBook(user string, b Book) error {
-	_, err := s.db.Exec(
-		`INSERT INTO address_books (user, id, name, description) VALUES (?, ?, ?, ?)`,
+func (s *Store) createCollection(c collection, user string, b Book) error {
+	_, err := s.db.Exec(fmt.Sprintf(`INSERT INTO %s (user, id, name, description) VALUES (?, ?, ?, ?)`, c.books),
 		user, b.ID, b.Name, b.Description)
 	return err
 }
 
-// DeleteBook removes an address book and all its objects.
-func (s *Store) DeleteBook(user, id string) error {
-	if _, err := s.db.Exec(`DELETE FROM address_objects WHERE user = ? AND book_id = ?`, user, id); err != nil {
+func (s *Store) deleteCollection(c collection, user, id string) error {
+	if _, err := s.db.Exec(fmt.Sprintf(`DELETE FROM %s WHERE user = ? AND %s = ?`, c.objects, c.fk), user, id); err != nil {
 		return err
 	}
-	_, err := s.db.Exec(`DELETE FROM address_books WHERE user = ? AND id = ?`, user, id)
+	_, err := s.db.Exec(fmt.Sprintf(`DELETE FROM %s WHERE user = ? AND id = ?`, c.books), user, id)
 	return err
 }
 
-// ---- address objects ----
-
-// ListObjects returns every object in an address book.
-func (s *Store) ListObjects(user, bookID string) ([]Object, error) {
+func (s *Store) listObjectsIn(c collection, user, collID string) ([]Object, error) {
 	rows, err := s.db.Query(
-		`SELECT uid, etag, data, modified FROM address_objects WHERE user = ? AND book_id = ? ORDER BY uid`,
-		user, bookID)
+		fmt.Sprintf(`SELECT uid, etag, data, modified FROM %s WHERE user = ? AND %s = ? ORDER BY uid`, c.objects, c.fk),
+		user, collID)
 	if err != nil {
 		return nil, err
 	}
@@ -165,11 +166,10 @@ func (s *Store) ListObjects(user, bookID string) ([]Object, error) {
 	return out, rows.Err()
 }
 
-// GetObject returns one object, or nil if absent.
-func (s *Store) GetObject(user, bookID, uid string) (*Object, error) {
+func (s *Store) getObjectIn(c collection, user, collID, uid string) (*Object, error) {
 	row := s.db.QueryRow(
-		`SELECT uid, etag, data, modified FROM address_objects WHERE user = ? AND book_id = ? AND uid = ?`,
-		user, bookID, uid)
+		fmt.Sprintf(`SELECT uid, etag, data, modified FROM %s WHERE user = ? AND %s = ? AND uid = ?`, c.objects, c.fk),
+		user, collID, uid)
 	o, err := scanObject(row)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -180,23 +180,19 @@ func (s *Store) GetObject(user, bookID, uid string) (*Object, error) {
 	return &o, nil
 }
 
-// PutObject inserts or updates an object, returning the stored value with its
-// freshly computed ETag and modification time.
-func (s *Store) PutObject(user, bookID, uid, data string) (Object, error) {
+func (s *Store) putObjectIn(c collection, user, collID, uid, data string) (Object, error) {
 	o := Object{UID: uid, ETag: etagOf(data), Data: data, Modified: time.Now().UTC()}
-	_, err := s.db.Exec(
-		`INSERT INTO address_objects (user, book_id, uid, etag, data, modified) VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT(user, book_id, uid) DO UPDATE SET etag = excluded.etag, data = excluded.data, modified = excluded.modified`,
-		user, bookID, uid, o.ETag, o.Data, o.Modified.Unix())
-	if err != nil {
+	query := fmt.Sprintf(`INSERT INTO %s (user, %s, uid, etag, data, modified) VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(user, %s, uid) DO UPDATE SET etag = excluded.etag, data = excluded.data, modified = excluded.modified`,
+		c.objects, c.fk, c.fk)
+	if _, err := s.db.Exec(query, user, collID, uid, o.ETag, o.Data, o.Modified.Unix()); err != nil {
 		return Object{}, err
 	}
 	return o, nil
 }
 
-// DeleteObject removes one object.
-func (s *Store) DeleteObject(user, bookID, uid string) error {
-	res, err := s.db.Exec(`DELETE FROM address_objects WHERE user = ? AND book_id = ? AND uid = ?`, user, bookID, uid)
+func (s *Store) deleteObjectIn(c collection, user, collID, uid string) error {
+	res, err := s.db.Exec(fmt.Sprintf(`DELETE FROM %s WHERE user = ? AND %s = ? AND uid = ?`, c.objects, c.fk), user, collID, uid)
 	if err != nil {
 		return err
 	}
@@ -204,6 +200,89 @@ func (s *Store) DeleteObject(user, bookID, uid string) error {
 		return fmt.Errorf("object %q not found", uid)
 	}
 	return nil
+}
+
+// ---- address book API ----
+
+// EnsureBook creates the named address book for user if it does not exist.
+func (s *Store) EnsureBook(user, id, name string) error { return s.ensure(addressColl, user, id, name) }
+
+// ListBooks returns the user's address books.
+func (s *Store) ListBooks(user string) ([]Book, error) { return s.listCollections(addressColl, user) }
+
+// GetBook returns one address book, or nil if absent.
+func (s *Store) GetBook(user, id string) (*Book, error) {
+	return s.getCollection(addressColl, user, id)
+}
+
+// CreateBook creates an address book.
+func (s *Store) CreateBook(user string, b Book) error {
+	return s.createCollection(addressColl, user, b)
+}
+
+// DeleteBook removes an address book and all its objects.
+func (s *Store) DeleteBook(user, id string) error { return s.deleteCollection(addressColl, user, id) }
+
+// ListObjects returns every object in an address book.
+func (s *Store) ListObjects(user, bookID string) ([]Object, error) {
+	return s.listObjectsIn(addressColl, user, bookID)
+}
+
+// GetObject returns one address object, or nil if absent.
+func (s *Store) GetObject(user, bookID, uid string) (*Object, error) {
+	return s.getObjectIn(addressColl, user, bookID, uid)
+}
+
+// PutObject inserts or updates an address object.
+func (s *Store) PutObject(user, bookID, uid, data string) (Object, error) {
+	return s.putObjectIn(addressColl, user, bookID, uid, data)
+}
+
+// DeleteObject removes an address object.
+func (s *Store) DeleteObject(user, bookID, uid string) error {
+	return s.deleteObjectIn(addressColl, user, bookID, uid)
+}
+
+// ---- calendar API ----
+
+// EnsureCalendar creates the named calendar for user if it does not exist.
+func (s *Store) EnsureCalendar(user, id, name string) error {
+	return s.ensure(calendarColl, user, id, name)
+}
+
+// ListCalendars returns the user's calendars.
+func (s *Store) ListCalendars(user string) ([]Book, error) {
+	return s.listCollections(calendarColl, user)
+}
+
+// GetCalendar returns one calendar, or nil if absent.
+func (s *Store) GetCalendar(user, id string) (*Book, error) {
+	return s.getCollection(calendarColl, user, id)
+}
+
+// CreateCalendar creates a calendar.
+func (s *Store) CreateCalendar(user string, b Book) error {
+	return s.createCollection(calendarColl, user, b)
+}
+
+// ListCalObjects returns every object in a calendar.
+func (s *Store) ListCalObjects(user, calID string) ([]Object, error) {
+	return s.listObjectsIn(calendarColl, user, calID)
+}
+
+// GetCalObject returns one calendar object, or nil if absent.
+func (s *Store) GetCalObject(user, calID, uid string) (*Object, error) {
+	return s.getObjectIn(calendarColl, user, calID, uid)
+}
+
+// PutCalObject inserts or updates a calendar object.
+func (s *Store) PutCalObject(user, calID, uid, data string) (Object, error) {
+	return s.putObjectIn(calendarColl, user, calID, uid, data)
+}
+
+// DeleteCalObject removes a calendar object.
+func (s *Store) DeleteCalObject(user, calID, uid string) error {
+	return s.deleteObjectIn(calendarColl, user, calID, uid)
 }
 
 // scanner abstracts *sql.Row and *sql.Rows for scanObject.

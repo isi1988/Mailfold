@@ -110,16 +110,18 @@ The UI is being built from a dedicated design project and will live in
 
 ## Groupware (CardDAV / CalDAV)
 
-Mailfold ships a self-hosted CardDAV server (calendars via CalDAV are on the way)
-so contacts can be stored and synced without SOGo. It is backed by a local
-SQLite database (`MAILFOLD_DB_PATH`) and is disabled when that path is empty.
+Mailfold ships self-hosted CardDAV and CalDAV servers so contacts, calendars,
+and tasks can be stored and synced without SOGo. They are backed by a local
+SQLite database (`MAILFOLD_DB_PATH`) and are disabled when that path is empty.
 
 - CardDAV endpoint: `/dav/carddav/` (discovery at `/.well-known/carddav`).
+- CalDAV endpoint: `/dav/caldav/` (discovery at `/.well-known/caldav`),
+  supporting events (`VEVENT`) and tasks (`VTODO`).
 - Authentication: HTTP Basic with the user's own mailbox credentials (verified
   against IMAP, then cached briefly).
 
-Point a standard client (Thunderbird, iOS/macOS Contacts, DAVx⁵) at the endpoint
-to sync.
+Point a standard client (Thunderbird, iOS/macOS Contacts & Calendar, DAVx⁵) at
+the endpoints to sync.
 
 ## License
 

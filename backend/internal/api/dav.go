@@ -61,6 +61,12 @@ func (s *Server) registerDAV(mux *http.ServeMux) {
 	mux.HandleFunc("GET /.well-known/carddav", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/dav/carddav/", http.StatusMovedPermanently)
 	})
+
+	cal := dav.NewCalDAVHandler(s.davStore, "/dav/caldav")
+	mux.Handle("/dav/caldav/", s.davBasicAuth(cal))
+	mux.HandleFunc("GET /.well-known/caldav", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/dav/caldav/", http.StatusMovedPermanently)
+	})
 }
 
 // davBasicAuth guards a DAV handler with Basic authentication and attaches the

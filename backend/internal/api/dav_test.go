@@ -46,8 +46,16 @@ func TestDAVVerifier(t *testing.T) {
 	}
 }
 
-func TestCardDAVHTTP(t *testing.T) {
-	// In-memory IMAP server backs Basic-auth verification (user "username").
+// davUser is the mailbox the in-memory IMAP backend accepts.
+const (
+	davUser = "username"
+	davPass = "password"
+)
+
+// newDAVTestHandler spins up an in-memory IMAP server (for Basic-auth
+// verification) and returns a Mailfold HTTP handler wired to it.
+func newDAVTestHandler(t *testing.T) http.Handler {
+	t.Helper()
 	imapSrv := server.New(memory.New())
 	imapSrv.AllowInsecureAuth = true
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -69,10 +77,14 @@ func TestCardDAVHTTP(t *testing.T) {
 		WebmailSessionTTL: time.Hour,
 		DBPath:            t.TempDir() + "/dav.db",
 	}
-	mc := mailcow.NewClient(cfg.MailcowBaseURL, "k", false)
-	authn := auth.New("admin", "pw", time.Hour)
+	mc := mailcow.NewClient(cfg.MailcowBaseURL, cfg.MailcowAPIKey, false)
+	authn := auth.New(cfg.AdminUser, cfg.AdminPassword, time.Hour)
 	limiter := ratelimit.New(0, time.Minute)
-	h := NewServer(cfg, mc, authn, limiter, slog.New(slog.NewTextHandler(io.Discard, nil))).Handler()
+	return NewServer(cfg, mc, authn, limiter, slog.New(slog.NewTextHandler(io.Discard, nil))).Handler()
+}
+
+func TestCardDAVHTTP(t *testing.T) {
+	h := newDAVTestHandler(t)
 
 	// Unauthenticated DAV request is rejected.
 	req := httptest.NewRequest("PROPFIND", "/dav/carddav/username/", nil)
@@ -85,7 +97,7 @@ func TestCardDAVHTTP(t *testing.T) {
 	// PUT a vCard.
 	vc := "BEGIN:VCARD\r\nVERSION:4.0\r\nUID:t1\r\nFN:Test User\r\nEND:VCARD\r\n"
 	put := httptest.NewRequest(http.MethodPut, "/dav/carddav/username/default/t1.vcf", strings.NewReader(vc))
-	put.SetBasicAuth("username", "password")
+	put.SetBasicAuth(davUser, davPass)
 	put.Header.Set("Content-Type", "text/vcard")
 	putRec := httptest.NewRecorder()
 	h.ServeHTTP(putRec, put)
@@ -95,7 +107,7 @@ func TestCardDAVHTTP(t *testing.T) {
 
 	// GET it back.
 	get := httptest.NewRequest(http.MethodGet, "/dav/carddav/username/default/t1.vcf", nil)
-	get.SetBasicAuth("username", "password")
+	get.SetBasicAuth(davUser, davPass)
 	getRec := httptest.NewRecorder()
 	h.ServeHTTP(getRec, get)
 	if getRec.Code != http.StatusOK {
@@ -103,5 +115,43 @@ func TestCardDAVHTTP(t *testing.T) {
 	}
 	if !strings.Contains(getRec.Body.String(), "Test User") {
 		t.Errorf("GET body missing contact: %s", getRec.Body.String())
+	}
+}
+
+func TestCalDAVHTTP(t *testing.T) {
+	h := newDAVTestHandler(t)
+
+	// Unauthenticated DAV request is rejected.
+	req := httptest.NewRequest("PROPFIND", "/dav/caldav/username/", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("PROPFIND without auth = %d, want 401", rec.Code)
+	}
+
+	// PUT an iCalendar event.
+	ics := "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Mailfold//Test//EN\r\n" +
+		"BEGIN:VEVENT\r\nUID:e1\r\nDTSTAMP:20260702T090000Z\r\n" +
+		"DTSTART:20260702T100000Z\r\nDTEND:20260702T110000Z\r\nSUMMARY:Standup\r\n" +
+		"END:VEVENT\r\nEND:VCALENDAR\r\n"
+	put := httptest.NewRequest(http.MethodPut, "/dav/caldav/username/default/e1.ics", strings.NewReader(ics))
+	put.SetBasicAuth(davUser, davPass)
+	put.Header.Set("Content-Type", "text/calendar")
+	putRec := httptest.NewRecorder()
+	h.ServeHTTP(putRec, put)
+	if putRec.Code != http.StatusCreated && putRec.Code != http.StatusNoContent && putRec.Code != http.StatusOK {
+		t.Fatalf("PUT iCal = %d, body=%s", putRec.Code, putRec.Body.String())
+	}
+
+	// GET it back.
+	get := httptest.NewRequest(http.MethodGet, "/dav/caldav/username/default/e1.ics", nil)
+	get.SetBasicAuth(davUser, davPass)
+	getRec := httptest.NewRecorder()
+	h.ServeHTTP(getRec, get)
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("GET iCal = %d", getRec.Code)
+	}
+	if !strings.Contains(getRec.Body.String(), "Standup") {
+		t.Errorf("GET body missing event: %s", getRec.Body.String())
 	}
 }

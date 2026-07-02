@@ -3,70 +3,30 @@ package dav
 import (
 	"bytes"
 	"context"
-	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/emersion/go-vcard"
 	"github.com/emersion/go-webdav/carddav"
 )
 
-// errInvalidBookPath is returned when an address-book path cannot be parsed.
-var errInvalidBookPath = errors.New("invalid address book path")
-
-// ctxKey is the private type for the authenticated DAV user stored in context.
-type ctxKey struct{}
-
-var userKey ctxKey
-
-// WithUser returns a context carrying the authenticated DAV user (email).
-func WithUser(ctx context.Context, user string) context.Context {
-	return context.WithValue(ctx, userKey, user)
-}
-
-// userFrom extracts the authenticated user from the context.
-func userFrom(ctx context.Context) string {
-	u, _ := ctx.Value(userKey).(string)
-	return u
-}
-
 const defaultBookID = "default"
 
 // NewCardDAVHandler builds a CardDAV HTTP handler backed by the store. prefix is
 // the URL path the handler is mounted at (for example "/dav/carddav").
 func NewCardDAVHandler(store *Store, prefix string) *carddav.Handler {
-	return &carddav.Handler{Backend: &cardBackend{store: store, prefix: prefix}, Prefix: prefix}
+	return &carddav.Handler{Backend: &cardBackend{store: store, pathHelper: pathHelper{prefix: prefix}}, Prefix: prefix}
 }
 
 // cardBackend implements carddav.Backend on top of the SQLite store, scoping all
 // data to the authenticated user taken from the request context.
 type cardBackend struct {
-	store  *Store
-	prefix string
-}
-
-func (b *cardBackend) userHome(user string) string { return b.prefix + "/" + user + "/" }
-func (b *cardBackend) bookPath(user, id string) string {
-	return b.userHome(user) + id + "/"
-}
-func (b *cardBackend) objectPath(user, id, uid string) string {
-	return b.bookPath(user, id) + uid + ".vcf"
-}
-
-// relParts returns the path segments below the user's home collection. It
-// tolerates paths supplied either with or without the mount prefix.
-func (b *cardBackend) relParts(user, path string) []string {
-	p := strings.Trim(strings.TrimPrefix(path, b.prefix), "/")
-	p = strings.Trim(strings.TrimPrefix(p, user), "/")
-	if p == "" {
-		return nil
-	}
-	return strings.Split(p, "/")
+	store *Store
+	pathHelper
 }
 
 // CurrentUserPrincipal returns the principal URL for the authenticated user.
 func (b *cardBackend) CurrentUserPrincipal(ctx context.Context) (string, error) {
-	return b.prefix + "/principals/" + userFrom(ctx) + "/", nil
+	return b.principal(userFrom(ctx)), nil
 }
 
 // AddressBookHomeSetPath returns the collection holding the user's address books.
@@ -80,7 +40,7 @@ func (b *cardBackend) toAddressBook(user string, bk Book) carddav.AddressBook {
 		name = "Contacts"
 	}
 	return carddav.AddressBook{
-		Path:            b.bookPath(user, bk.ID),
+		Path:            b.collPath(user, bk.ID),
 		Name:            name,
 		Description:     bk.Description,
 		MaxResourceSize: 1 << 20,
@@ -107,11 +67,11 @@ func (b *cardBackend) ListAddressBooks(ctx context.Context) ([]carddav.AddressBo
 // GetAddressBook returns a single address book.
 func (b *cardBackend) GetAddressBook(ctx context.Context, path string) (*carddav.AddressBook, error) {
 	user := userFrom(ctx)
-	parts := b.relParts(user, path)
-	if len(parts) == 0 {
-		return nil, errInvalidBookPath
+	id, err := b.collID(user, path)
+	if err != nil {
+		return nil, err
 	}
-	bk, err := b.store.GetBook(user, parts[0])
+	bk, err := b.store.GetBook(user, id)
 	if err != nil || bk == nil {
 		return nil, err
 	}
@@ -122,21 +82,21 @@ func (b *cardBackend) GetAddressBook(ctx context.Context, path string) (*carddav
 // CreateAddressBook creates a new address book from the request.
 func (b *cardBackend) CreateAddressBook(ctx context.Context, ab *carddav.AddressBook) error {
 	user := userFrom(ctx)
-	parts := b.relParts(user, ab.Path)
-	if len(parts) == 0 {
-		return errInvalidBookPath
+	id, err := b.collID(user, ab.Path)
+	if err != nil {
+		return err
 	}
-	return b.store.CreateBook(user, Book{ID: parts[0], Name: ab.Name, Description: ab.Description})
+	return b.store.CreateBook(user, Book{ID: id, Name: ab.Name, Description: ab.Description})
 }
 
 // DeleteAddressBook removes an address book.
 func (b *cardBackend) DeleteAddressBook(ctx context.Context, path string) error {
 	user := userFrom(ctx)
-	parts := b.relParts(user, path)
-	if len(parts) == 0 {
-		return errInvalidBookPath
+	id, err := b.collID(user, path)
+	if err != nil {
+		return err
 	}
-	return b.store.DeleteBook(user, parts[0])
+	return b.store.DeleteBook(user, id)
 }
 
 func (b *cardBackend) toObject(user, bookID string, o Object) (carddav.AddressObject, error) {
@@ -145,7 +105,7 @@ func (b *cardBackend) toObject(user, bookID string, o Object) (carddav.AddressOb
 		return carddav.AddressObject{}, err
 	}
 	return carddav.AddressObject{
-		Path:          b.objectPath(user, bookID, o.UID),
+		Path:          b.objectPath(user, bookID, o.UID, ".vcf"),
 		ModTime:       o.Modified,
 		ContentLength: int64(len(o.Data)),
 		ETag:          o.ETag,
@@ -174,17 +134,17 @@ func (b *cardBackend) GetAddressObject(ctx context.Context, path string, _ *card
 // ListAddressObjects returns every object in an address book.
 func (b *cardBackend) ListAddressObjects(ctx context.Context, path string, _ *carddav.AddressDataRequest) ([]carddav.AddressObject, error) {
 	user := userFrom(ctx)
-	parts := b.relParts(user, path)
-	if len(parts) == 0 {
-		return nil, errInvalidBookPath
+	id, err := b.collID(user, path)
+	if err != nil {
+		return nil, err
 	}
-	objs, err := b.store.ListObjects(user, parts[0])
+	objs, err := b.store.ListObjects(user, id)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]carddav.AddressObject, 0, len(objs))
 	for _, o := range objs {
-		ao, err := b.toObject(user, parts[0], o)
+		ao, err := b.toObject(user, id, o)
 		if err != nil {
 			return nil, err
 		}
@@ -225,7 +185,7 @@ func (b *cardBackend) PutAddressObject(ctx context.Context, path string, card vc
 		return nil, err
 	}
 	ao := carddav.AddressObject{
-		Path:          b.objectPath(user, bookID, uid),
+		Path:          b.objectPath(user, bookID, uid, ".vcf"),
 		ModTime:       stored.Modified,
 		ContentLength: int64(len(stored.Data)),
 		ETag:          stored.ETag,
@@ -242,14 +202,4 @@ func (b *cardBackend) DeleteAddressObject(ctx context.Context, path string) erro
 		return err
 	}
 	return b.store.DeleteObject(user, bookID, uid)
-}
-
-// objectRef parses a vCard object path into its book id and object uid.
-func (b *cardBackend) objectRef(user, path string) (string, string, error) {
-	parts := b.relParts(user, path)
-	if len(parts) < 2 {
-		return "", "", fmt.Errorf("invalid address object path %q", path)
-	}
-	uid := strings.TrimSuffix(parts[len(parts)-1], ".vcf")
-	return parts[0], uid, nil
 }
