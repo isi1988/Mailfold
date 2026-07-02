@@ -224,8 +224,13 @@ func (s *Server) registerFrontend(mux *http.ServeMux) {
 		return
 	}
 
+	// Registered as the bare "/" catch-all (no method) rather than "GET /": every
+	// more specific route (the /api/* method-scoped handlers and the /dav/*
+	// subtree, which handles all WebDAV verbs) is more specific and so takes
+	// precedence, whereas "GET /" would conflict with the method-less /dav/
+	// patterns under Go 1.22's ServeMux precedence rules.
 	fileServer := http.FileServer(http.Dir(dir))
-	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		clean := filepath.Clean(r.URL.Path)
 		if _, err := os.Stat(filepath.Join(dir, clean)); os.IsNotExist(err) && !strings.HasPrefix(r.URL.Path, "/api/") {
 			http.ServeFile(w, r, filepath.Join(dir, "index.html"))
