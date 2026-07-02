@@ -18,6 +18,7 @@ import { SyncJobsPage } from '../pages/SyncJobsPage.jsx';
 import { LogsPage } from '../pages/LogsPage.jsx';
 import { SettingsPage } from '../pages/SettingsPage.jsx';
 import { WebmailPage } from '../pages/WebmailPage.jsx';
+import { ApiKeysPage } from '../pages/ApiKeysPage.jsx';
 
 // The authenticated application chrome: one AppShell (sidebar + top bar) with the
 // routed page content inside. Nav keys map directly to routes.
@@ -81,6 +82,7 @@ export function Shell() {
         <Route path="/syncjobs" element={<SyncJobsPage />} />
         <Route path="/logs" element={<LogsPage />} />
         <Route path="/webmail" element={<WebmailPage />} />
+        <Route path="/apikeys" element={<ApiKeysPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>

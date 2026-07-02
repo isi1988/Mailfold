@@ -37,7 +37,8 @@
       "flow": "Flow",
       "system": "System",
       "apps": "Apps"
-    }
+    },
+    "apikeys": "API keys"
   },
   "shell": {
     "role": "Administrator",
@@ -532,5 +533,58 @@
   "topbar": {
     "account": "Your account",
     "serverStatus": "{{server}} · operational"
+  },
+  "apikeys": {
+    "title": "API keys",
+    "sub": "Durable keys that let external apps send and collect mail over REST — without the mailbox password.",
+    "add": "New key",
+    "empty": "No API keys yet.",
+    "disabledTitle": "API keys are not enabled on this server.",
+    "disabledHint": "Set MAILFOLD_APIKEY_ENABLED and a master key to turn on machine-to-machine mail access.",
+    "neverUsed": "Never",
+    "active": "Active",
+    "revokedLabel": "Revoked",
+    "revoke": "Revoke",
+    "revoked": "Key “{label}” revoked.",
+    "failed": "Could not revoke the key.",
+    "revokeTitle": "Revoke API key",
+    "revokeMsg": "Revoke “{label}”? Apps using this key will immediately lose access, and its mail app-password is deleted.",
+    "col": {
+      "key": "Key",
+      "mailbox": "Mailbox",
+      "scopes": "Scopes",
+      "lastUsed": "Last used",
+      "status": "Status"
+    },
+    "scope": {
+      "send": "Send",
+      "read": "Read",
+      "write": "Write"
+    },
+    "scopeHint": {
+      "send": "send mail as the mailbox",
+      "read": "read folders and messages",
+      "write": "flag and delete messages"
+    },
+    "form": {
+      "newTitle": "New API key",
+      "mailbox": "Mailbox",
+      "label": "Label",
+      "labelPlaceholder": "e.g. CRM integration",
+      "scopes": "Scopes",
+      "expiry": "Expires in (days)",
+      "expiryHint": "0 = never expires.",
+      "create": "Create key",
+      "creating": "Creating…",
+      "invalid": "Enter a mailbox and choose at least one scope.",
+      "failed": "Could not create the key.",
+      "createdTitle": "API key created",
+      "onceWarning": "Copy this token now — it is shown once and cannot be retrieved again.",
+      "token": "Token",
+      "copy": "Copy token",
+      "copied": "Token copied.",
+      "done": "Done",
+      "usageHint": "Use it as a bearer token: Authorization: Bearer <token> against /api/v1/mail/*."
+    }
   }
 }

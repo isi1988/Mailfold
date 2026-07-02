@@ -17,10 +17,11 @@ export const NAV = [
   { key: 'settings' },
   { group: 'apps' },
   { key: 'webmail' },
+  { key: 'apikeys' },
 ];
 
 // Route keys that render inside the standard content area.
 export const PAGE_KEYS = [
   'dashboard', 'mailboxes', 'domains', 'aliases', 'queue',
-  'quarantine', 'spam', 'syncjobs', 'logs', 'webmail', 'settings',
+  'quarantine', 'spam', 'syncjobs', 'logs', 'webmail', 'settings', 'apikeys',
 ];
