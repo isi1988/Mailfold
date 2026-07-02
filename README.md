@@ -2,6 +2,8 @@
 
 A modern web frontend (admin panel + webmail) for [mailcow-dockerized](https://github.com/mailcow/mailcow-dockerized).
 
+**Website:** [mailfold.site](https://mailfold.site)
+
 **Mailfold** — the name plays on two meanings: a *fold* is both the crease of a letter (mail) and an enclosure for livestock, nodding to mailcow's cattle branding and the "herd" of domains and mailboxes the panel manages.
 
 ## Stack
@@ -62,4 +64,16 @@ The UI is being built from a dedicated design project and will live in
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Mailfold is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE).
+
+You are free to **use, modify, and share** Mailfold for **any noncommercial
+purpose** — personal projects, research, education, nonprofits, and evaluation.
+Contributions that keep the project growing are welcome. **Commercial use is not
+permitted** under this license.
+
+Commercial licenses — including the right to use Mailfold in a paid product or
+service, or to redistribute it commercially — are available separately from the
+copyright holder. See [mailfold.site](https://mailfold.site).
+
+Copyright © 2026 Sviatoslav Ivanov (Team26). All rights not expressly granted by
+the license are reserved.
