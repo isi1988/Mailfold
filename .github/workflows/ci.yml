@@ -71,14 +71,32 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
 
+      # Poll the compute-engine task from the scan, then assert the project's
+      # quality gate is green. Implemented inline (rather than via the official
+      # action) so it can retry through transient API hiccups on the server.
       - name: SonarQube quality gate
-        uses: sonarsource/sonarqube-quality-gate-action@v1
-        timeout-minutes: 5
-        with:
-          scanMetadataReportFile: backend/.scannerwork/report-task.txt
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+        run: |
+          report=backend/.scannerwork/report-task.txt
+          ceTaskId=$(grep '^ceTaskId=' "$report" | cut -d= -f2)
+          echo "CE task: $ceTaskId"
+          analysisId=""
+          for i in $(seq 1 30); do
+            resp=$(curl -sS -u "$SONAR_TOKEN:" "$SONAR_HOST_URL/api/ce/task?id=$ceTaskId" || true)
+            status=$(printf '%s' "$resp" | python3 -c 'import sys,json;print(json.load(sys.stdin)["task"]["status"])' 2>/dev/null || echo PENDING)
+            echo "attempt $i: status=$status"
+            case "$status" in
+              SUCCESS) analysisId=$(printf '%s' "$resp" | python3 -c 'import sys,json;print(json.load(sys.stdin)["task"].get("analysisId",""))') ; break ;;
+              FAILED|CANCELED) echo "::error::analysis $status"; exit 1 ;;
+            esac
+            sleep 5
+          done
+          if [ -z "$analysisId" ]; then echo "::error::analysis did not finish in time"; exit 1; fi
+          gate=$(curl -sS -u "$SONAR_TOKEN:" "$SONAR_HOST_URL/api/qualitygates/project_status?analysisId=$analysisId" | python3 -c 'import sys,json;print(json.load(sys.stdin)["projectStatus"]["status"])')
+          echo "Quality gate: $gate"
+          [ "$gate" = "OK" ] || { echo "::error::quality gate is $gate"; exit 1; }
 
   lint:
     name: golangci-lint
