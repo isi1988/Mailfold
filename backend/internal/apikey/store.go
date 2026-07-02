@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/isi1988/Mailfold/backend/internal/storage"
+	"github.com/isi1988/Mailfold/backend/storage"
 )
 
 // Record is one stored API key. The secret columns (TokenSHA256, SecretEnc,

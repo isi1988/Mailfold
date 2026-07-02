@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/isi1988/Mailfold/backend/internal/storage"
+	"github.com/isi1988/Mailfold/backend/storage"
 )
 
 // Book is a stored collection (an address book or a calendar).
