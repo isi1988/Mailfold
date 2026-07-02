@@ -54,6 +54,24 @@ const q = params =>
     .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
     .join('&');
 
+// downloadAttachment fetches an attachment with the webmail token (a plain link
+// cannot send the Authorization header) and triggers a browser download.
+export async function downloadAttachment(folder, uid, index, filename) {
+  const res = await fetch('/api/webmail/attachment?' + q({ folder, uid, index }), {
+    headers: { Authorization: 'Bearer ' + getWebmailToken() },
+  });
+  if (!res.ok) throw new Error('download failed');
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename || 'attachment';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export const wm = {
   // login/logout do not persist the token themselves — the auth context does.
   login: (email, password) => req('POST', '/api/webmail/login', { email, password }),

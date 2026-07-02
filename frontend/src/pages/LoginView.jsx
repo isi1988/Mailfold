@@ -5,6 +5,7 @@ import { Label } from '../ds/components/atoms/Label.jsx';
 import { Button } from '../ds/components/atoms/Button.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { useWebmailAuth } from '../auth/WebmailAuthContext.jsx';
+import { PasswordField } from '../components/PasswordField.jsx';
 import { api } from '../api/client.js';
 import { wm } from '../api/webmail.js';
 import { useT } from '../i18n/index.jsx';
@@ -102,7 +103,7 @@ export function LoginView() {
               <div className="mf-row" style={{ marginBottom: 7 }}>
                 <Label strong style={{ marginBottom: 0 }}>{t('login.password')}</Label>
               </div>
-              <Input size="lg" type="password" placeholder="••••••••••" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} />
+              <PasswordField value={password} onChange={e => setPassword(e.target.value)} />
             </div>
             {error && <div className="mf-u-danger" style={{ marginTop: 14, fontSize: 13 }} role="alert">{error}</div>}
             <Button variant="primary" block size="lg" type="submit" disabled={busy} style={{ marginTop: 22 }}>

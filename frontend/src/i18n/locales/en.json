@@ -63,6 +63,8 @@
     "reply": "Reply",
     "star": "Star",
     "unstar": "Unstar",
+    "archive": "Archive",
+    "archived": "Message archived",
     "delete": "Delete",
     "attachments_one": "{{count}} attachment",
     "attachments_other": "{{count}} attachments",

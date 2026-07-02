@@ -11,9 +11,42 @@ A modern web frontend (admin panel + webmail) for [mailcow-dockerized](https://g
 ## Stack
 
 - **Backend:** Go — a thin, typed API layer on top of the mailcow REST API.
-- **Frontend:** React — UI is delivered from a separate design project (WIP).
+- **Frontend:** React (Vite) — an admin panel and a built-in webmail client,
+  served by the backend as a single-page app.
 
 All code and documentation are written in English.
+
+## Features
+
+**Admin panel** — run the whole mailcow server from one calm UI: a live
+dashboard (container health, storage, mail queue), mailboxes (create / edit /
+delete with quotas and passwords via a slide-over drawer), domains, aliases, the
+mail queue, quarantine, the spam policy (per-domain allow / block lists),
+IMAP/POP sync jobs, per-service logs and settings (theme, accent, language).
+
+**Webmail** — a built-in three-pane webmail client (folders · message list ·
+reader) with compose, reply, star, archive, delete and attachment download, so
+end users read and send mail without a separate client.
+
+**One unified login** — a single sign-in screen checks the credentials against
+*both* the admin login and a mailbox (webmail) login in parallel: whoever you
+are, it takes you to the right place, and if you have access to both it simply
+asks which one to open. A mailbox-only user gets a clean standalone webmail; an
+admin gets the full panel.
+
+**API keys — drive your mailbox from other apps.** Issue durable, individually
+revocable API keys so any third-party service can **send and collect mail** for a
+mailbox over a simple REST API — without ever handling the mailbox password. It
+is far simpler to wire Mailfold into external applications, scripts and
+automations this way than to speak raw IMAP/SMTP yourself. See
+[API keys](#api-keys-send--collect-mail-from-other-services).
+
+**Groupware** — self-hosted CardDAV and CalDAV (contacts, calendars, tasks), so
+clients sync without SOGo.
+
+**Built for internationalisation** — every user-facing string goes through a
+translation layer; the UI ships in English today, and adding a language is a
+single drop-in locale file.
 
 ## Architecture
 

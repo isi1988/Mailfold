@@ -5,6 +5,7 @@ import { SearchInput } from '../ds/components/molecules/SearchInput.jsx';
 import { FormField } from '../ds/components/molecules/FormField.jsx';
 import { Drawer } from '../ds/components/organisms/Drawer.jsx';
 import { Input } from '../ds/components/atoms/Input.jsx';
+import { PasswordField } from '../components/PasswordField.jsx';
 import { Textarea } from '../ds/components/atoms/Textarea.jsx';
 import { Label } from '../ds/components/atoms/Label.jsx';
 import { Button } from '../ds/components/atoms/Button.jsx';
@@ -14,7 +15,7 @@ import { initials } from '../ds/data/sample.js';
 import { useWebmailAuth } from '../auth/WebmailAuthContext.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { useT } from '../i18n/index.jsx';
-import { wm } from '../api/webmail.js';
+import { wm, downloadAttachment } from '../api/webmail.js';
 import { Loading, ErrorState, Empty } from '../components/States.jsx';
 
 const FOLDER_ICON = { inbox: 'inbox', sent: 'send', drafts: 'drafts', archive: 'archive', junk: 'shield', spam: 'shield', trash: 'trash' };
@@ -66,7 +67,7 @@ function WebmailLogin() {
           <Input size="lg" placeholder="you@example.com" autoComplete="username" value={email} onChange={e => setEmail(e.target.value)} />
         </FormField>
         <FormField label={t('webmail.password')}>
-          <Input size="lg" type="password" placeholder="••••••••" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} />
+          <PasswordField value={password} onChange={e => setPassword(e.target.value)} />
         </FormField>
         {error && <div className="mf-u-danger" style={{ fontSize: 13, marginBottom: 10 }} role="alert">{error}</div>}
         <Button variant="primary" block size="lg" type="submit" disabled={busy}>{busy ? t('webmail.signingIn') : t('webmail.signIn')}</Button>
@@ -75,13 +76,14 @@ function WebmailLogin() {
   );
 }
 
-// Compose slide-over wired to POST /api/webmail/send.
-function ComposeDrawer({ onClose, onSent }) {
+// Compose slide-over wired to POST /api/webmail/send. `initial` prefills the
+// fields for a reply.
+function ComposeDrawer({ onClose, onSent, initial = {} }) {
   const t = useT();
   const { toast } = useToast();
-  const [to, setTo] = useState('');
-  const [subject, setSubject] = useState('');
-  const [text, setText] = useState('');
+  const [to, setTo] = useState(initial.to || '');
+  const [subject, setSubject] = useState(initial.subject || '');
+  const [text, setText] = useState(initial.text || '');
   const [busy, setBusy] = useState(false);
 
   async function send() {
@@ -202,6 +204,24 @@ function WebmailClient() {
     }
   }
 
+  async function archive(m) {
+    try {
+      await wm.move(folder, m.uid, 'Archive');
+      setMessages(list => list.filter(x => x.uid !== m.uid));
+      if (selected && selected.uid === m.uid) { setSelected(null); setBody(null); }
+      toast(t('webmail.archived'));
+    } catch (err) {
+      toast(t('webmail.actionFailed'), (err && err.message) || '');
+    }
+  }
+
+  function reply(m) {
+    const sender = m.from && m.from[0] ? m.from[0].email : '';
+    const subj = m.subject || '';
+    const quote = body && body.text ? '\n\n> ' + body.text.split('\n').join('\n> ') : '';
+    setComposing({ to: sender, subject: subj.startsWith('Re:') ? subj : 'Re: ' + subj, text: quote });
+  }
+
   const filtered = q
     ? messages.filter(m => (addrLabel(m.from) + ' ' + (m.subject || '')).toLowerCase().includes(q.toLowerCase()))
     : messages;
@@ -258,7 +278,9 @@ function WebmailClient() {
               <div className="mf-row mf-row--between">
                 <div className="mf-page-head__title" style={{ fontSize: 20 }}>{selected.subject || t('webmail.noSubject')}</div>
                 <div className="mf-row" style={{ gap: 4 }}>
+                  <Button variant="secondary" size="sm" onClick={() => reply(selected)}>{t('webmail.reply')}</Button>
                   <Button variant="ghost" size="sm" onClick={e => toggleStar(selected, e)} title={t('webmail.star')}><Icon name="star" size={15} style={{ color: hasFlag(selected.flags, '\\Flagged') ? 'var(--amber)' : 'var(--faint)' }} /></Button>
+                  <Button variant="ghost" size="sm" onClick={() => archive(selected)} title={t('webmail.archive')}><Icon name="archive" size={15} /></Button>
                   <Button variant="ghost" size="sm" onClick={() => del(selected)} title={t('webmail.delete')}><Icon name="trash" size={15} /></Button>
                 </div>
               </div>
@@ -275,8 +297,16 @@ function WebmailClient() {
               {body === null ? <Loading message={t('webmail.loadingMessage')} />
                 : <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', font: '14px/1.6 var(--font-sans)', color: 'var(--ink)', margin: 0 }}>{body.text || (body.html ? body.html.replace(/<[^>]+>/g, ' ') : '')}</pre>}
               {body && Array.isArray(body.attachments) && body.attachments.length > 0 && (
-                <div className="mf-u-muted" style={{ fontSize: 12.5, marginTop: 16 }}>
-                  {t('webmail.attachments', { count: body.attachments.length })}: {body.attachments.map(a => a.filename).join(', ')}
+                <div style={{ marginTop: 18, borderTop: '1px solid var(--hair)', paddingTop: 14 }}>
+                  <div className="mf-u-muted" style={{ fontSize: 12, marginBottom: 8 }}>{t('webmail.attachments', { count: body.attachments.length })}</div>
+                  <div className="mf-row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                    {body.attachments.map((a, i) => (
+                      <Button key={i} variant="secondary" size="sm"
+                        onClick={() => downloadAttachment(folder, selected.uid, i, a.filename).catch(err => toast(t('webmail.actionFailed'), err.message))}>
+                        <Icon name="download" size={13} style={{ marginRight: 6 }} />{a.filename || ('attachment-' + i)}
+                      </Button>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -284,7 +314,13 @@ function WebmailClient() {
         )}
       </div>
 
-      {composing && <ComposeDrawer onClose={() => setComposing(false)} onSent={() => loadMessages(folder)} />}
+      {composing && (
+        <ComposeDrawer
+          initial={typeof composing === 'object' ? composing : {}}
+          onClose={() => setComposing(false)}
+          onSent={() => loadMessages(folder)}
+        />
+      )}
     </div>
   );
 }
