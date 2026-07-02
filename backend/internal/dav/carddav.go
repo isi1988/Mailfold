@@ -3,12 +3,16 @@ package dav
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/emersion/go-vcard"
 	"github.com/emersion/go-webdav/carddav"
 )
+
+// errInvalidBookPath is returned when an address-book path cannot be parsed.
+var errInvalidBookPath = errors.New("invalid address book path")
 
 // ctxKey is the private type for the authenticated DAV user stored in context.
 type ctxKey struct{}
@@ -105,7 +109,7 @@ func (b *cardBackend) GetAddressBook(ctx context.Context, path string) (*carddav
 	user := userFrom(ctx)
 	parts := b.relParts(user, path)
 	if len(parts) == 0 {
-		return nil, fmt.Errorf("invalid address book path")
+		return nil, errInvalidBookPath
 	}
 	bk, err := b.store.GetBook(user, parts[0])
 	if err != nil || bk == nil {
@@ -120,7 +124,7 @@ func (b *cardBackend) CreateAddressBook(ctx context.Context, ab *carddav.Address
 	user := userFrom(ctx)
 	parts := b.relParts(user, ab.Path)
 	if len(parts) == 0 {
-		return fmt.Errorf("invalid address book path")
+		return errInvalidBookPath
 	}
 	return b.store.CreateBook(user, Book{ID: parts[0], Name: ab.Name, Description: ab.Description})
 }
@@ -130,7 +134,7 @@ func (b *cardBackend) DeleteAddressBook(ctx context.Context, path string) error 
 	user := userFrom(ctx)
 	parts := b.relParts(user, path)
 	if len(parts) == 0 {
-		return fmt.Errorf("invalid address book path")
+		return errInvalidBookPath
 	}
 	return b.store.DeleteBook(user, parts[0])
 }
@@ -172,7 +176,7 @@ func (b *cardBackend) ListAddressObjects(ctx context.Context, path string, _ *ca
 	user := userFrom(ctx)
 	parts := b.relParts(user, path)
 	if len(parts) == 0 {
-		return nil, fmt.Errorf("invalid address book path")
+		return nil, errInvalidBookPath
 	}
 	objs, err := b.store.ListObjects(user, parts[0])
 	if err != nil {
