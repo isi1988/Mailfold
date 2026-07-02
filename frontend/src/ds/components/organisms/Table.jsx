@@ -22,12 +22,15 @@ export function Table({ columns = [], className = '', children, ...rest }) {
 }
 
 /** A row that inherits the parent Table's column template. */
-export function TableRow({ onClick, plain = false, className = '', children, ...rest }) {
+export function TableRow({ onClick, plain = false, className = '', style, children, ...rest }) {
   const template = React.useContext(TableCtx);
+  // Merge any caller-supplied style on top of the column template instead of
+  // letting a `style` in ...rest overwrite it, so passing e.g.
+  // style={{ cursor: 'pointer' }} does not drop the grid columns.
   return (
     <div
       className={cx('mf-table__row', plain && 'mf-table__row--static', className)}
-      style={{ gridTemplateColumns: template }}
+      style={{ gridTemplateColumns: template, ...style }}
       onClick={onClick}
       {...rest}
     >

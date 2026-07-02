@@ -4,9 +4,11 @@ import { Card } from '../ds/components/molecules/Card.jsx';
 import { FormField } from '../ds/components/molecules/FormField.jsx';
 import { ToggleRow } from '../ds/components/molecules/ToggleRow.jsx';
 import { Input } from '../ds/components/atoms/Input.jsx';
+import { Textarea } from '../ds/components/atoms/Textarea.jsx';
 import { Button } from '../ds/components/atoms/Button.jsx';
 import { Segmented } from '../ds/components/atoms/Segmented.jsx';
 import { useApi } from '../lib/useApi.js';
+import { api } from '../api/client.js';
 import { AsyncView } from '../components/States.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { useT, useI18n } from '../i18n/index.jsx';
@@ -35,6 +37,133 @@ function fmtExpiry(iso) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return String(iso);
   return d.toLocaleString();
+}
+
+// mailcow's /get/fail2ban returns whitelist/blacklist as newline-separated text
+// (older releases) or as an array; normalise either into a textarea-friendly
+// string. Editing sends the text straight back — mailcow accepts newline or
+// comma separated entries.
+function listToText(v) {
+  if (Array.isArray(v)) return v.join('\n');
+  if (v == null) return '';
+  return String(v);
+}
+
+// Coerce a form field to a number for numeric mailcow tunables, tolerating an
+// empty string (left untouched) by returning undefined so it is omitted.
+function numOrUndef(v) {
+  if (v === '' || v == null) return undefined;
+  const n = Number(v);
+  return Number.isNaN(n) ? undefined : n;
+}
+
+// Fail2BanSection reads the current fail2ban configuration and lets the operator
+// edit the core tunables plus the whitelist/blacklist, saving via PUT.
+function Fail2BanSection({ t }) {
+  const { toast } = useToast();
+  const f2b = useApi('/api/fail2ban', []);
+  const [form, setForm] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  // Hydrate the local form once the raw config arrives, mapping mailcow's field
+  // names into editable strings.
+  React.useEffect(() => {
+    const d = f2b.data;
+    if (!d) return;
+    setForm({
+      ban_time: d.ban_time != null ? String(d.ban_time) : '',
+      max_attempts: d.max_attempts != null ? String(d.max_attempts) : '',
+      retry_window: d.retry_window != null ? String(d.retry_window) : '',
+      netban_ipv4: d.netban_ipv4 != null ? String(d.netban_ipv4) : '',
+      netban_ipv6: d.netban_ipv6 != null ? String(d.netban_ipv6) : '',
+      whitelist: listToText(d.whitelist),
+      blacklist: listToText(d.blacklist),
+    });
+  }, [f2b.data]);
+
+  const set = (k, v) => setForm(prev => ({ ...(prev || {}), [k]: v }));
+
+  // Count of live bans, if mailcow reports them, for a small read-only summary.
+  const activeBans = f2b.data && f2b.data.active_bans;
+  const activeCount = Array.isArray(activeBans) ? activeBans.length : undefined;
+
+  async function save() {
+    if (!form) return;
+    setSaving(true);
+    try {
+      const attr = {
+        ban_time: numOrUndef(form.ban_time),
+        max_attempts: numOrUndef(form.max_attempts),
+        retry_window: numOrUndef(form.retry_window),
+        netban_ipv4: numOrUndef(form.netban_ipv4),
+        netban_ipv6: numOrUndef(form.netban_ipv6),
+        whitelist: form.whitelist,
+        blacklist: form.blacklist,
+      };
+      await api.put('/api/fail2ban', attr);
+      toast(t('settings.fail2ban.saved'));
+      f2b.reload();
+    } catch (err) {
+      toast(t('settings.fail2ban.saveFailed'), (err && err.message) || '');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card pad>
+      <div className="mf-card__title" style={{ marginBottom: 4 }}>{t('settings.fail2ban.title')}</div>
+      <div className="mf-u-faint" style={{ fontSize: 12, marginBottom: 16 }}>{t('settings.fail2ban.desc')}</div>
+      <AsyncView loading={f2b.loading} error={f2b.error} reload={f2b.reload}>
+        {form && (
+          <>
+            {activeCount != null && (
+              <div className="mf-u-faint" style={{ fontSize: 12, marginBottom: 14 }}>
+                {t('settings.fail2ban.activeBans', { count: activeCount })}
+              </div>
+            )}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+              <FormField label={t('settings.fail2ban.banTime')}>
+                <Input type="number" align="right" value={form.ban_time} onChange={e => set('ban_time', e.target.value)} />
+                <div className="mf-u-faint" style={{ fontSize: 11, marginTop: 5 }}>{t('settings.fail2ban.banTimeHint')}</div>
+              </FormField>
+              <FormField label={t('settings.fail2ban.maxAttempts')}>
+                <Input type="number" align="right" value={form.max_attempts} onChange={e => set('max_attempts', e.target.value)} />
+                <div className="mf-u-faint" style={{ fontSize: 11, marginTop: 5 }}>{t('settings.fail2ban.maxAttemptsHint')}</div>
+              </FormField>
+              <FormField label={t('settings.fail2ban.retryWindow')}>
+                <Input type="number" align="right" value={form.retry_window} onChange={e => set('retry_window', e.target.value)} />
+                <div className="mf-u-faint" style={{ fontSize: 11, marginTop: 5 }}>{t('settings.fail2ban.retryWindowHint')}</div>
+              </FormField>
+              <FormField label={t('settings.fail2ban.netbanIpv4')}>
+                <Input type="number" align="right" value={form.netban_ipv4} onChange={e => set('netban_ipv4', e.target.value)} />
+                <div className="mf-u-faint" style={{ fontSize: 11, marginTop: 5 }}>{t('settings.fail2ban.netbanIpv4Hint')}</div>
+              </FormField>
+              <FormField label={t('settings.fail2ban.netbanIpv6')}>
+                <Input type="number" align="right" value={form.netban_ipv6} onChange={e => set('netban_ipv6', e.target.value)} />
+                <div className="mf-u-faint" style={{ fontSize: 11, marginTop: 5 }}>{t('settings.fail2ban.netbanIpv6Hint')}</div>
+              </FormField>
+            </div>
+            <div style={{ height: 14 }} />
+            <FormField label={t('settings.fail2ban.whitelist')}>
+              <Textarea rows={4} value={form.whitelist} onChange={e => set('whitelist', e.target.value)} />
+              <div className="mf-u-faint" style={{ fontSize: 11, marginTop: 5 }}>{t('settings.fail2ban.listHint')}</div>
+            </FormField>
+            <div style={{ height: 14 }} />
+            <FormField label={t('settings.fail2ban.blacklist')}>
+              <Textarea rows={4} value={form.blacklist} onChange={e => set('blacklist', e.target.value)} />
+              <div className="mf-u-faint" style={{ fontSize: 11, marginTop: 5 }}>{t('settings.fail2ban.listHint')}</div>
+            </FormField>
+            <div className="mf-row" style={{ justifyContent: 'flex-end', marginTop: 16 }}>
+              <Button variant="primary" size="sm" onClick={save} disabled={saving}>
+                {saving ? t('settings.fail2ban.saving') : t('settings.fail2ban.save')}
+              </Button>
+            </div>
+          </>
+        )}
+      </AsyncView>
+    </Card>
+  );
 }
 
 export function SettingsPage() {
@@ -177,6 +306,9 @@ export function SettingsPage() {
             />
           </AsyncView>
         </Card>
+
+        {/* Fail2Ban — intrusion-prevention config, bound to /api/fail2ban. */}
+        <Fail2BanSection t={t} />
 
         {/* Sign out — ends the local session via AuthContext. */}
         <Card pad>

@@ -12,7 +12,8 @@
     "disabled": "disabled",
     "inactive": "inactive",
     "docs": "Docs",
-    "showing": "Showing {{from}}–{{to}} of {{total}}"
+    "showing": "Showing {{from}}–{{to}} of {{total}}",
+    "add": "Add"
   },
   "states": {
     "loading": "Loading…",
@@ -117,7 +118,8 @@
       "domain": "Domain",
       "quota": "Quota",
       "messages": "Messages",
-      "status": "Status"
+      "status": "Status",
+      "lastLogin": "Last login"
     },
     "empty": "No mailboxes yet.",
     "emptyFilter": "No mailboxes match your filter.",
@@ -143,6 +145,57 @@
       "failed": "Action failed",
       "deleteTitle": "Delete mailbox?",
       "deleteMsg": "{{mailbox}} and all its mail will be permanently removed. This cannot be undone."
+    },
+    "appPw": {
+      "added": "App password created.",
+      "empty": "No app passwords yet.",
+      "failed": "Could not update app passwords.",
+      "hint": "Per-app credentials so a mail client can sign in without the main password. Revoke one without touching the others.",
+      "invalid": "Enter a name and a password of at least 8 characters.",
+      "namePlaceholder": "Name (e.g. Phone)",
+      "pwPlaceholder": "Password",
+      "removed": "App password removed.",
+      "title": "App passwords",
+      "unnamed": "Untitled"
+    },
+    "filters": {
+      "added": "Filter added.",
+      "descPlaceholder": "Description",
+      "empty": "No filters yet.",
+      "failed": "Could not update filters.",
+      "hint": "Server-side rules applied to incoming mail.",
+      "invalid": "Enter a Sieve script.",
+      "removed": "Filter removed.",
+      "scriptPlaceholder": "Sieve script…",
+      "title": "Sieve filters",
+      "typePost": "After filters",
+      "typePre": "Before filters",
+      "unnamed": "Untitled filter"
+    },
+    "neverLoggedIn": "Never",
+    "rl": {
+      "failed": "Could not save the rate limit.",
+      "frame": "Per",
+      "hint": "Caps how many messages this mailbox may send within a window.",
+      "perDay": "Day",
+      "perHour": "Hour",
+      "perMinute": "Minute",
+      "perSecond": "Second",
+      "saved": "Rate limit saved.",
+      "title": "Rate limit",
+      "value": "Messages"
+    },
+    "tempAlias": {
+      "add": "Generate alias",
+      "added": "Temporary alias created.",
+      "empty": "No temporary aliases yet.",
+      "failed": "Could not update temporary aliases.",
+      "hint": "Short-lived throwaway addresses that forward to this mailbox.",
+      "removed": "Temporary alias removed.",
+      "title": "Temporary aliases"
+    },
+    "usage": {
+      "label": "{percent}% used"
     }
   },
   "domains": {
@@ -177,6 +230,35 @@
       "failed": "Action failed",
       "deleteTitle": "Delete domain?",
       "deleteMsg": "{{domain}} and all its mailboxes and aliases will be permanently removed. This cannot be undone."
+    },
+    "dkim": {
+      "copied": "DKIM record copied",
+      "copy": "Copy record",
+      "deleted": "DKIM key removed for {domain}",
+      "failed": "DKIM operation failed",
+      "generate": "Generate key",
+      "generated": "DKIM key generated for {domain}",
+      "generating": "Generating…",
+      "keyInfo": "{selector} · {length}-bit",
+      "keySize": "Key size",
+      "none": "No DKIM key yet. Generate one and publish the DNS record to sign outgoing mail.",
+      "rotate": "Delete / rotate key",
+      "title": "DKIM signing",
+      "txtRecord": "DNS TXT record"
+    },
+    "rl": {
+      "day": "Day",
+      "failed": "Could not update rate limit",
+      "hint": "Caps how much outbound mail the whole domain may send in a window.",
+      "hour": "Hour",
+      "messages": "Messages",
+      "minute": "Minute",
+      "per": "Per",
+      "saved": "Rate limit updated for {domain}",
+      "saving": "Saving…",
+      "second": "Second",
+      "title": "Send rate limit",
+      "unlimited": "Unlimited"
     }
   },
   "aliases": {
@@ -423,6 +505,32 @@
       "title": "Sign out",
       "desc": "End this admin session on this device",
       "cta": "Sign out"
+    },
+    "fail2ban": {
+      "activeBans": "{count} network(s) currently banned.",
+      "banTime": "Ban time",
+      "banTimeHint": "Seconds a network stays banned after too many failures.",
+      "blacklist": "Blacklist",
+      "desc": "Intrusion prevention. Configure how failed logins are throttled and which networks are always allowed or blocked.",
+      "listHint": "One network per line, or comma separated.",
+      "maxAttempts": "Max attempts",
+      "maxAttemptsHint": "Failed logins allowed before a network is banned.",
+      "netbanIpv4": "Netban IPv4",
+      "netbanIpv4Hint": "Subnet prefix length banned for IPv4 (e.g. 32).",
+      "netbanIpv6": "Netban IPv6",
+      "netbanIpv6Hint": "Subnet prefix length banned for IPv6 (e.g. 128).",
+      "retryWindow": "Retry window",
+      "retryWindowHint": "Seconds over which failed attempts are counted.",
+      "save": "Save",
+      "saveFailed": "Could not save Fail2Ban settings.",
+      "saved": "Fail2Ban settings saved.",
+      "saving": "Saving…",
+      "title": "Fail2Ban",
+      "whitelist": "Whitelist"
     }
+  },
+  "topbar": {
+    "account": "Your account",
+    "serverStatus": "{{server}} · operational"
   }
 }

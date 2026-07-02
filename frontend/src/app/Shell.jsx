@@ -6,6 +6,7 @@ import { useAuth } from '../auth/AuthContext.jsx';
 import { getTheme, applyTheme } from './theme.js';
 import { initials } from '../ds/data/sample.js';
 import { useT } from '../i18n/index.jsx';
+import { useApi } from '../lib/useApi.js';
 import { MailboxesPage } from '../pages/MailboxesPage.jsx';
 import { DomainsPage } from '../pages/DomainsPage.jsx';
 import { AliasesPage } from '../pages/AliasesPage.jsx';
@@ -26,6 +27,8 @@ export function Shell() {
   const { user, logout } = useAuth();
   const t = useT();
   const [theme, setTheme] = useState(getTheme());
+  const { data: serverStatus } = useApi('/api/status/server');
+  const serverName = (serverStatus && serverStatus.name) || '';
 
   useEffect(() => {
     applyTheme(theme);
@@ -55,6 +58,9 @@ export function Shell() {
       current={current}
       theme={theme}
       account={account}
+      server={serverName}
+      serverStatusLabel={name => t('topbar.serverStatus', { server: name })}
+      accountLabel={t('topbar.account')}
       wide={wide}
       searchPlaceholder={t('shell.searchPlaceholder')}
       themeOptions={themeOptions}

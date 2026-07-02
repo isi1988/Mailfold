@@ -14,7 +14,7 @@ import { useApi } from '../lib/useApi.js';
 import { api } from '../api/client.js';
 import { AsyncView } from '../components/States.jsx';
 import { useToast } from '../components/Toast.jsx';
-import { isActive, humanKB, asList } from '../lib/format.js';
+import { isActive, human, asList } from '../lib/format.js';
 import { useT } from '../i18n/index.jsx';
 import { MailboxDrawer } from './MailboxDrawer.jsx';
 
@@ -26,6 +26,22 @@ const TABS = [
 ];
 
 const PAGE_SIZE = 20;
+
+// lastLogin returns the most recent of the three protocol login timestamps
+// (unix seconds), or 0 when the mailbox has never been used.
+function lastLogin(m) {
+  return Math.max(
+    Number(m.last_imap_login) || 0,
+    Number(m.last_smtp_login) || 0,
+    Number(m.last_pop3_login) || 0,
+  );
+}
+
+// clampPct keeps a usage percentage inside the 0–100 range for the bar width.
+function clampPct(v) {
+  const n = Number(v) || 0;
+  return Math.max(0, Math.min(100, n));
+}
 
 export function MailboxesPage() {
   const t = useT();
@@ -53,8 +69,9 @@ export function MailboxesPage() {
   const cols = [
     { label: t('mailboxes.col.mailbox'), w: '2.3fr' },
     { label: t('mailboxes.col.domain'), w: '1fr' },
-    { label: t('mailboxes.col.quota'), w: '1.1fr' },
-    { label: t('mailboxes.col.messages'), w: '1fr' },
+    { label: t('mailboxes.col.quota'), w: '1.6fr' },
+    { label: t('mailboxes.col.messages'), w: '.8fr' },
+    { label: t('mailboxes.col.lastLogin'), w: '1fr' },
     { label: t('mailboxes.col.status'), w: '.9fr' },
     { label: '', w: '18px' },
   ];
@@ -116,8 +133,34 @@ export function MailboxesPage() {
                 </div>
               </div>
               <span className="mf-u-muted" style={{ fontSize: 13 }}>{m.domain}</span>
-              <span className="mf-u-faint mf-u-mono" style={{ fontSize: 12.5 }}>{humanKB(m.quota)}</span>
+              {(() => {
+                const pct = clampPct(m.percent_in_use);
+                const unlimited = (Number(m.quota) || 0) <= 0;
+                return (
+                  <div style={{ minWidth: 0 }}>
+                    <div className="mf-u-faint mf-u-mono mf-truncate" style={{ fontSize: 12.5 }}>
+                      {human(m.quota_used)} / {unlimited ? '∞' : human(m.quota)}
+                    </div>
+                    {!unlimited && (
+                      <div
+                        aria-label={t('mailboxes.usage.label', { percent: Math.round(pct) })}
+                        style={{ marginTop: 5, height: 4, borderRadius: 3, background: 'var(--track, rgba(127,127,127,.18))', overflow: 'hidden' }}
+                      >
+                        <div style={{ width: pct + '%', height: '100%', borderRadius: 3, background: pct > 90 ? 'var(--warn, #d97706)' : 'var(--accent, #4f46e5)' }} />
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
               <span className="mf-u-faint mf-u-mono" style={{ fontSize: 12.5 }}>{m.messages ?? 0}</span>
+              {(() => {
+                const ts = lastLogin(m);
+                return (
+                  <span className="mf-u-muted" style={{ fontSize: 12.5 }}>
+                    {ts > 0 ? new Date(ts * 1000).toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' }) : t('mailboxes.neverLoggedIn')}
+                  </span>
+                );
+              })()}
               <span><Pill tone={isActive(m.active) ? tone('active') : 'neutral'}>{isActive(m.active) ? t('common.active') : t('common.disabled')}</Pill></span>
               <Icon name="chevron-right" size={14} style={{ color: 'var(--faint)' }} />
             </TableRow>

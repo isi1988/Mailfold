@@ -8,7 +8,7 @@ import { TopBar } from './TopBar.jsx';
  * Page content goes in `children`.
  *   wide  boolean — remove the 1180px content cap (used by Webmail)
  */
-export function AppShell({ nav, current, theme = 'light', account, server, onNavigate, onTheme, onSearch, onLogout, searchPlaceholder, themeOptions, wide = false, children }) {
+export function AppShell({ nav, current, theme = 'light', account, server, serverStatusLabel, accountLabel, onNavigate, onTheme, onSearch, onLogout, searchPlaceholder, themeOptions, wide = false, children }) {
   const [menuOpen, setMenuOpen] = React.useState(false);
   return (
     <div className="mf-app">
@@ -25,7 +25,7 @@ export function AppShell({ nav, current, theme = 'light', account, server, onNav
       />
       {menuOpen && <div className="mf-sidebar-backdrop" onClick={() => setMenuOpen(false)} />}
       <div className="mf-main">
-        <TopBar account={account} server={server} onSearch={onSearch} searchPlaceholder={searchPlaceholder} onMenu={() => setMenuOpen(o => !o)} />
+        <TopBar account={account} server={server} serverStatusLabel={serverStatusLabel} accountLabel={accountLabel} onSearch={onSearch} searchPlaceholder={searchPlaceholder} onMenu={() => setMenuOpen(o => !o)} />
         <div className={cx('mf-content', wide && 'mf-content--wide')}>
           <div className="mf-content__inner">{children}</div>
         </div>

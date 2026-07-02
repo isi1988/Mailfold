@@ -4,15 +4,17 @@ import { useWebmailAuth } from './auth/WebmailAuthContext.jsx';
 import { LoginView } from './pages/LoginView.jsx';
 import { Shell } from './app/Shell.jsx';
 import { WebmailApp } from './app/WebmailApp.jsx';
+import { useT } from './i18n/index.jsx';
 
 export function App() {
   const { status: adminStatus } = useAuth();
   const { status: webmailStatus } = useWebmailAuth();
+  const t = useT();
 
   if (adminStatus === 'loading') {
     return (
       <div style={{ display: 'grid', placeItems: 'center', height: '100vh', color: 'var(--muted)', font: '14px system-ui' }}>
-        Loading…
+        {t('common.loading')}
       </div>
     );
   }
