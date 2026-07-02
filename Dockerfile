@@ -1,8 +1,17 @@
 # syntax=docker/dockerfile:1
 
-# ---- build stage ----
-# Compile a static Linux binary. The build context is the repository root so
-# that a built frontend (frontend/dist) can be copied in as well when present.
+# ---- frontend build stage ----
+# Build the Vite + React SPA. Its output (dist) is copied into the runtime image
+# and served by the Go backend from MAILFOLD_FRONTEND_DIR.
+FROM node:20-alpine AS frontend
+WORKDIR /web
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
+
+# ---- backend build stage ----
+# Compile a static Linux binary.
 FROM golang:1.25-alpine AS build
 WORKDIR /src/backend
 
@@ -22,8 +31,8 @@ FROM gcr.io/distroless/static-debian12:nonroot
 WORKDIR /app
 COPY --from=build /out/mailfold /app/mailfold
 
-# The backend serves the built SPA from this directory when it exists. Mount or
-# COPY frontend/dist here once the frontend design is implemented.
+# The backend serves the built SPA from this directory.
+COPY --from=frontend /web/dist /app/frontend/dist
 ENV MAILFOLD_FRONTEND_DIR=/app/frontend/dist
 
 EXPOSE 8080

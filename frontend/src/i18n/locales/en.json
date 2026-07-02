@@ -81,7 +81,29 @@
     },
     "empty": "No mailboxes yet.",
     "emptyFilter": "No mailboxes match your filter.",
-    "showing": "Showing {{from}}–{{to}} of {{total}}"
+    "showing": "Showing {{from}}–{{to}} of {{total}}",
+    "form": {
+      "newTitle": "New mailbox",
+      "editTitle": "Edit mailbox",
+      "localPart": "Local part",
+      "domain": "Domain",
+      "name": "Display name",
+      "quota": "Quota (GB)",
+      "password": "Password",
+      "resetPassword": "Reset password",
+      "leaveBlank": "Leave blank to keep",
+      "generate": "Generate",
+      "active": "Active",
+      "create": "Create mailbox",
+      "saving": "Saving…",
+      "invalid": "Enter a local part, domain and a password of at least 8 characters.",
+      "created": "Mailbox {{mailbox}} created",
+      "updated": "Mailbox {{mailbox}} updated",
+      "deleted": "Mailbox {{mailbox}} deleted",
+      "failed": "Action failed",
+      "deleteTitle": "Delete mailbox?",
+      "deleteMsg": "{{mailbox}} and all its mail will be permanently removed. This cannot be undone."
+    }
   },
   "domains": {
     "title": "Domains",

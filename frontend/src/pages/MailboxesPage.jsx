@@ -8,11 +8,15 @@ import { Avatar } from '../ds/components/atoms/Avatar.jsx';
 import { Pill } from '../ds/components/atoms/Pill.jsx';
 import { Icon } from '../ds/components/atoms/Icon.jsx';
 import { Button } from '../ds/components/atoms/Button.jsx';
+import { ConfirmModal } from '../ds/components/organisms/ConfirmModal.jsx';
 import { initials, tone } from '../ds/data/sample.js';
 import { useApi } from '../lib/useApi.js';
+import { api } from '../api/client.js';
 import { AsyncView } from '../components/States.jsx';
+import { useToast } from '../components/Toast.jsx';
 import { isActive, humanKB, asList } from '../lib/format.js';
 import { useT } from '../i18n/index.jsx';
+import { MailboxDrawer } from './MailboxDrawer.jsx';
 
 // Filter tabs keyed by a stable value with a translated label.
 const TABS = [
@@ -25,10 +29,26 @@ const PAGE_SIZE = 20;
 
 export function MailboxesPage() {
   const t = useT();
+  const { toast } = useToast();
   const { data, loading, error, reload } = useApi('/api/mailboxes', []);
+  const domainsApi = useApi('/api/domains', []);
   const [tab, setTab] = useState('All');
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
+  const [drawer, setDrawer] = useState(null); // { mode:'create' } | { mode:'edit', mailbox }
+  const [confirmMb, setConfirmMb] = useState(null);
+
+  async function doDelete() {
+    const mb = confirmMb;
+    setConfirmMb(null);
+    try {
+      await api.del('/api/mailboxes', { items: [mb.username] });
+      toast(t('mailboxes.form.deleted', { mailbox: mb.username }));
+      reload();
+    } catch (err) {
+      toast(t('mailboxes.form.failed'), (err && err.body && err.body.message) || (err && err.message) || '');
+    }
+  }
 
   const cols = [
     { label: t('mailboxes.col.mailbox'), w: '2.3fr' },
@@ -66,7 +86,7 @@ export function MailboxesPage() {
       <PageHeader
         title={t('mailboxes.title')}
         sub={t('mailboxes.count', { count: rows.length })}
-        actions={<Button variant="primary">{t('mailboxes.new')}</Button>}
+        actions={<Button variant="primary" onClick={() => setDrawer({ mode: 'create' })}>{t('mailboxes.new')}</Button>}
       />
       <div className="mf-row" style={{ marginBottom: 14 }}>
         <FilterTabs options={tabOptions} value={tab} onSelect={onTab} />
@@ -87,7 +107,7 @@ export function MailboxesPage() {
       >
         <Table columns={cols}>
           {paged.map(m => (
-            <TableRow key={m.username}>
+            <TableRow key={m.username} onClick={() => setDrawer({ mode: 'edit', mailbox: m })} style={{ cursor: 'pointer' }}>
               <div className="mf-cell-user">
                 <Avatar size={34}>{initials(m.name || m.username)}</Avatar>
                 <div className="mf-min0">
@@ -114,6 +134,28 @@ export function MailboxesPage() {
           </div>
         )}
       </AsyncView>
+
+      {drawer && (
+        <MailboxDrawer
+          mode={drawer.mode}
+          mailbox={drawer.mailbox}
+          domains={asList(domainsApi.data)}
+          onClose={() => setDrawer(null)}
+          onSaved={reload}
+          onDelete={mb => { setDrawer(null); setConfirmMb(mb); }}
+        />
+      )}
+
+      {confirmMb && (
+        <ConfirmModal
+          title={t('mailboxes.form.deleteTitle')}
+          msg={t('mailboxes.form.deleteMsg', { mailbox: confirmMb.username })}
+          cta={t('common.delete')}
+          danger
+          onCancel={() => setConfirmMb(null)}
+          onConfirm={doDelete}
+        />
+      )}
     </>
   );
 }

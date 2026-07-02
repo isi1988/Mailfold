@@ -9,15 +9,18 @@ import './ds/styles/components.css';
 
 import { I18nProvider } from './i18n/index.jsx';
 import { AuthProvider } from './auth/AuthContext.jsx';
+import { ToastProvider } from './components/Toast.jsx';
 import { App } from './App.jsx';
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
       <I18nProvider>
-        <AuthProvider>
-          <App />
-        </AuthProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <App />
+          </AuthProvider>
+        </ToastProvider>
       </I18nProvider>
     </BrowserRouter>
   </React.StrictMode>,
