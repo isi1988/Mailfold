@@ -12,6 +12,7 @@ import (
 
 	"github.com/isi1988/Mailfold/backend/internal/auth"
 	"github.com/isi1988/Mailfold/backend/internal/config"
+	"github.com/isi1988/Mailfold/backend/internal/metrics"
 	"github.com/isi1988/Mailfold/backend/internal/ratelimit"
 )
 
@@ -23,6 +24,7 @@ type Server struct {
 	mc           Mailcow
 	auth         *auth.Authenticator
 	loginLimiter *ratelimit.Limiter
+	metrics      *metrics.Metrics
 	logger       *slog.Logger
 }
 
@@ -30,7 +32,14 @@ type Server struct {
 // satisfying the Mailcow interface (in production, *mailcow.Client). limiter
 // throttles login attempts per client IP.
 func NewServer(cfg *config.Config, mc Mailcow, authn *auth.Authenticator, limiter *ratelimit.Limiter, logger *slog.Logger) *Server {
-	return &Server{cfg: cfg, mc: mc, auth: authn, loginLimiter: limiter, logger: logger}
+	return &Server{
+		cfg:          cfg,
+		mc:           mc,
+		auth:         authn,
+		loginLimiter: limiter,
+		metrics:      metrics.New(),
+		logger:       logger,
+	}
 }
 
 // Handler builds the HTTP handler with all routes registered.
@@ -40,8 +49,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/health", s.handleHealth)
 	mux.HandleFunc("GET /api/health/ready", s.handleReady)
 
-	// API documentation (public).
+	// API documentation and Prometheus metrics (public).
 	s.registerDocsRoutes(mux)
+	mux.HandleFunc("GET /metrics", s.handleMetrics)
 
 	// Authentication.
 	s.registerAuthRoutes(mux)
@@ -77,6 +87,12 @@ func (s *Server) Handler() http.Handler {
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "service": "mailfold"})
+}
+
+// handleMetrics renders the collected HTTP metrics in Prometheus text format.
+func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+	s.metrics.WritePrometheus(w)
 }
 
 // handleReady is a readiness probe: it returns 200 only when the upstream

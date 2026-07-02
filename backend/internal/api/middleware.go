@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/isi1988/Mailfold/backend/internal/auth"
 )
@@ -81,26 +82,38 @@ func sessionFrom(r *http.Request) *auth.Session {
 // repeated per handler.
 func (s *Server) withCommon(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		// Wrap the writer so the final status code is available for metrics and
+		// the panic handler.
+		rw := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+
 		// Assign (or accept) a request id so every log line and the client can
 		// correlate a single request end to end.
 		reqID := requestID(r)
-		w.Header().Set(requestIDHeader, reqID)
+		rw.Header().Set(requestIDHeader, reqID)
 
-		setSecurityHeaders(w)
-		s.applyCORS(w, r)
+		setSecurityHeaders(rw)
+		s.applyCORS(rw, r)
+
+		// Record request metrics once the chain returns, whatever the outcome
+		// (including a preflight or a recovered panic). Registered first so it
+		// runs last (after the recover defer below has set the final status).
+		defer func() {
+			s.metrics.Observe(r.Method, rw.status, time.Since(start))
+		}()
 
 		// A CORS preflight (OPTIONS) is answered immediately with 204 and no
 		// body; the headers set above are all the browser needs, so the request
 		// must not fall through to the real handler.
 		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
+			rw.WriteHeader(http.StatusNoContent)
 			return
 		}
 
 		// Bound the request body to guard against oversized or malicious
 		// payloads exhausting memory.
 		if s.cfg.MaxBodyBytes > 0 && r.Body != nil {
-			r.Body = http.MaxBytesReader(w, r.Body, s.cfg.MaxBodyBytes)
+			r.Body = http.MaxBytesReader(rw, r.Body, s.cfg.MaxBodyBytes)
 		}
 
 		// Recover from any panic in a downstream handler so a single failing
@@ -109,13 +122,26 @@ func (s *Server) withCommon(next http.Handler) http.Handler {
 		defer func() {
 			if rec := recover(); rec != nil {
 				s.logger.Error("panic recovered", "id", reqID, "error", rec, "path", r.URL.Path)
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+				writeJSON(rw, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 			}
 		}()
 
 		s.logger.Info("request", "id", reqID, "method", r.Method, "path", r.URL.Path, "remote", r.RemoteAddr)
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), requestIDCtxKey, reqID)))
+		next.ServeHTTP(rw, r.WithContext(context.WithValue(r.Context(), requestIDCtxKey, reqID)))
 	})
+}
+
+// statusRecorder wraps http.ResponseWriter to remember the status code written,
+// so middleware can record it for metrics. It defaults to 200, matching
+// net/http's behaviour when a handler writes a body without calling WriteHeader.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(code int) {
+	r.status = code
+	r.ResponseWriter.WriteHeader(code)
 }
 
 // requestID returns the incoming request id when the client supplied one via the

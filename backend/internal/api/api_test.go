@@ -405,3 +405,22 @@ func TestDocsEndpoints(t *testing.T) {
 		t.Errorf("docs page: code=%d", rec2.Code)
 	}
 }
+
+func TestMetricsEndpoint(t *testing.T) {
+	h := newAPI(t, mockMailcow(t, 0, "").URL, []string{"*"})
+	// Generate some traffic so the counters are non-empty.
+	do(h, http.MethodGet, "/api/health", "", "")
+	do(h, http.MethodGet, "/api/domains", "", "") // 401 without a token
+
+	rec := do(h, http.MethodGet, "/metrics", "", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("/metrics = %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "mailfold_http_requests_total") {
+		t.Errorf("metrics missing request counter:\n%s", body)
+	}
+	if !strings.Contains(body, "mailfold_http_request_duration_seconds_count") {
+		t.Error("metrics missing histogram count")
+	}
+}
