@@ -58,6 +58,17 @@ type Config struct {
 	// special value "*" permits any origin; listing explicit origins locks the
 	// API down to known frontends.
 	CORSOrigins []string
+	// LoginRateMax is the maximum number of login attempts permitted per client
+	// IP within LoginRateWindow before further attempts are rejected with HTTP
+	// 429. It throttles password brute-force attacks. A value <= 0 disables the
+	// limit.
+	LoginRateMax int
+	// LoginRateWindow is the fixed window over which LoginRateMax is counted.
+	LoginRateWindow time.Duration
+	// MaxBodyBytes caps the size of a request body the server will read, guarding
+	// against memory exhaustion from oversized or malicious payloads. A value
+	// <= 0 leaves the body size unbounded.
+	MaxBodyBytes int64
 }
 
 // Load reads every configuration value from the environment, applies sensible
@@ -76,6 +87,9 @@ func Load() (*Config, error) {
 		AdminPassword:      os.Getenv("MAILFOLD_ADMIN_PASSWORD"),
 		SessionTTL:         getdur("MAILFOLD_SESSION_TTL", 12*time.Hour),
 		CORSOrigins:        getlist("MAILFOLD_CORS_ORIGINS", []string{"*"}),
+		LoginRateMax:       int(getint64("MAILFOLD_LOGIN_RATE_MAX", 5)),
+		LoginRateWindow:    getdur("MAILFOLD_LOGIN_RATE_WINDOW", time.Minute),
+		MaxBodyBytes:       getint64("MAILFOLD_MAX_BODY_BYTES", 1<<20),
 	}
 
 	// The following three values have no safe default: without an upstream
@@ -137,6 +151,22 @@ func getdur(key string, def time.Duration) time.Duration {
 		return def
 	}
 	return d
+}
+
+// getint64 reads an integer setting from the environment, returning def when
+// the variable is unset or is not a valid base-10 integer. Like the other
+// parsers it fails soft to the default on error so a malformed optional value
+// never prevents startup.
+func getint64(key string, def int64) int64 {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil {
+		return def
+	}
+	return n
 }
 
 // getlist reads a comma-separated list setting from the environment and returns

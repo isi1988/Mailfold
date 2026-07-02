@@ -33,6 +33,10 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.MailcowInsecureTLS {
 		t.Error("MailcowInsecureTLS should default to false")
 	}
+	if cfg.LoginRateMax != 5 || cfg.LoginRateWindow != time.Minute || cfg.MaxBodyBytes != 1<<20 {
+		t.Errorf("rate/body defaults wrong: max=%d window=%v body=%d",
+			cfg.LoginRateMax, cfg.LoginRateWindow, cfg.MaxBodyBytes)
+	}
 }
 
 func TestLoadOverrides(t *testing.T) {
@@ -42,6 +46,9 @@ func TestLoadOverrides(t *testing.T) {
 	t.Setenv("MAILFOLD_MAILCOW_INSECURE_TLS", "true")
 	t.Setenv("MAILFOLD_SESSION_TTL", "1h")
 	t.Setenv("MAILFOLD_CORS_ORIGINS", "https://a.com, https://b.com ,")
+	t.Setenv("MAILFOLD_LOGIN_RATE_MAX", "10")
+	t.Setenv("MAILFOLD_LOGIN_RATE_WINDOW", "30s")
+	t.Setenv("MAILFOLD_MAX_BODY_BYTES", "2048")
 
 	cfg, err := Load()
 	if err != nil {
@@ -49,6 +56,10 @@ func TestLoadOverrides(t *testing.T) {
 	}
 	if cfg.Addr != ":9000" || cfg.AdminUser != "root" {
 		t.Errorf("overrides not applied: %+v", cfg)
+	}
+	if cfg.LoginRateMax != 10 || cfg.LoginRateWindow != 30*time.Second || cfg.MaxBodyBytes != 2048 {
+		t.Errorf("rate/body overrides wrong: max=%d window=%v body=%d",
+			cfg.LoginRateMax, cfg.LoginRateWindow, cfg.MaxBodyBytes)
 	}
 	if !cfg.MailcowInsecureTLS {
 		t.Error("expected MailcowInsecureTLS true")
@@ -66,10 +77,14 @@ func TestLoadInvalidFallbacks(t *testing.T) {
 	t.Setenv("MAILFOLD_MAILCOW_INSECURE_TLS", "notabool")
 	t.Setenv("MAILFOLD_SESSION_TTL", "notaduration")
 	t.Setenv("MAILFOLD_CORS_ORIGINS", "  ,  ")
+	t.Setenv("MAILFOLD_MAX_BODY_BYTES", "notanint")
 
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load: %v", err)
+	}
+	if cfg.MaxBodyBytes != 1<<20 {
+		t.Errorf("bad int should fall back to default: %d", cfg.MaxBodyBytes)
 	}
 	if cfg.MailcowInsecureTLS {
 		t.Error("bad bool should fall back to false")

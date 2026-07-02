@@ -20,6 +20,7 @@ import (
 	"github.com/isi1988/Mailfold/backend/internal/auth"
 	"github.com/isi1988/Mailfold/backend/internal/config"
 	"github.com/isi1988/Mailfold/backend/internal/mailcow"
+	"github.com/isi1988/Mailfold/backend/internal/ratelimit"
 )
 
 // main boots the Mailfold backend: it loads configuration, constructs the
@@ -43,7 +44,8 @@ func main() {
 	// ties them together behind HTTP handlers.
 	client := mailcow.NewClient(cfg.MailcowBaseURL, cfg.MailcowAPIKey, cfg.MailcowInsecureTLS)
 	authn := auth.New(cfg.AdminUser, cfg.AdminPassword, cfg.SessionTTL)
-	server := api.NewServer(cfg, client, authn, logger)
+	loginLimiter := ratelimit.New(cfg.LoginRateMax, cfg.LoginRateWindow)
+	server := api.NewServer(cfg, client, authn, loginLimiter, logger)
 
 	// Periodically evict expired sessions. Validate only removes an expired
 	// token if it is presented again, so this background sweep reclaims the
@@ -54,6 +56,7 @@ func main() {
 	go func() {
 		for range gcTicker.C {
 			authn.GC()
+			loginLimiter.GC()
 		}
 	}()
 

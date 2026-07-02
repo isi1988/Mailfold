@@ -16,6 +16,7 @@ import (
 	"github.com/isi1988/Mailfold/backend/internal/auth"
 	"github.com/isi1988/Mailfold/backend/internal/config"
 	"github.com/isi1988/Mailfold/backend/internal/mailcow"
+	"github.com/isi1988/Mailfold/backend/internal/ratelimit"
 )
 
 // mockMailcow returns a mock mailcow server. When body is non-empty it is
@@ -48,17 +49,21 @@ func mockMailcow(t *testing.T, status int, body string) *httptest.Server {
 func newAPI(t *testing.T, mcURL string, origins []string) http.Handler {
 	t.Helper()
 	cfg := &config.Config{
-		MailcowBaseURL: mcURL,
-		MailcowAPIKey:  "k",
-		AdminUser:      "admin",
-		AdminPassword:  "pw",
-		SessionTTL:     time.Hour,
-		CORSOrigins:    origins,
+		MailcowBaseURL:  mcURL,
+		MailcowAPIKey:   "k",
+		AdminUser:       "admin",
+		AdminPassword:   "pw",
+		SessionTTL:      time.Hour,
+		CORSOrigins:     origins,
+		LoginRateMax:    100, // high enough not to interfere with normal tests
+		LoginRateWindow: time.Minute,
+		MaxBodyBytes:    1 << 20,
 	}
 	mc := mailcow.NewClient(mcURL, "k", false)
 	authn := auth.New(cfg.AdminUser, cfg.AdminPassword, cfg.SessionTTL)
+	limiter := ratelimit.New(cfg.LoginRateMax, cfg.LoginRateWindow)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return NewServer(cfg, mc, authn, logger).Handler()
+	return NewServer(cfg, mc, authn, limiter, logger).Handler()
 }
 
 func loginToken(t *testing.T, h http.Handler) string {
@@ -266,7 +271,8 @@ func TestFrontendServing(t *testing.T) {
 	}
 	mc := mailcow.NewClient(cfg.MailcowBaseURL, "k", false)
 	authn := auth.New("admin", "pw", time.Hour)
-	h := NewServer(cfg, mc, authn, slog.New(slog.NewTextHandler(io.Discard, nil))).Handler()
+	limiter := ratelimit.New(0, time.Minute)
+	h := NewServer(cfg, mc, authn, limiter, slog.New(slog.NewTextHandler(io.Discard, nil))).Handler()
 
 	if rec := do(h, http.MethodGet, "/app.js", "", ""); rec.Code != http.StatusOK {
 		t.Errorf("static file app.js=%d", rec.Code)
@@ -277,5 +283,77 @@ func TestFrontendServing(t *testing.T) {
 	}
 	if rec := do(h, http.MethodGet, "/", "", ""); rec.Code != http.StatusOK {
 		t.Errorf("index=%d", rec.Code)
+	}
+}
+
+func TestSecurityHeadersAndRequestID(t *testing.T) {
+	h := newAPI(t, mockMailcow(t, 0, "").URL, []string{"*"})
+
+	rec := do(h, http.MethodGet, "/api/health", "", "")
+	for k, want := range map[string]string{
+		"X-Content-Type-Options": "nosniff",
+		"X-Frame-Options":        "DENY",
+		"Referrer-Policy":        "no-referrer",
+	} {
+		if got := rec.Header().Get(k); got != want {
+			t.Errorf("header %s = %q, want %q", k, got, want)
+		}
+	}
+	if rec.Header().Get("X-Request-Id") == "" {
+		t.Error("expected a generated X-Request-Id header")
+	}
+
+	// A client-supplied request id must be echoed back unchanged.
+	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
+	req.Header.Set("X-Request-Id", "trace-123")
+	rec2 := httptest.NewRecorder()
+	h.ServeHTTP(rec2, req)
+	if got := rec2.Header().Get("X-Request-Id"); got != "trace-123" {
+		t.Errorf("X-Request-Id = %q, want the supplied trace-123", got)
+	}
+}
+
+func TestReadiness(t *testing.T) {
+	// mailcow reachable -> ready.
+	h := newAPI(t, mockMailcow(t, 0, "").URL, []string{"*"})
+	if rec := do(h, http.MethodGet, "/api/health/ready", "", ""); rec.Code != http.StatusOK {
+		t.Errorf("ready with healthy mailcow = %d, want 200", rec.Code)
+	}
+	// mailcow failing -> not ready.
+	h2 := newAPI(t, mockMailcow(t, http.StatusInternalServerError, "").URL, []string{"*"})
+	if rec := do(h2, http.MethodGet, "/api/health/ready", "", ""); rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("ready with failing mailcow = %d, want 503", rec.Code)
+	}
+}
+
+func TestLoginRateLimit(t *testing.T) {
+	// Build a server with a tiny login budget of two attempts per window.
+	cfg := &config.Config{
+		MailcowBaseURL: mockMailcow(t, 0, "").URL,
+		MailcowAPIKey:  "k",
+		AdminUser:      "admin",
+		AdminPassword:  "pw",
+		SessionTTL:     time.Hour,
+		CORSOrigins:    []string{"*"},
+	}
+	mc := mailcow.NewClient(cfg.MailcowBaseURL, "k", false)
+	authn := auth.New("admin", "pw", time.Hour)
+	limiter := ratelimit.New(2, time.Minute)
+	h := NewServer(cfg, mc, authn, limiter, slog.New(slog.NewTextHandler(io.Discard, nil))).Handler()
+
+	body := `{"user":"admin","password":"wrong"}`
+	// The first two attempts are allowed (and fail auth with 401).
+	for i := 1; i <= 2; i++ {
+		if rec := do(h, http.MethodPost, "/api/auth/login", "", body); rec.Code != http.StatusUnauthorized {
+			t.Fatalf("attempt %d = %d, want 401", i, rec.Code)
+		}
+	}
+	// The third attempt is throttled with 429 + Retry-After.
+	rec := do(h, http.MethodPost, "/api/auth/login", "", body)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("attempt 3 = %d, want 429", rec.Code)
+	}
+	if rec.Header().Get("Retry-After") == "" {
+		t.Error("expected a Retry-After header on the 429 response")
 	}
 }

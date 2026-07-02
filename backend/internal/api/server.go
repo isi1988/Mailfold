@@ -2,30 +2,35 @@
 package api
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/isi1988/Mailfold/backend/internal/auth"
 	"github.com/isi1988/Mailfold/backend/internal/config"
+	"github.com/isi1988/Mailfold/backend/internal/ratelimit"
 )
 
 // Server wires HTTP routes to the mailcow API and the authenticator. It holds
 // its collaborators through interfaces/values so the transport layer stays
 // decoupled from concrete implementations.
 type Server struct {
-	cfg    *config.Config
-	mc     Mailcow
-	auth   *auth.Authenticator
-	logger *slog.Logger
+	cfg          *config.Config
+	mc           Mailcow
+	auth         *auth.Authenticator
+	loginLimiter *ratelimit.Limiter
+	logger       *slog.Logger
 }
 
 // NewServer constructs a Server from its collaborators. mc is any type
-// satisfying the Mailcow interface (in production, *mailcow.Client).
-func NewServer(cfg *config.Config, mc Mailcow, authn *auth.Authenticator, logger *slog.Logger) *Server {
-	return &Server{cfg: cfg, mc: mc, auth: authn, logger: logger}
+// satisfying the Mailcow interface (in production, *mailcow.Client). limiter
+// throttles login attempts per client IP.
+func NewServer(cfg *config.Config, mc Mailcow, authn *auth.Authenticator, limiter *ratelimit.Limiter, logger *slog.Logger) *Server {
+	return &Server{cfg: cfg, mc: mc, auth: authn, loginLimiter: limiter, logger: logger}
 }
 
 // Handler builds the HTTP handler with all routes registered.
@@ -33,6 +38,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /api/health", s.handleHealth)
+	mux.HandleFunc("GET /api/health/ready", s.handleReady)
 
 	// Authentication.
 	s.registerAuthRoutes(mux)
@@ -58,6 +64,20 @@ func (s *Server) Handler() http.Handler {
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "service": "mailfold"})
+}
+
+// handleReady is a readiness probe: it returns 200 only when the upstream
+// mailcow API is reachable, so an orchestrator can withhold traffic until the
+// backend can actually serve requests. A short timeout keeps a slow or dead
+// mailcow from hanging the probe.
+func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if _, err := s.mc.Version(ctx); err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "unavailable", "error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 }
 
 // registerFrontend serves static SPA assets with an index.html fallback for

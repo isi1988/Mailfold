@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/isi1988/Mailfold/backend/internal/auth"
 )
@@ -36,6 +37,15 @@ type loginRequest struct {
 // bad credentials yield 401 (distinguished so the client can prompt for a retry
 // rather than treat it as a server fault), and any other failure yields 500.
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	// Throttle login attempts per source IP to blunt password brute-forcing.
+	// This runs before any body parsing so that flooding the endpoint is cheap
+	// to reject.
+	if allowed, retry := s.loginLimiter.Allow(clientIP(r)); !allowed {
+		w.Header().Set("Retry-After", strconv.Itoa(int(retry.Seconds())+1))
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many login attempts, slow down"})
+		return
+	}
+
 	var req loginRequest
 	if err := decodeJSON(r, &req); err != nil {
 		s.writeError(w, http.StatusBadRequest, err)

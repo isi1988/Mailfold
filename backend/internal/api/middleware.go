@@ -2,6 +2,9 @@ package api
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"net"
 	"net/http"
 	"strings"
 
@@ -18,6 +21,14 @@ type ctxKey string
 // stored by requireAuth so that downstream handlers can retrieve it via
 // sessionFrom.
 const sessionCtxKey ctxKey = "session"
+
+// requestIDCtxKey is the context key under which the per-request id is stored so
+// downstream handlers can include it in their own logs when useful.
+const requestIDCtxKey ctxKey = "request_id"
+
+// requestIDHeader is the header used both to accept a caller-supplied request id
+// and to echo the effective id back on the response.
+const requestIDHeader = "X-Request-Id"
 
 // requireAuth wraps a handler so that only authenticated requests reach it. It
 // validates the bearer token on the incoming request; if validation fails the
@@ -64,31 +75,86 @@ func sessionFrom(r *http.Request) *auth.Session {
 }
 
 // withCommon applies the cross-cutting concerns that every request needs,
-// regardless of route: CORS headers, preflight handling, panic recovery, and
-// request logging. It wraps the whole mux so these behaviours are guaranteed and
-// never have to be repeated per handler.
+// regardless of route: a request id, security headers, CORS, preflight
+// handling, a request-body size limit, panic recovery, and request logging. It
+// wraps the whole mux so these behaviours are guaranteed and never have to be
+// repeated per handler.
 func (s *Server) withCommon(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Assign (or accept) a request id so every log line and the client can
+		// correlate a single request end to end.
+		reqID := requestID(r)
+		w.Header().Set(requestIDHeader, reqID)
+
+		setSecurityHeaders(w)
 		s.applyCORS(w, r)
+
 		// A CORS preflight (OPTIONS) is answered immediately with 204 and no
-		// body; the CORS headers set above are all the browser needs, so the
-		// request must not fall through to the real handler.
+		// body; the headers set above are all the browser needs, so the request
+		// must not fall through to the real handler.
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
+
+		// Bound the request body to guard against oversized or malicious
+		// payloads exhausting memory.
+		if s.cfg.MaxBodyBytes > 0 && r.Body != nil {
+			r.Body = http.MaxBytesReader(w, r.Body, s.cfg.MaxBodyBytes)
+		}
+
 		// Recover from any panic in a downstream handler so a single failing
 		// request cannot crash the server; the client receives a generic 500
 		// while the details are logged for operators.
 		defer func() {
 			if rec := recover(); rec != nil {
-				s.logger.Error("panic recovered", "error", rec, "path", r.URL.Path)
+				s.logger.Error("panic recovered", "id", reqID, "error", rec, "path", r.URL.Path)
 				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 			}
 		}()
-		s.logger.Info("request", "method", r.Method, "path", r.URL.Path, "remote", r.RemoteAddr)
-		next.ServeHTTP(w, r)
+
+		s.logger.Info("request", "id", reqID, "method", r.Method, "path", r.URL.Path, "remote", r.RemoteAddr)
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), requestIDCtxKey, reqID)))
 	})
+}
+
+// requestID returns the incoming request id when the client supplied one via the
+// X-Request-Id header, otherwise it generates a fresh random hex id. Reusing a
+// caller-provided id lets a reverse proxy or the frontend correlate a request
+// across systems.
+func requestID(r *http.Request) string {
+	if id := r.Header.Get(requestIDHeader); id != "" {
+		return id
+	}
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		// crypto/rand should never fail; if it somehow does, fall back to a
+		// constant so the request still proceeds (correlation is best-effort).
+		return "unknown"
+	}
+	return hex.EncodeToString(b)
+}
+
+// setSecurityHeaders applies a conservative set of security response headers to
+// every response: forbid content-type sniffing, forbid framing, withhold the
+// Referer header, and isolate the browsing context. Together they reduce the
+// attack surface of any UI served alongside the API.
+func setSecurityHeaders(w http.ResponseWriter) {
+	h := w.Header()
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("X-Frame-Options", "DENY")
+	h.Set("Referrer-Policy", "no-referrer")
+	h.Set("Cross-Origin-Opener-Policy", "same-origin")
+}
+
+// clientIP extracts the client's IP address from RemoteAddr, dropping the port.
+// It is the key used to rate-limit login attempts per source address.
+func clientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }
 
 // applyCORS sets the Access-Control response headers according to the server's
