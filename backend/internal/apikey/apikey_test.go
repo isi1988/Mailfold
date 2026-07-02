@@ -113,7 +113,7 @@ func TestCipher(t *testing.T) {
 
 func openTestStore(t *testing.T) *Store {
 	t.Helper()
-	st, err := Open(t.TempDir() + "/keys.db")
+	st, err := Open("sqlite", t.TempDir()+"/keys.db")
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}

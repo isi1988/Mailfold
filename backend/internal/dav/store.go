@@ -1,6 +1,6 @@
 // Package dav implements a self-hosted CardDAV/CalDAV groupware server backed by
-// a local SQLite database. It lets Mailfold store and sync contacts and
-// calendars for mailbox users without depending on SOGo.
+// a local database. It lets Mailfold store and sync contacts and calendars for
+// mailbox users without depending on SOGo.
 package dav
 
 import (
@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"time"
 
-	_ "modernc.org/sqlite" // pure-Go SQLite driver (no cgo)
+	"github.com/isi1988/Mailfold/backend/internal/storage"
 )
 
 // Book is a stored collection (an address book or a calendar).
@@ -28,20 +28,21 @@ type Object struct {
 	Modified time.Time
 }
 
-// Store is the SQLite-backed persistence layer for the DAV server.
+// Store is the persistence layer for the DAV server. It runs on any database the
+// storage package has a driver for; all SQL is written once and adapted through
+// the dialect.
 type Store struct {
 	db *sql.DB
+	d  storage.Dialect
 }
 
-// Open opens (creating if needed) the SQLite database at path and applies the
-// schema. It enables WAL mode and a busy timeout for safe concurrent access.
-func Open(path string) (*Store, error) {
-	db, err := sql.Open("sqlite", path+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
+// Open opens the DAV database on the given driver and DSN and applies the schema.
+func Open(driver, dsn string) (*Store, error) {
+	db, err := storage.Open(driver, dsn)
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(1) // SQLite writes are serialized; keep it simple
-	s := &Store{db: db}
+	s := &Store{db: db.DB, d: db.Dialect}
 	if err := s.migrate(); err != nil {
 		_ = db.Close()
 		return nil, err
@@ -52,8 +53,22 @@ func Open(path string) (*Store, error) {
 // Close releases the database.
 func (s *Store) Close() error { return s.db.Close() }
 
+// exec/query/queryRow centralise placeholder rebinding so every statement is
+// dialect-correct without repeating the Rebind call at each site.
+func (s *Store) exec(q string, args ...any) (sql.Result, error) {
+	return s.db.Exec(s.d.Rebind(q), args...)
+}
+
+func (s *Store) query(q string, args ...any) (*sql.Rows, error) {
+	return s.db.Query(s.d.Rebind(q), args...)
+}
+
+func (s *Store) queryRow(q string, args ...any) *sql.Row {
+	return s.db.QueryRow(s.d.Rebind(q), args...)
+}
+
 func (s *Store) migrate() error {
-	const schema = `
+	schema := fmt.Sprintf(`
 CREATE TABLE IF NOT EXISTS address_books (
     user TEXT NOT NULL, id TEXT NOT NULL,
     name TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '',
@@ -61,7 +76,7 @@ CREATE TABLE IF NOT EXISTS address_books (
 );
 CREATE TABLE IF NOT EXISTS address_objects (
     user TEXT NOT NULL, book_id TEXT NOT NULL, uid TEXT NOT NULL,
-    etag TEXT NOT NULL, data TEXT NOT NULL, modified INTEGER NOT NULL,
+    etag TEXT NOT NULL, data TEXT NOT NULL, modified %[1]s NOT NULL,
     PRIMARY KEY (user, book_id, uid)
 );
 CREATE TABLE IF NOT EXISTS calendars (
@@ -71,9 +86,9 @@ CREATE TABLE IF NOT EXISTS calendars (
 );
 CREATE TABLE IF NOT EXISTS calendar_objects (
     user TEXT NOT NULL, calendar_id TEXT NOT NULL, uid TEXT NOT NULL,
-    etag TEXT NOT NULL, data TEXT NOT NULL, modified INTEGER NOT NULL,
+    etag TEXT NOT NULL, data TEXT NOT NULL, modified %[1]s NOT NULL,
     PRIMARY KEY (user, calendar_id, uid)
-);`
+);`, s.d.IntType())
 	_, err := s.db.Exec(schema)
 	return err
 }
@@ -99,12 +114,12 @@ var (
 )
 
 func (s *Store) ensure(c collection, user, id, name string) error {
-	_, err := s.db.Exec(fmt.Sprintf(`INSERT OR IGNORE INTO %s (user, id, name) VALUES (?, ?, ?)`, c.books), user, id, name)
+	_, err := s.exec(fmt.Sprintf(`INSERT INTO %s (user, id, name) VALUES (?, ?, ?) ON CONFLICT (user, id) DO NOTHING`, c.books), user, id, name)
 	return err
 }
 
 func (s *Store) listCollections(c collection, user string) ([]Book, error) {
-	rows, err := s.db.Query(fmt.Sprintf(`SELECT id, name, description FROM %s WHERE user = ? ORDER BY id`, c.books), user)
+	rows, err := s.query(fmt.Sprintf(`SELECT id, name, description FROM %s WHERE user = ? ORDER BY id`, c.books), user)
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +137,7 @@ func (s *Store) listCollections(c collection, user string) ([]Book, error) {
 
 func (s *Store) getCollection(c collection, user, id string) (*Book, error) {
 	var b Book
-	err := s.db.QueryRow(fmt.Sprintf(`SELECT id, name, description FROM %s WHERE user = ? AND id = ?`, c.books), user, id).
+	err := s.queryRow(fmt.Sprintf(`SELECT id, name, description FROM %s WHERE user = ? AND id = ?`, c.books), user, id).
 		Scan(&b.ID, &b.Name, &b.Description)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -134,21 +149,21 @@ func (s *Store) getCollection(c collection, user, id string) (*Book, error) {
 }
 
 func (s *Store) createCollection(c collection, user string, b Book) error {
-	_, err := s.db.Exec(fmt.Sprintf(`INSERT INTO %s (user, id, name, description) VALUES (?, ?, ?, ?)`, c.books),
+	_, err := s.exec(fmt.Sprintf(`INSERT INTO %s (user, id, name, description) VALUES (?, ?, ?, ?)`, c.books),
 		user, b.ID, b.Name, b.Description)
 	return err
 }
 
 func (s *Store) deleteCollection(c collection, user, id string) error {
-	if _, err := s.db.Exec(fmt.Sprintf(`DELETE FROM %s WHERE user = ? AND %s = ?`, c.objects, c.fk), user, id); err != nil {
+	if _, err := s.exec(fmt.Sprintf(`DELETE FROM %s WHERE user = ? AND %s = ?`, c.objects, c.fk), user, id); err != nil {
 		return err
 	}
-	_, err := s.db.Exec(fmt.Sprintf(`DELETE FROM %s WHERE user = ? AND id = ?`, c.books), user, id)
+	_, err := s.exec(fmt.Sprintf(`DELETE FROM %s WHERE user = ? AND id = ?`, c.books), user, id)
 	return err
 }
 
 func (s *Store) listObjectsIn(c collection, user, collID string) ([]Object, error) {
-	rows, err := s.db.Query(
+	rows, err := s.query(
 		fmt.Sprintf(`SELECT uid, etag, data, modified FROM %s WHERE user = ? AND %s = ? ORDER BY uid`, c.objects, c.fk),
 		user, collID)
 	if err != nil {
@@ -167,7 +182,7 @@ func (s *Store) listObjectsIn(c collection, user, collID string) ([]Object, erro
 }
 
 func (s *Store) getObjectIn(c collection, user, collID, uid string) (*Object, error) {
-	row := s.db.QueryRow(
+	row := s.queryRow(
 		fmt.Sprintf(`SELECT uid, etag, data, modified FROM %s WHERE user = ? AND %s = ? AND uid = ?`, c.objects, c.fk),
 		user, collID, uid)
 	o, err := scanObject(row)
@@ -185,14 +200,14 @@ func (s *Store) putObjectIn(c collection, user, collID, uid, data string) (Objec
 	query := fmt.Sprintf(`INSERT INTO %s (user, %s, uid, etag, data, modified) VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(user, %s, uid) DO UPDATE SET etag = excluded.etag, data = excluded.data, modified = excluded.modified`,
 		c.objects, c.fk, c.fk)
-	if _, err := s.db.Exec(query, user, collID, uid, o.ETag, o.Data, o.Modified.Unix()); err != nil {
+	if _, err := s.exec(query, user, collID, uid, o.ETag, o.Data, storage.Unix(o.Modified)); err != nil {
 		return Object{}, err
 	}
 	return o, nil
 }
 
 func (s *Store) deleteObjectIn(c collection, user, collID, uid string) error {
-	res, err := s.db.Exec(fmt.Sprintf(`DELETE FROM %s WHERE user = ? AND %s = ? AND uid = ?`, c.objects, c.fk), user, collID, uid)
+	res, err := s.exec(fmt.Sprintf(`DELETE FROM %s WHERE user = ? AND %s = ? AND uid = ?`, c.objects, c.fk), user, collID, uid)
 	if err != nil {
 		return err
 	}
@@ -296,6 +311,6 @@ func scanObject(sc scanner) (Object, error) {
 	if err := sc.Scan(&o.UID, &o.ETag, &o.Data, &mod); err != nil {
 		return Object{}, err
 	}
-	o.Modified = time.Unix(mod, 0).UTC()
+	o.Modified = storage.FromUnix(mod)
 	return o, nil
 }

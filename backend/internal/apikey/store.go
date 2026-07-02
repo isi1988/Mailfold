@@ -2,9 +2,10 @@ package apikey
 
 import (
 	"database/sql"
+	"fmt"
 	"time"
 
-	_ "modernc.org/sqlite" // pure-Go SQLite driver (no cgo)
+	"github.com/isi1988/Mailfold/backend/internal/storage"
 )
 
 // Record is one stored API key. The secret columns (TokenSHA256, SecretEnc,
@@ -36,21 +37,23 @@ func (r *Record) Active(now time.Time) bool {
 	return true
 }
 
-// Store is the SQLite-backed persistence for API keys. It reuses the same
-// database file as the DAV store (opened separately, safe under WAL).
+// Store is the persistence layer for API keys. It runs on any database the
+// storage package has a driver for (SQLite in the open-source build, PostgreSQL
+// in the enterprise build); all SQL is written once and adapted through the
+// dialect.
 type Store struct {
 	db *sql.DB
+	d  storage.Dialect
 }
 
-// Open opens (creating if needed) the SQLite database at path and applies the
-// schema, mirroring the DAV store's WAL + single-connection setup.
-func Open(path string) (*Store, error) {
-	db, err := sql.Open("sqlite", path+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
+// Open opens the API-key database on the given driver and DSN and applies the
+// schema. It reuses the same file/instance as the DAV store.
+func Open(driver, dsn string) (*Store, error) {
+	db, err := storage.Open(driver, dsn)
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(1)
-	s := &Store{db: db}
+	s := &Store{db: db.DB, d: db.Dialect}
 	if err := s.migrate(); err != nil {
 		_ = db.Close()
 		return nil, err
@@ -62,7 +65,7 @@ func Open(path string) (*Store, error) {
 func (s *Store) Close() error { return s.db.Close() }
 
 func (s *Store) migrate() error {
-	const schema = `
+	schema := fmt.Sprintf(`
 CREATE TABLE IF NOT EXISTS api_keys (
     id            TEXT NOT NULL PRIMARY KEY,
     token_sha256  TEXT NOT NULL,
@@ -70,43 +73,34 @@ CREATE TABLE IF NOT EXISTS api_keys (
     mailbox       TEXT NOT NULL,
     label         TEXT NOT NULL DEFAULT '',
     scopes        TEXT NOT NULL DEFAULT '',
-    secret_enc    BLOB NOT NULL,
-    secret_nonce  BLOB NOT NULL,
+    secret_enc    %[1]s NOT NULL,
+    secret_nonce  %[1]s NOT NULL,
     mc_app_pw_id  TEXT NOT NULL DEFAULT '',
-    created       INTEGER NOT NULL,
-    last_used     INTEGER NOT NULL DEFAULT 0,
-    expires       INTEGER NOT NULL DEFAULT 0,
-    revoked       INTEGER NOT NULL DEFAULT 0
+    created       %[2]s NOT NULL,
+    last_used     %[2]s NOT NULL DEFAULT 0,
+    expires       %[2]s NOT NULL DEFAULT 0,
+    revoked       %[2]s NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_api_keys_mailbox ON api_keys(mailbox);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_api_keys_token ON api_keys(token_sha256);`
+CREATE UNIQUE INDEX IF NOT EXISTS idx_api_keys_token ON api_keys(token_sha256);`,
+		s.d.BlobType(), s.d.IntType())
 	_, err := s.db.Exec(schema)
 	return err
 }
 
-func unix(t time.Time) int64 {
-	if t.IsZero() {
-		return 0
-	}
-	return t.Unix()
-}
-
-func fromUnix(n int64) time.Time {
-	if n == 0 {
-		return time.Time{}
-	}
-	return time.Unix(n, 0).UTC()
+func (s *Store) exec(query string, args ...any) (sql.Result, error) {
+	return s.db.Exec(s.d.Rebind(query), args...)
 }
 
 // Create inserts a fully-formed record (including the recovered mailcow
 // app-password id and the encrypted secret).
 func (s *Store) Create(r Record) error {
-	_, err := s.db.Exec(
+	_, err := s.exec(
 		`INSERT INTO api_keys
             (id, token_sha256, prefix, mailbox, label, scopes, secret_enc, secret_nonce, mc_app_pw_id, created, last_used, expires, revoked)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.ID, r.TokenSHA256, r.Prefix, r.Mailbox, r.Label, r.Scopes, r.SecretEnc, r.SecretNonce, r.MCAppPwID,
-		unix(r.Created), unix(r.LastUsed), unix(r.Expires), unix(r.Revoked),
+		storage.Unix(r.Created), storage.Unix(r.LastUsed), storage.Unix(r.Expires), storage.Unix(r.Revoked),
 	)
 	return err
 }
@@ -116,9 +110,9 @@ func (s *Store) Create(r Record) error {
 func (s *Store) GetByID(id string) (*Record, error) {
 	var r Record
 	var created, lastUsed, expires, revoked int64
-	err := s.db.QueryRow(
+	err := s.db.QueryRow(s.d.Rebind(
 		`SELECT id, token_sha256, prefix, mailbox, label, scopes, secret_enc, secret_nonce, mc_app_pw_id, created, last_used, expires, revoked
-         FROM api_keys WHERE id = ?`, id).
+         FROM api_keys WHERE id = ?`), id).
 		Scan(&r.ID, &r.TokenSHA256, &r.Prefix, &r.Mailbox, &r.Label, &r.Scopes, &r.SecretEnc, &r.SecretNonce, &r.MCAppPwID,
 			&created, &lastUsed, &expires, &revoked)
 	if err == sql.ErrNoRows {
@@ -127,10 +121,10 @@ func (s *Store) GetByID(id string) (*Record, error) {
 	if err != nil {
 		return nil, err
 	}
-	r.Created = fromUnix(created)
-	r.LastUsed = fromUnix(lastUsed)
-	r.Expires = fromUnix(expires)
-	r.Revoked = fromUnix(revoked)
+	r.Created = storage.FromUnix(created)
+	r.LastUsed = storage.FromUnix(lastUsed)
+	r.Expires = storage.FromUnix(expires)
+	r.Revoked = storage.FromUnix(revoked)
 	return &r, nil
 }
 
@@ -145,7 +139,7 @@ func (s *Store) List(mailbox string) ([]Record, error) {
 	}
 	query += ` ORDER BY created DESC`
 
-	rows, err := s.db.Query(query, args...)
+	rows, err := s.db.Query(s.d.Rebind(query), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -159,10 +153,10 @@ func (s *Store) List(mailbox string) ([]Record, error) {
 			&created, &lastUsed, &expires, &revoked); err != nil {
 			return nil, err
 		}
-		r.Created = fromUnix(created)
-		r.LastUsed = fromUnix(lastUsed)
-		r.Expires = fromUnix(expires)
-		r.Revoked = fromUnix(revoked)
+		r.Created = storage.FromUnix(created)
+		r.LastUsed = storage.FromUnix(lastUsed)
+		r.Expires = storage.FromUnix(expires)
+		r.Revoked = storage.FromUnix(revoked)
 		out = append(out, r)
 	}
 	return out, rows.Err()
@@ -171,7 +165,7 @@ func (s *Store) List(mailbox string) ([]Record, error) {
 // Revoke marks a key revoked at time t (idempotent — an already-revoked key
 // keeps its original revocation time). It reports whether a row existed.
 func (s *Store) Revoke(id string, t time.Time) (bool, error) {
-	res, err := s.db.Exec(`UPDATE api_keys SET revoked = ? WHERE id = ? AND revoked = 0`, unix(t), id)
+	res, err := s.exec(`UPDATE api_keys SET revoked = ? WHERE id = ? AND revoked = 0`, storage.Unix(t), id)
 	if err != nil {
 		return false, err
 	}
@@ -180,7 +174,7 @@ func (s *Store) Revoke(id string, t time.Time) (bool, error) {
 	}
 	// No row updated: either it does not exist or it was already revoked.
 	var exists int
-	if err := s.db.QueryRow(`SELECT 1 FROM api_keys WHERE id = ?`, id).Scan(&exists); err == sql.ErrNoRows {
+	if err := s.db.QueryRow(s.d.Rebind(`SELECT 1 FROM api_keys WHERE id = ?`), id).Scan(&exists); err == sql.ErrNoRows {
 		return false, nil
 	} else if err != nil {
 		return false, err
@@ -191,6 +185,6 @@ func (s *Store) Revoke(id string, t time.Time) (bool, error) {
 // TouchLastUsed records that a key was just used. Callers treat failures as
 // non-fatal (it is a best-effort bookkeeping update).
 func (s *Store) TouchLastUsed(id string, t time.Time) error {
-	_, err := s.db.Exec(`UPDATE api_keys SET last_used = ? WHERE id = ?`, unix(t), id)
+	_, err := s.exec(`UPDATE api_keys SET last_used = ? WHERE id = ?`, storage.Unix(t), id)
 	return err
 }

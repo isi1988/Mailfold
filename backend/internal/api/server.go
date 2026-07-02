@@ -51,7 +51,7 @@ func NewServer(cfg *config.Config, mc Mailcow, authn *auth.Authenticator, limite
 	var davStore *dav.Store
 	var davAuth *davVerifier
 	if cfg.DBPath != "" {
-		st, err := dav.Open(cfg.DBPath)
+		st, err := dav.Open(cfg.DBDriver, cfg.DBPath)
 		if err != nil {
 			logger.Error("failed to open DAV store; DAV disabled", "error", err)
 		} else {
@@ -71,7 +71,7 @@ func NewServer(cfg *config.Config, mc Mailcow, authn *auth.Authenticator, limite
 	case cfg.DBPath == "":
 		logger.Warn("MAILFOLD_APIKEY_ENABLED is set but MAILFOLD_DB_PATH is empty; API keys disabled")
 	default:
-		st, err := apikey.Open(cfg.DBPath)
+		st, err := apikey.Open(cfg.DBDriver, cfg.DBPath)
 		if err != nil {
 			logger.Error("failed to open API-key store; API keys disabled", "error", err)
 			break

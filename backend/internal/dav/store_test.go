@@ -4,7 +4,7 @@ import "testing"
 
 func openTestStore(t *testing.T) *Store {
 	t.Helper()
-	st, err := Open(t.TempDir() + "/dav.db")
+	st, err := Open("sqlite", t.TempDir()+"/dav.db")
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}

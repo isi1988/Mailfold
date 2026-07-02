@@ -107,6 +107,7 @@ func newAPIKeyServerMock(t *testing.T, rateMax int, mock *appPwMock) (*Server, h
 		IMAPAddr:            ln.Addr().String(),
 		MailUseTLS:          false,
 		WebmailSessionTTL:   time.Hour,
+		DBDriver:            "sqlite",
 		DBPath:              t.TempDir() + "/db.sqlite",
 		APIKeyEnabled:       true,
 		APIKeyMasterKey:     master,

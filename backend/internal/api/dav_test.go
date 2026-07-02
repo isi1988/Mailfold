@@ -75,6 +75,7 @@ func newDAVTestHandler(t *testing.T) http.Handler {
 		IMAPAddr:          ln.Addr().String(),
 		MailUseTLS:        false,
 		WebmailSessionTTL: time.Hour,
+		DBDriver:          "sqlite",
 		DBPath:            t.TempDir() + "/dav.db",
 	}
 	mc := mailcow.NewClient(cfg.MailcowBaseURL, cfg.MailcowAPIKey, false)

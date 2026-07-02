@@ -84,8 +84,14 @@ type Config struct {
 	MailInsecureTLS bool
 	// WebmailSessionTTL is the lifetime of an authenticated webmail session.
 	WebmailSessionTTL time.Duration
-	// DBPath is the path to the SQLite database backing the CardDAV/CalDAV
-	// groupware store. When empty, the DAV endpoints are disabled.
+	// DBDriver selects the database backend for the DAV and API-key stores. The
+	// open-source build supports only "sqlite" (the default); the enterprise build
+	// additionally supports "postgres". Requesting an unavailable driver fails
+	// fast with a clear error at startup.
+	DBDriver string
+	// DBPath is the DSN for the database backing the CardDAV/CalDAV and API-key
+	// stores — a file path for SQLite, or a connection string for other drivers.
+	// When empty, the stores (and thus DAV/API keys) are disabled.
 	DBPath string
 	// APIKeyEnabled turns on the machine-to-machine API-key subsystem (durable
 	// bearer keys for sending and collecting mail over the REST API). It reuses
@@ -132,6 +138,7 @@ func Load() (*Config, error) {
 		MailUseTLS:          getbool("MAILFOLD_MAIL_TLS", true),
 		MailInsecureTLS:     getbool("MAILFOLD_MAIL_INSECURE_TLS", false),
 		WebmailSessionTTL:   getdur("MAILFOLD_WEBMAIL_SESSION_TTL", 12*time.Hour),
+		DBDriver:            getenv("MAILFOLD_DB_DRIVER", "sqlite"),
 		DBPath:              os.Getenv("MAILFOLD_DB_PATH"),
 		APIKeyEnabled:       getbool("MAILFOLD_APIKEY_ENABLED", false),
 		APIKeyRateMax:       int(getint64("MAILFOLD_APIKEY_RATE_MAX", 120)),
