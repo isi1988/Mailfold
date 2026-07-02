@@ -159,7 +159,25 @@
       "status": "Status"
     },
     "empty": "No domains yet.",
-    "emptyFilter": "No domains match your filter."
+    "emptyFilter": "No domains match your filter.",
+    "form": {
+      "newTitle": "New domain",
+      "editTitle": "Edit domain",
+      "domain": "Domain",
+      "description": "Description",
+      "quota": "Max mailbox quota (GB)",
+      "maxMailboxes": "Max mailboxes",
+      "active": "Active",
+      "create": "Create domain",
+      "saving": "Saving…",
+      "invalid": "Enter a valid domain name (e.g. example.com).",
+      "created": "Domain {{domain}} created",
+      "updated": "Domain {{domain}} updated",
+      "deleted": "Domain {{domain}} deleted",
+      "failed": "Action failed",
+      "deleteTitle": "Delete domain?",
+      "deleteMsg": "{{domain}} and all its mailboxes and aliases will be permanently removed. This cannot be undone."
+    }
   },
   "aliases": {
     "title": "Aliases",
@@ -173,7 +191,25 @@
       "status": "Status"
     },
     "empty": "No aliases yet.",
-    "emptyFilter": "No aliases match your filter."
+    "emptyFilter": "No aliases match your filter.",
+    "form": {
+      "newTitle": "New alias",
+      "editTitle": "Edit alias",
+      "localPart": "Local part",
+      "domain": "Domain",
+      "goto": "Forwards to",
+      "gotoHint": "One recipient per line (or comma-separated).",
+      "active": "Active",
+      "create": "Create alias",
+      "saving": "Saving…",
+      "invalid": "Enter an address and at least one recipient.",
+      "created": "Alias {{alias}} created",
+      "updated": "Alias {{alias}} updated",
+      "deleted": "Alias {{alias}} deleted",
+      "failed": "Action failed",
+      "deleteTitle": "Delete alias?",
+      "deleteMsg": "The alias {{alias}} will be permanently removed."
+    }
   },
   "dashboard": {
     "title": "Overview",

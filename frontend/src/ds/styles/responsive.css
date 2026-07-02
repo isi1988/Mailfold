@@ -1,0 +1,63 @@
+/* Mobile / small-screen adaptations. Imported after components.css so these
+   rules win. Desktop layout is unchanged above the breakpoint. */
+
+/* The hamburger and off-canvas backdrop are desktop-hidden by default. */
+.mf-menu-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--ink);
+  padding: 6px;
+  margin-right: 4px;
+  border-radius: var(--r-md);
+}
+.mf-menu-btn:hover { background: var(--hair-soft); }
+.mf-sidebar-backdrop { display: none; }
+
+@media (max-width: 860px) {
+  /* Sidebar becomes an off-canvas slide-over toggled by the hamburger. */
+  .mf-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 60;
+    transform: translateX(-100%);
+    transition: transform 0.22s ease;
+  }
+  .mf-sidebar.mf-sidebar--open {
+    transform: translateX(0);
+    box-shadow: 0 0 46px rgba(30, 24, 16, 0.28);
+  }
+  .mf-sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(24, 18, 10, 0.4);
+    z-index: 55;
+  }
+  .mf-menu-btn { display: inline-flex; }
+
+  /* Content spans the full width; tighten padding. */
+  .mf-content { padding-left: 0; padding-right: 0; }
+  .mf-content__inner { padding-left: 16px; padding-right: 16px; }
+
+  /* Wide grid tables scroll horizontally instead of collapsing. */
+  .mf-table { overflow-x: auto; }
+  .mf-table__head,
+  .mf-table__row { min-width: 620px; }
+
+  /* Page headers stack their actions under the title. */
+  .mf-page-head { flex-wrap: wrap; gap: 12px; }
+  .mf-page-head__title { font-size: 26px; }
+
+  /* Login: drop the hero panel, let the form fill the screen. */
+  .mf-login__hero { display: none; }
+  .mf-login__panel { flex: 1; }
+
+  /* Slide-over drawers take (almost) the whole width. */
+  .mf-drawer { width: 100vw; max-width: 100vw; }
+}

@@ -6,6 +6,7 @@ import { BrowserRouter } from 'react-router-dom';
 import './ds/styles/tokens.css';
 import './ds/styles/base.css';
 import './ds/styles/components.css';
+import './ds/styles/responsive.css';
 
 import { I18nProvider } from './i18n/index.jsx';
 import { AuthProvider } from './auth/AuthContext.jsx';

@@ -5,7 +5,8 @@
    Accent is set with  <html data-accent="ochre|sage|ink|clay">
    ============================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Newsreader:opsz,ital,wght@6..72,0,400;6..72,0,500;6..72,0,600;6..72,1,400&family=Geist+Mono:wght@400;500&display=swap');
+/* Webfonts are self-hosted (see fonts.css); no external CDN request is made. */
+@import url('./fonts.css');
 
 :root {
   /* type */

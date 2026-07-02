@@ -8,11 +8,15 @@ import { Pill } from '../ds/components/atoms/Pill.jsx';
 import { Icon } from '../ds/components/atoms/Icon.jsx';
 import { ProgressBar } from '../ds/components/atoms/ProgressBar.jsx';
 import { Button } from '../ds/components/atoms/Button.jsx';
+import { ConfirmModal } from '../ds/components/organisms/ConfirmModal.jsx';
 import { tone } from '../ds/data/sample.js';
 import { useApi } from '../lib/useApi.js';
+import { api } from '../api/client.js';
 import { AsyncView } from '../components/States.jsx';
+import { useToast } from '../components/Toast.jsx';
 import { isActive, human, asList } from '../lib/format.js';
 import { useT } from '../i18n/index.jsx';
+import { DomainDrawer } from './DomainDrawer.jsx';
 
 const PAGE_SIZE = 20;
 
@@ -23,9 +27,24 @@ function storagePct(used, max) {
 
 export function DomainsPage() {
   const t = useT();
+  const { toast } = useToast();
   const { data, loading, error, reload } = useApi('/api/domains', []);
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
+  const [drawer, setDrawer] = useState(null); // { mode:'create' } | { mode:'edit', domain }
+  const [confirmDom, setConfirmDom] = useState(null);
+
+  async function doDelete() {
+    const d = confirmDom;
+    setConfirmDom(null);
+    try {
+      await api.del('/api/domains', { items: [d.domain_name] });
+      toast(t('domains.form.deleted', { domain: d.domain_name }));
+      reload();
+    } catch (err) {
+      toast(t('domains.form.failed'), (err && err.body && err.body.message) || (err && err.message) || '');
+    }
+  }
 
   const cols = [
     { label: t('domains.col.domain'), w: '2fr' },
@@ -53,7 +72,7 @@ export function DomainsPage() {
       <PageHeader
         title={t('domains.title')}
         sub={t('domains.count', { count: rows.length })}
-        actions={<Button variant="primary">{t('domains.add')}</Button>}
+        actions={<Button variant="primary" onClick={() => setDrawer({ mode: 'create' })}>{t('domains.add')}</Button>}
       />
       <div className="mf-row" style={{ marginBottom: 14 }}>
         <SearchInput className="mf-spacer" style={{ width: 250 }} placeholder={t('domains.filter')} value={q} onChange={onQuery} />
@@ -70,7 +89,7 @@ export function DomainsPage() {
             const used = Number(d.bytes_total) || 0;
             const max = Number(d.max_quota_for_domain) || 0;
             return (
-              <TableRow key={d.domain_name}>
+              <TableRow key={d.domain_name} onClick={() => setDrawer({ mode: 'edit', domain: d })} style={{ cursor: 'pointer' }}>
                 <div className="mf-cell-user">
                   <div className="mf-avatar mf-avatar--square mf-avatar--34">
                     <Logo wordmark={false} markSize={18} color="var(--accent-ink)" />
@@ -100,6 +119,26 @@ export function DomainsPage() {
           </div>
         )}
       </AsyncView>
+
+      {drawer && (
+        <DomainDrawer
+          mode={drawer.mode}
+          domain={drawer.domain}
+          onClose={() => setDrawer(null)}
+          onSaved={reload}
+          onDelete={d => { setDrawer(null); setConfirmDom(d); }}
+        />
+      )}
+      {confirmDom && (
+        <ConfirmModal
+          title={t('domains.form.deleteTitle')}
+          msg={t('domains.form.deleteMsg', { domain: confirmDom.domain_name })}
+          cta={t('common.delete')}
+          danger
+          onCancel={() => setConfirmDom(null)}
+          onConfirm={doDelete}
+        />
+      )}
     </>
   );
 }

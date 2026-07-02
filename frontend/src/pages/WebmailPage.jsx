@@ -293,11 +293,20 @@ function WebmailClient() {
                 <span className="mf-u-faint mf-u-mono mf-spacer" style={{ fontSize: 12 }}>{shortTime(selected.date)}</span>
               </div>
             </div>
-            <div style={{ padding: 22, overflow: 'auto', flex: 1 }}>
-              {body === null ? <Loading message={t('webmail.loadingMessage')} />
-                : <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', font: '14px/1.6 var(--font-sans)', color: 'var(--ink)', margin: 0 }}>{body.text || (body.html ? body.html.replace(/<[^>]+>/g, ' ') : '')}</pre>}
+            <div style={{ overflow: 'auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
+              {body === null ? (
+                <div style={{ padding: 22 }}><Loading message={t('webmail.loadingMessage')} /></div>
+              ) : body.html ? (
+                // Render HTML mail in a fully-sandboxed iframe: sandbox="" blocks
+                // scripts, forms, popups and same-origin access, so untrusted mail
+                // markup cannot run or reach the app.
+                <iframe title="message" sandbox="" srcDoc={body.html}
+                  style={{ border: 'none', width: '100%', flex: 1, minHeight: 320, background: '#fff' }} />
+              ) : (
+                <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', font: '14px/1.6 var(--font-sans)', color: 'var(--ink)', margin: 0, padding: 22 }}>{body.text || ''}</pre>
+              )}
               {body && Array.isArray(body.attachments) && body.attachments.length > 0 && (
-                <div style={{ marginTop: 18, borderTop: '1px solid var(--hair)', paddingTop: 14 }}>
+                <div style={{ margin: '0 22px 22px', borderTop: '1px solid var(--hair)', paddingTop: 14 }}>
                   <div className="mf-u-muted" style={{ fontSize: 12, marginBottom: 8 }}>{t('webmail.attachments', { count: body.attachments.length })}</div>
                   <div className="mf-row" style={{ gap: 8, flexWrap: 'wrap' }}>
                     {body.attachments.map((a, i) => (

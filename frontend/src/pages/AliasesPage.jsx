@@ -6,19 +6,39 @@ import { Pagination } from '../ds/components/molecules/Pagination.jsx';
 import { Pill } from '../ds/components/atoms/Pill.jsx';
 import { Icon } from '../ds/components/atoms/Icon.jsx';
 import { Button } from '../ds/components/atoms/Button.jsx';
+import { ConfirmModal } from '../ds/components/organisms/ConfirmModal.jsx';
 import { tone } from '../ds/data/sample.js';
 import { useApi } from '../lib/useApi.js';
+import { api } from '../api/client.js';
 import { AsyncView } from '../components/States.jsx';
+import { useToast } from '../components/Toast.jsx';
 import { isActive, asList } from '../lib/format.js';
 import { useT } from '../i18n/index.jsx';
+import { AliasDrawer } from './AliasDrawer.jsx';
 
 const PAGE_SIZE = 20;
 
 export function AliasesPage() {
   const t = useT();
+  const { toast } = useToast();
   const { data, loading, error, reload } = useApi('/api/aliases', []);
+  const domainsApi = useApi('/api/domains', []);
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
+  const [drawer, setDrawer] = useState(null);
+  const [confirmAlias, setConfirmAlias] = useState(null);
+
+  async function doDelete() {
+    const a = confirmAlias;
+    setConfirmAlias(null);
+    try {
+      await api.del('/api/aliases', { items: [String(a.id)] });
+      toast(t('aliases.form.deleted', { alias: a.address }));
+      reload();
+    } catch (err) {
+      toast(t('aliases.form.failed'), (err && err.body && err.body.message) || (err && err.message) || '');
+    }
+  }
 
   const cols = [
     { label: t('aliases.col.alias'), w: '1.6fr' },
@@ -44,7 +64,7 @@ export function AliasesPage() {
       <PageHeader
         title={t('aliases.title')}
         sub={t('aliases.count', { count: rows.length })}
-        actions={<Button variant="primary">{t('aliases.add')}</Button>}
+        actions={<Button variant="primary" onClick={() => setDrawer({ mode: 'create' })}>{t('aliases.add')}</Button>}
       />
       <div className="mf-row" style={{ marginBottom: 14 }}>
         <SearchInput className="mf-spacer" style={{ width: 250 }} placeholder={t('aliases.filter')} value={q} onChange={onQuery} />
@@ -58,7 +78,7 @@ export function AliasesPage() {
       >
         <Table columns={cols}>
           {paged.map(a => (
-            <TableRow key={a.address}>
+            <TableRow key={a.address} onClick={() => setDrawer({ mode: 'edit', alias: a })} style={{ cursor: 'pointer' }}>
               <span className="mf-u-mono mf-truncate" style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{a.address}</span>
               <div className="mf-row mf-min0" style={{ gap: 8 }}>
                 <Icon name="arrow-right" size={14} style={{ color: 'var(--faint)', flex: 'none' }} />
@@ -75,6 +95,27 @@ export function AliasesPage() {
           </div>
         )}
       </AsyncView>
+
+      {drawer && (
+        <AliasDrawer
+          mode={drawer.mode}
+          alias={drawer.alias}
+          domains={asList(domainsApi.data)}
+          onClose={() => setDrawer(null)}
+          onSaved={reload}
+          onDelete={a => { setDrawer(null); setConfirmAlias(a); }}
+        />
+      )}
+      {confirmAlias && (
+        <ConfirmModal
+          title={t('aliases.form.deleteTitle')}
+          msg={t('aliases.form.deleteMsg', { alias: confirmAlias.address })}
+          cta={t('common.delete')}
+          danger
+          onCancel={() => setConfirmAlias(null)}
+          onConfirm={doDelete}
+        />
+      )}
     </>
   );
 }
