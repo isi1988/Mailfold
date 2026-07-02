@@ -18,10 +18,12 @@ type Mailbox struct {
 	// this as an integer flag (1 = active, 0 = disabled).
 	Active int `json:"active"`
 	// QuotaKB is the mailbox storage quota expressed in kilobytes, matching the
-	// unit mailcow reports.
-	QuotaKB int64 `json:"quota"`
-	// MessagesTotal is the number of messages currently stored in the mailbox.
-	MessagesTotal int `json:"messages"`
+	// unit mailcow reports. mailcow may quote this value as a string, so it uses
+	// FlexInt64.
+	QuotaKB FlexInt64 `json:"quota"`
+	// MessagesTotal is the number of messages currently stored in the mailbox,
+	// which mailcow may also return as a quoted string.
+	MessagesTotal FlexInt64 `json:"messages"`
 }
 
 // Mailboxes returns every mailbox known to mailcow. It decodes into the typed

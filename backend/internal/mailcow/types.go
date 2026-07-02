@@ -2,8 +2,30 @@ package mailcow
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 )
+
+// FlexInt64 is an int64 that also decodes from a JSON string. mailcow is
+// inconsistent about numeric fields — byte counts such as a domain's total and
+// quota are returned as quoted strings once they are non-zero — so fields that
+// can arrive either way use this type. It marshals back out as a plain number.
+type FlexInt64 int64
+
+// UnmarshalJSON accepts a JSON number, a quoted number, null, or an empty string.
+func (f *FlexInt64) UnmarshalJSON(b []byte) error {
+	s := strings.Trim(string(b), `"`)
+	if s == "" || s == "null" {
+		*f = 0
+		return nil
+	}
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return err
+	}
+	*f = FlexInt64(n)
+	return nil
+}
 
 // ActionResult is one element of the JSON array that mailcow returns from its
 // mutating endpoints (add/edit/delete/flush). mailcow reports the outcome of an

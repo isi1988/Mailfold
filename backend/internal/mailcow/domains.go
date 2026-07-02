@@ -20,9 +20,11 @@ type Domain struct {
 	// Aliases is the current number of aliases defined in the domain.
 	Aliases int `json:"aliases_in_domain"`
 	// MaxQuota is the maximum total storage (in bytes) allowed for the domain.
-	MaxQuota int64 `json:"max_quota_for_domain"`
-	// QuotaUsed is the storage (in bytes) currently consumed across the domain.
-	QuotaUsed int64 `json:"bytes_total"`
+	// mailcow returns this as a quoted string once non-zero, so it uses FlexInt64.
+	MaxQuota FlexInt64 `json:"max_quota_for_domain"`
+	// QuotaUsed is the storage (in bytes) currently consumed across the domain,
+	// also returned as a quoted string by mailcow.
+	QuotaUsed FlexInt64 `json:"bytes_total"`
 }
 
 // Domains returns every mail domain known to mailcow. It decodes into the typed
