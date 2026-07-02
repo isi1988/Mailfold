@@ -1,0 +1,265 @@
+openapi: 3.0.3
+info:
+  title: Mailfold API
+  description: |
+    Management API for a mailcow instance. Mailfold authenticates operators with
+    its own bearer tokens and proxies administrative operations to mailcow.
+
+    Obtain a token from `POST /api/auth/login`, then send it as
+    `Authorization: Bearer <token>` on every other endpoint.
+  version: "1.0.0"
+  license:
+    name: PolyForm Noncommercial 1.0.0
+    url: https://polyformproject.org/licenses/noncommercial/1.0.0
+servers:
+  - url: /
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+    LoginRequest:
+      type: object
+      required: [user, password]
+      properties:
+        user: { type: string }
+        password: { type: string }
+    LoginResponse:
+      type: object
+      properties:
+        token: { type: string }
+        user: { type: string }
+        expires_at: { type: string, format: date-time }
+    Session:
+      type: object
+      properties:
+        user: { type: string }
+        expires_at: { type: string, format: date-time }
+    Attr:
+      type: object
+      description: mailcow attribute payload; the exact fields depend on the resource.
+      additionalProperties: true
+    ItemsRequest:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { type: string }
+    EditRequest:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { type: string }
+        attr: { $ref: "#/components/schemas/Attr" }
+    ActionResult:
+      type: object
+      properties:
+        type: { type: string, example: success }
+        msg: {}
+        log: {}
+    ActionResults:
+      type: object
+      properties:
+        ok: { type: boolean }
+        message: { type: string }
+        results:
+          type: array
+          items: { $ref: "#/components/schemas/ActionResult" }
+  responses:
+    Unauthorized:
+      description: Missing or invalid bearer token.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Action:
+      description: mailcow action result.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ActionResults" }
+    Upstream:
+      description: Raw JSON proxied from mailcow.
+      content:
+        application/json:
+          schema: {}
+  requestBodies:
+    Attr:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Attr" }
+    Edit:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/EditRequest" }
+    Items:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ItemsRequest" }
+security:
+  - bearerAuth: []
+paths:
+  /api/health:
+    get:
+      tags: [health]
+      summary: Liveness probe
+      security: []
+      responses:
+        "200": { description: Service is up. }
+  /api/health/ready:
+    get:
+      tags: [health]
+      summary: Readiness probe (verifies mailcow reachability)
+      security: []
+      responses:
+        "200": { description: mailcow reachable. }
+        "503": { description: mailcow unreachable. }
+  /api/auth/login:
+    post:
+      tags: [auth]
+      summary: Authenticate and receive a bearer token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+      responses:
+        "200":
+          description: Token issued.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoginResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { description: Too many login attempts. }
+  /api/auth/logout:
+    post:
+      tags: [auth]
+      summary: Invalidate the current session
+      responses:
+        "200": { description: Logged out. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/auth/me:
+    get:
+      tags: [auth]
+      summary: Return the current session
+      responses:
+        "200":
+          description: Current session.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Session" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/domains:
+    get: { tags: [domains], summary: List domains, responses: { "200": { $ref: "#/components/responses/Upstream" }, "401": { $ref: "#/components/responses/Unauthorized" } } }
+    post: { tags: [domains], summary: Create a domain, requestBody: { $ref: "#/components/requestBodies/Attr" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+    put: { tags: [domains], summary: Edit domains, requestBody: { $ref: "#/components/requestBodies/Edit" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+    delete: { tags: [domains], summary: Delete domains, requestBody: { $ref: "#/components/requestBodies/Items" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+  /api/mailboxes:
+    get: { tags: [mailboxes], summary: List mailboxes, responses: { "200": { $ref: "#/components/responses/Upstream" } } }
+    post: { tags: [mailboxes], summary: Create a mailbox, requestBody: { $ref: "#/components/requestBodies/Attr" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+    put: { tags: [mailboxes], summary: Edit mailboxes, requestBody: { $ref: "#/components/requestBodies/Edit" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+    delete: { tags: [mailboxes], summary: Delete mailboxes, requestBody: { $ref: "#/components/requestBodies/Items" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+  /api/aliases:
+    get: { tags: [aliases], summary: List aliases, responses: { "200": { $ref: "#/components/responses/Upstream" } } }
+    post: { tags: [aliases], summary: Create an alias, requestBody: { $ref: "#/components/requestBodies/Attr" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+    put: { tags: [aliases], summary: Edit aliases, requestBody: { $ref: "#/components/requestBodies/Edit" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+    delete: { tags: [aliases], summary: Delete aliases, requestBody: { $ref: "#/components/requestBodies/Items" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+  /api/dkim/{domain}:
+    get:
+      tags: [dkim]
+      summary: Get the DKIM key for a domain
+      parameters: [{ name: domain, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { $ref: "#/components/responses/Upstream" } }
+  /api/dkim:
+    post: { tags: [dkim], summary: Generate a DKIM key, requestBody: { $ref: "#/components/requestBodies/Attr" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+    delete: { tags: [dkim], summary: Delete DKIM keys, requestBody: { $ref: "#/components/requestBodies/Items" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+  /api/syncjobs:
+    get: { tags: [syncjobs], summary: List sync jobs, responses: { "200": { $ref: "#/components/responses/Upstream" } } }
+    post: { tags: [syncjobs], summary: Create a sync job, requestBody: { $ref: "#/components/requestBodies/Attr" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+    put: { tags: [syncjobs], summary: Edit sync jobs, requestBody: { $ref: "#/components/requestBodies/Edit" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+    delete: { tags: [syncjobs], summary: Delete sync jobs, requestBody: { $ref: "#/components/requestBodies/Items" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+  /api/queue:
+    get: { tags: [queue], summary: Get the Postfix mail queue, responses: { "200": { $ref: "#/components/responses/Upstream" } } }
+  /api/queue/flush:
+    post: { tags: [queue], summary: Flush the mail queue, responses: { "200": { $ref: "#/components/responses/Action" } } }
+  /api/logs/{service}:
+    get:
+      tags: [logs]
+      summary: Read logs for a mailcow service
+      parameters:
+        - { name: service, in: path, required: true, schema: { type: string, enum: [postfix, dovecot, sogo, watchdog, acme, api, netfilter, autodiscover, ratelimited, rspamd-history] } }
+        - { name: count, in: query, required: false, schema: { type: integer, default: 100 } }
+      responses: { "200": { $ref: "#/components/responses/Upstream" }, "400": { description: Unknown service. } }
+  /api/fail2ban:
+    get: { tags: [fail2ban], summary: Get fail2ban config, responses: { "200": { $ref: "#/components/responses/Upstream" } } }
+    put: { tags: [fail2ban], summary: Edit fail2ban config, requestBody: { $ref: "#/components/requestBodies/Attr" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+  /api/quarantine:
+    get: { tags: [quarantine], summary: List quarantine items, responses: { "200": { $ref: "#/components/responses/Upstream" } } }
+    delete: { tags: [quarantine], summary: Delete quarantine items, requestBody: { $ref: "#/components/requestBodies/Items" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+  /api/policy:
+    post: { tags: [policy], summary: Add a domain spam policy, requestBody: { $ref: "#/components/requestBodies/Attr" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+    delete: { tags: [policy], summary: Delete domain spam policies, requestBody: { $ref: "#/components/requestBodies/Items" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+  /api/policy/allow/{domain}:
+    get: { tags: [policy], summary: Domain allow list, parameters: [{ name: domain, in: path, required: true, schema: { type: string } }], responses: { "200": { $ref: "#/components/responses/Upstream" } } }
+  /api/policy/deny/{domain}:
+    get: { tags: [policy], summary: Domain deny list, parameters: [{ name: domain, in: path, required: true, schema: { type: string } }], responses: { "200": { $ref: "#/components/responses/Upstream" } } }
+  /api/domain-admins:
+    get: { tags: [domain-admins], summary: List domain admins, responses: { "200": { $ref: "#/components/responses/Upstream" } } }
+    post: { tags: [domain-admins], summary: Create a domain admin, requestBody: { $ref: "#/components/requestBodies/Attr" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+    put: { tags: [domain-admins], summary: Edit domain admins, requestBody: { $ref: "#/components/requestBodies/Edit" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+    delete: { tags: [domain-admins], summary: Delete domain admins, requestBody: { $ref: "#/components/requestBodies/Items" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+  /api/resources:
+    get: { tags: [resources], summary: List resources, responses: { "200": { $ref: "#/components/responses/Upstream" } } }
+    post: { tags: [resources], summary: Create a resource, requestBody: { $ref: "#/components/requestBodies/Attr" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+    put: { tags: [resources], summary: Edit resources, requestBody: { $ref: "#/components/requestBodies/Edit" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+    delete: { tags: [resources], summary: Delete resources, requestBody: { $ref: "#/components/requestBodies/Items" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+  /api/app-passwords/{mailbox}:
+    get: { tags: [app-passwords], summary: List app passwords for a mailbox, parameters: [{ name: mailbox, in: path, required: true, schema: { type: string } }], responses: { "200": { $ref: "#/components/responses/Upstream" } } }
+  /api/app-passwords:
+    post: { tags: [app-passwords], summary: Create an app password, requestBody: { $ref: "#/components/requestBodies/Attr" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+    delete: { tags: [app-passwords], summary: Delete app passwords, requestBody: { $ref: "#/components/requestBodies/Items" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+  /api/oauth2-clients:
+    get: { tags: [oauth2], summary: List OAuth2 clients, responses: { "200": { $ref: "#/components/responses/Upstream" } } }
+    post: { tags: [oauth2], summary: Create an OAuth2 client, requestBody: { $ref: "#/components/requestBodies/Attr" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+    delete: { tags: [oauth2], summary: Delete OAuth2 clients, requestBody: { $ref: "#/components/requestBodies/Items" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+  /api/forwarding-hosts:
+    get: { tags: [forwarding-hosts], summary: List forwarding hosts, responses: { "200": { $ref: "#/components/responses/Upstream" } } }
+    post: { tags: [forwarding-hosts], summary: Add a forwarding host, requestBody: { $ref: "#/components/requestBodies/Attr" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+    delete: { tags: [forwarding-hosts], summary: Delete forwarding hosts, requestBody: { $ref: "#/components/requestBodies/Items" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+  /api/transports:
+    get: { tags: [transports], summary: List transports, responses: { "200": { $ref: "#/components/responses/Upstream" } } }
+    post: { tags: [transports], summary: Create a transport, requestBody: { $ref: "#/components/requestBodies/Attr" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+    put: { tags: [transports], summary: Edit transports, requestBody: { $ref: "#/components/requestBodies/Edit" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+    delete: { tags: [transports], summary: Delete transports, requestBody: { $ref: "#/components/requestBodies/Items" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+  /api/relayhosts:
+    get: { tags: [relayhosts], summary: List relayhosts, responses: { "200": { $ref: "#/components/responses/Upstream" } } }
+    post: { tags: [relayhosts], summary: Create a relayhost, requestBody: { $ref: "#/components/requestBodies/Attr" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+    put: { tags: [relayhosts], summary: Edit relayhosts, requestBody: { $ref: "#/components/requestBodies/Edit" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+    delete: { tags: [relayhosts], summary: Delete relayhosts, requestBody: { $ref: "#/components/requestBodies/Items" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+  /api/tls-policies:
+    get: { tags: [tls-policies], summary: List TLS policy maps, responses: { "200": { $ref: "#/components/responses/Upstream" } } }
+    post: { tags: [tls-policies], summary: Add a TLS policy, requestBody: { $ref: "#/components/requestBodies/Attr" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+    delete: { tags: [tls-policies], summary: Delete TLS policies, requestBody: { $ref: "#/components/requestBodies/Items" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+  /api/bcc:
+    get: { tags: [bcc], summary: List BCC maps, responses: { "200": { $ref: "#/components/responses/Upstream" } } }
+    post: { tags: [bcc], summary: Add a BCC map, requestBody: { $ref: "#/components/requestBodies/Attr" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+    delete: { tags: [bcc], summary: Delete BCC maps, requestBody: { $ref: "#/components/requestBodies/Items" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+  /api/recipient-maps:
+    get: { tags: [recipient-maps], summary: List recipient maps, responses: { "200": { $ref: "#/components/responses/Upstream" } } }
+    post: { tags: [recipient-maps], summary: Add a recipient map, requestBody: { $ref: "#/components/requestBodies/Attr" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+    delete: { tags: [recipient-maps], summary: Delete recipient maps, requestBody: { $ref: "#/components/requestBodies/Items" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+  /api/status/containers:
+    get: { tags: [status], summary: mailcow container status, responses: { "200": { $ref: "#/components/responses/Upstream" } } }
+  /api/status/version:
+    get: { tags: [status], summary: mailcow version, responses: { "200": { $ref: "#/components/responses/Upstream" } } }
+  /api/status/vmail:
+    get: { tags: [status], summary: Mail storage usage, responses: { "200": { $ref: "#/components/responses/Upstream" } } }

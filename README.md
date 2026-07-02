@@ -54,6 +54,13 @@ make run               # or: cd backend && go run ./cmd/mailfold
 | `GET` | `/api/domains` | List mail domains. |
 | `GET` | `/api/mailboxes` | List mailboxes. |
 
+### API documentation
+
+The running server documents itself:
+
+- `GET /api/docs` — interactive Swagger UI.
+- `GET /api/openapi.yaml` — the raw OpenAPI 3 spec ([backend/internal/api/openapi.yaml](backend/internal/api/openapi.yaml)).
+
 ### Docker
 
 A multi-stage [`Dockerfile`](Dockerfile) builds a static binary into a

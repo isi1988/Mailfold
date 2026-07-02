@@ -392,3 +392,16 @@ func TestLoginRateLimit(t *testing.T) {
 		t.Error("expected a Retry-After header on the 429 response")
 	}
 }
+
+func TestDocsEndpoints(t *testing.T) {
+	h := newAPI(t, mockMailcow(t, 0, "").URL, []string{"*"})
+
+	rec := do(h, http.MethodGet, "/api/openapi.yaml", "", "")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "openapi:") {
+		t.Errorf("openapi spec: code=%d body-start=%.20q", rec.Code, rec.Body.String())
+	}
+	rec2 := do(h, http.MethodGet, "/api/docs", "", "")
+	if rec2.Code != http.StatusOK || !strings.Contains(rec2.Body.String(), "swagger-ui") {
+		t.Errorf("docs page: code=%d", rec2.Code)
+	}
+}

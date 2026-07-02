@@ -40,6 +40,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/health", s.handleHealth)
 	mux.HandleFunc("GET /api/health/ready", s.handleReady)
 
+	// API documentation (public).
+	s.registerDocsRoutes(mux)
+
 	// Authentication.
 	s.registerAuthRoutes(mux)
 
