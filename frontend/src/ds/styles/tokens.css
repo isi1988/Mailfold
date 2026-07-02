@@ -1,0 +1,89 @@
+/* ============================================================
+   Mailfold — Design Tokens
+   Colour, type, radius, shadow. Import this FIRST.
+   Theme is set with  <html data-theme="light|dark">
+   Accent is set with  <html data-accent="ochre|sage|ink|clay">
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Newsreader:opsz,ital,wght@6..72,0,400;6..72,0,500;6..72,0,600;6..72,1,400&family=Geist+Mono:wght@400;500&display=swap');
+
+:root {
+  /* type */
+  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-serif: "Newsreader", Georgia, serif;
+  --font-mono: "Geist Mono", ui-monospace, monospace;
+
+  /* radius */
+  --r-sm: 7px;
+  --r-md: 9px;
+  --r-lg: 12px;
+  --r-xl: 14px;
+  --r-2xl: 16px;
+  --r-pill: 999px;
+
+  /* elevation */
+  --shadow: 0 1px 2px rgba(30, 22, 10, .05);
+  --shadow-pop: 0 18px 44px rgba(0, 0, 0, .22);
+  --shadow-drawer: -24px 0 60px rgba(0, 0, 0, .24);
+  --shadow-modal: 0 30px 80px rgba(0, 0, 0, .32);
+  --shadow-toast: 0 16px 44px rgba(0, 0, 0, .3);
+}
+
+/* ---- Light (default) ---------------------------------------- */
+:root,
+[data-theme="light"] {
+  --bg: #FAF8F3;
+  --sidebar: #F3EFE7;
+  --surface: #FFFFFF;
+  --surface-2: #FBF8F2;
+  --ink: #23201B;
+  --ink-strong: #1C1A17;
+  --muted: #6E6860;
+  --faint: #9A9488;
+  --hair: #E6E0D5;
+  --hair-soft: #F0EBE0;
+  --accent: #B07C33;
+  --accent-ink: #946A1B;
+  --accent-soft: #F6EAD3;
+  --green: #4B7B58;  --green-soft: #E3EFE6;
+  --amber: #B8892F;  --amber-soft: #F6EAD3;
+  --blue: #3C6187;   --blue-soft: #E6EDF4;
+  --red: #B0472F;    --red-soft: #F3E3DE;
+  --shadow: 0 1px 2px rgba(30, 22, 10, .05);
+}
+
+/* ---- Dark --------------------------------------------------- */
+[data-theme="dark"] {
+  --bg: #1A1712;
+  --sidebar: #17140F;
+  --surface: #221E17;
+  --surface-2: #26221B;
+  --ink: #EFE8DC;
+  --ink-strong: #F6F1E7;
+  --muted: #A79E8D;
+  --faint: #7A7365;
+  --hair: #332C22;
+  --hair-soft: #2A251D;
+  --accent: #D19A4A;
+  --accent-ink: #E0B36B;
+  --accent-soft: rgba(209, 154, 74, .15);
+  --green: #6FB183;  --green-soft: rgba(111, 177, 131, .15);
+  --amber: #D9A64E;  --amber-soft: rgba(217, 166, 78, .15);
+  --blue: #7FA6CF;   --blue-soft: rgba(127, 166, 207, .15);
+  --red: #E08A6E;    --red-soft: rgba(224, 138, 110, .15);
+  --shadow: 0 1px 2px rgba(0, 0, 0, .3);
+}
+
+/* ============================================================
+   Accent overrides (optional). Ochre is the default baked in
+   above, so only the alternates need declaring.
+   ============================================================ */
+
+[data-theme="light"][data-accent="sage"] { --accent:#4B7B58; --accent-ink:#3B6147; --accent-soft:#E3EFE6; }
+[data-theme="dark"][data-accent="sage"]  { --accent:#7FB48D; --accent-ink:#9BC8A6; --accent-soft:rgba(127,180,141,.16); }
+
+[data-theme="light"][data-accent="ink"]  { --accent:#3C6187; --accent-ink:#2E4C6B; --accent-soft:#E6EDF4; }
+[data-theme="dark"][data-accent="ink"]   { --accent:#7FA6CF; --accent-ink:#9DBEDF; --accent-soft:rgba(127,166,207,.16); }
+
+[data-theme="light"][data-accent="clay"] { --accent:#9B5A4A; --accent-ink:#7E4536; --accent-soft:#F1E4DF; }
+[data-theme="dark"][data-accent="clay"]  { --accent:#C98A76; --accent-ink:#DBA491; --accent-soft:rgba(201,138,118,.16); }

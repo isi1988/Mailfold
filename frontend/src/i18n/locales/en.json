@@ -1,0 +1,83 @@
+{
+  "common": {
+    "retry": "Retry",
+    "loading": "Loading…",
+    "cancel": "Cancel",
+    "save": "Save",
+    "delete": "Delete",
+    "create": "Create",
+    "edit": "Edit",
+    "close": "Close",
+    "active": "active",
+    "disabled": "disabled",
+    "docs": "Docs"
+  },
+  "states": {
+    "loading": "Loading…",
+    "empty": "Nothing here yet.",
+    "error": "Something went wrong."
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "mailboxes": "Mailboxes",
+    "domains": "Domains",
+    "aliases": "Aliases",
+    "queue": "Queue",
+    "quarantine": "Quarantine",
+    "spam": "Spam filter",
+    "syncjobs": "Sync jobs",
+    "logs": "Logs",
+    "webmail": "Webmail",
+    "settings": "Settings",
+    "group": {
+      "mail": "Mail",
+      "flow": "Flow",
+      "system": "System",
+      "apps": "Apps"
+    }
+  },
+  "shell": {
+    "role": "Administrator",
+    "searchPlaceholder": "Search or jump to…",
+    "logout": "Sign out",
+    "theme": {
+      "light": "Light",
+      "dark": "Dark"
+    }
+  },
+  "login": {
+    "signIn": "Sign in",
+    "welcome": "Welcome back — enter your admin credentials.",
+    "emailOrUsername": "Email or username",
+    "password": "Password",
+    "usernamePlaceholder": "admin",
+    "signingIn": "Signing in…",
+    "invalidCredentials": "Invalid credentials.",
+    "failed": "Sign-in failed.",
+    "headline": "A calm shell for your mail server.",
+    "lede": "Domains and mailboxes are your herd. Mailfold is the fold that keeps them — every letter, every gate, in one quiet place.",
+    "badgePrefix": "A modern admin UI for",
+    "foot": "self-hosted · powered by mailcow"
+  },
+  "mailboxes": {
+    "title": "Mailboxes",
+    "count_one": "{{count}} mailbox",
+    "count_other": "{{count}} mailboxes",
+    "new": "+ New mailbox",
+    "filter": "Filter mailboxes…",
+    "tabs": {
+      "all": "All",
+      "active": "Active",
+      "disabled": "Disabled"
+    },
+    "col": {
+      "mailbox": "Mailbox",
+      "domain": "Domain",
+      "quota": "Quota",
+      "messages": "Messages",
+      "status": "Status"
+    },
+    "empty": "No mailboxes yet.",
+    "emptyFilter": "No mailboxes match your filter."
+  }
+}
