@@ -1,0 +1,25 @@
+# Build artifacts
+/bin/
+backend/mailfold
+*.exe
+*.out
+
+# Environment
+.env
+.env.local
+*.local
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/.next/
+
+# Go
+vendor/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
+*.swp
