@@ -290,3 +290,43 @@ paths:
     put: { tags: [ratelimits], summary: Edit per-domain rate limits, requestBody: { $ref: "#/components/requestBodies/Edit" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
   /api/pushover:
     put: { tags: [pushover], summary: Edit Pushover settings, requestBody: { $ref: "#/components/requestBodies/Edit" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+  /api/webmail/login:
+    post:
+      tags: [webmail]
+      summary: Authenticate with mailbox credentials and receive a webmail token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        "200": { description: Token issued. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { description: Too many attempts. }
+        "503": { description: Webmail is not configured. }
+  /api/webmail/logout:
+    post: { tags: [webmail], summary: End the webmail session, responses: { "200": { description: Logged out. } } }
+  /api/webmail/folders:
+    get: { tags: [webmail], summary: List the user's mail folders, responses: { "200": { $ref: "#/components/responses/Upstream" }, "401": { $ref: "#/components/responses/Unauthorized" } } }
+  /api/webmail/messages:
+    get:
+      tags: [webmail]
+      summary: List messages in a folder (newest first)
+      parameters:
+        - { name: folder, in: query, schema: { type: string, default: INBOX } }
+        - { name: limit, in: query, schema: { type: integer, default: 50 } }
+      responses: { "200": { $ref: "#/components/responses/Upstream" } }
+  /api/webmail/message:
+    get:
+      tags: [webmail]
+      summary: Read a message by UID (decoded body and attachment list)
+      parameters:
+        - { name: folder, in: query, schema: { type: string, default: INBOX } }
+        - { name: uid, in: query, required: true, schema: { type: integer } }
+      responses: { "200": { $ref: "#/components/responses/Upstream" }, "400": { description: Invalid uid. } }

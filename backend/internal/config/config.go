@@ -69,6 +69,19 @@ type Config struct {
 	// against memory exhaustion from oversized or malicious payloads. A value
 	// <= 0 leaves the body size unbounded.
 	MaxBodyBytes int64
+	// IMAPAddr is the "host:port" of the IMAP server the webmail layer connects
+	// to. When empty, webmail is disabled and its endpoints report 503.
+	IMAPAddr string
+	// SMTPAddr is the "host:port" of the SMTP submission server used to send mail.
+	SMTPAddr string
+	// MailUseTLS selects implicit TLS (IMAPS/SMTPS) for webmail connections; when
+	// false a plaintext connection is used.
+	MailUseTLS bool
+	// MailInsecureTLS skips TLS certificate verification for webmail connections
+	// (development only, e.g. against self-signed mailcow certificates).
+	MailInsecureTLS bool
+	// WebmailSessionTTL is the lifetime of an authenticated webmail session.
+	WebmailSessionTTL time.Duration
 }
 
 // Load reads every configuration value from the environment, applies sensible
@@ -90,6 +103,11 @@ func Load() (*Config, error) {
 		LoginRateMax:       int(getint64("MAILFOLD_LOGIN_RATE_MAX", 5)),
 		LoginRateWindow:    getdur("MAILFOLD_LOGIN_RATE_WINDOW", time.Minute),
 		MaxBodyBytes:       getint64("MAILFOLD_MAX_BODY_BYTES", 1<<20),
+		IMAPAddr:           os.Getenv("MAILFOLD_IMAP_ADDR"),
+		SMTPAddr:           os.Getenv("MAILFOLD_SMTP_ADDR"),
+		MailUseTLS:         getbool("MAILFOLD_MAIL_TLS", true),
+		MailInsecureTLS:    getbool("MAILFOLD_MAIL_INSECURE_TLS", false),
+		WebmailSessionTTL:  getdur("MAILFOLD_WEBMAIL_SESSION_TTL", 12*time.Hour),
 	}
 
 	// The following three values have no safe default: without an upstream

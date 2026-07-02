@@ -57,6 +57,7 @@ func main() {
 		for range gcTicker.C {
 			authn.GC()
 			loginLimiter.GC()
+			server.GCWebmail()
 		}
 	}()
 

@@ -14,33 +14,43 @@ import (
 	"github.com/isi1988/Mailfold/backend/internal/config"
 	"github.com/isi1988/Mailfold/backend/internal/metrics"
 	"github.com/isi1988/Mailfold/backend/internal/ratelimit"
+	"github.com/isi1988/Mailfold/backend/internal/webmail"
 )
 
 // Server wires HTTP routes to the mailcow API and the authenticator. It holds
 // its collaborators through interfaces/values so the transport layer stays
 // decoupled from concrete implementations.
 type Server struct {
-	cfg          *config.Config
-	mc           Mailcow
-	auth         *auth.Authenticator
-	loginLimiter *ratelimit.Limiter
-	metrics      *metrics.Metrics
-	logger       *slog.Logger
+	cfg             *config.Config
+	mc              Mailcow
+	auth            *auth.Authenticator
+	loginLimiter    *ratelimit.Limiter
+	metrics         *metrics.Metrics
+	webmail         *webmail.Client
+	webmailSessions *webmail.Sessions
+	logger          *slog.Logger
 }
 
 // NewServer constructs a Server from its collaborators. mc is any type
 // satisfying the Mailcow interface (in production, *mailcow.Client). limiter
-// throttles login attempts per client IP.
+// throttles login attempts per client IP. The webmail client and session store
+// are built from cfg (webmail is disabled when no IMAP address is configured).
 func NewServer(cfg *config.Config, mc Mailcow, authn *auth.Authenticator, limiter *ratelimit.Limiter, logger *slog.Logger) *Server {
 	return &Server{
-		cfg:          cfg,
-		mc:           mc,
-		auth:         authn,
-		loginLimiter: limiter,
-		metrics:      metrics.New(),
-		logger:       logger,
+		cfg:             cfg,
+		mc:              mc,
+		auth:            authn,
+		loginLimiter:    limiter,
+		metrics:         metrics.New(),
+		webmail:         webmail.NewClient(cfg.IMAPAddr, cfg.SMTPAddr, cfg.MailUseTLS, cfg.MailInsecureTLS),
+		webmailSessions: webmail.NewSessions(cfg.WebmailSessionTTL),
+		logger:          logger,
 	}
 }
+
+// GCWebmail evicts expired webmail sessions. It is intended to be called
+// periodically from a background goroutine.
+func (s *Server) GCWebmail() { s.webmailSessions.GC() }
 
 // Handler builds the HTTP handler with all routes registered.
 func (s *Server) Handler() http.Handler {
@@ -55,6 +65,9 @@ func (s *Server) Handler() http.Handler {
 
 	// Authentication.
 	s.registerAuthRoutes(mux)
+
+	// End-user webmail (IMAP/SMTP-backed).
+	s.registerWebmailRoutes(mux)
 
 	// Management resources (all require authentication).
 	s.registerStatusRoutes(mux)

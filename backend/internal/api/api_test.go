@@ -3,8 +3,10 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/emersion/go-imap/backend/memory"
+	"github.com/emersion/go-imap/server"
 	"github.com/isi1988/Mailfold/backend/internal/auth"
 	"github.com/isi1988/Mailfold/backend/internal/config"
 	"github.com/isi1988/Mailfold/backend/internal/mailcow"
@@ -424,6 +428,90 @@ func TestDocsEndpoints(t *testing.T) {
 	rec2 := do(h, http.MethodGet, "/api/docs", "", "")
 	if rec2.Code != http.StatusOK || !strings.Contains(rec2.Body.String(), "swagger-ui") {
 		t.Errorf("docs page: code=%d", rec2.Code)
+	}
+}
+
+func TestWebmailFlow(t *testing.T) {
+	// In-memory IMAP server (user "username"/"password", sample INBOX).
+	imapSrv := server.New(memory.New())
+	imapSrv.AllowInsecureAuth = true
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = imapSrv.Serve(ln) }()
+	t.Cleanup(func() { _ = imapSrv.Close() })
+
+	cfg := &config.Config{
+		MailcowBaseURL:    "http://mailcow.invalid",
+		MailcowAPIKey:     "k",
+		AdminUser:         "admin",
+		AdminPassword:     "pw",
+		SessionTTL:        time.Hour,
+		CORSOrigins:       []string{"*"},
+		LoginRateMax:      100,
+		LoginRateWindow:   time.Minute,
+		IMAPAddr:          ln.Addr().String(),
+		MailUseTLS:        false,
+		WebmailSessionTTL: time.Hour,
+	}
+	mc := mailcow.NewClient(cfg.MailcowBaseURL, "k", false)
+	authn := auth.New("admin", "pw", time.Hour)
+	limiter := ratelimit.New(cfg.LoginRateMax, cfg.LoginRateWindow)
+	h := NewServer(cfg, mc, authn, limiter, slog.New(slog.NewTextHandler(io.Discard, nil))).Handler()
+
+	if rec := do(h, http.MethodGet, "/api/webmail/folders", "", ""); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("folders without token = %d", rec.Code)
+	}
+	if rec := do(h, http.MethodPost, "/api/webmail/login", "", `{"email":"username","password":"wrong"}`); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("bad webmail login = %d", rec.Code)
+	}
+
+	rec := do(h, http.MethodPost, "/api/webmail/login", "", `{"email":"username","password":"password"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("webmail login = %d", rec.Code)
+	}
+	var out struct {
+		Token string `json:"token"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	if out.Token == "" {
+		t.Fatal("webmail login returned no token")
+	}
+	tok := out.Token
+
+	if rec := do(h, http.MethodGet, "/api/webmail/folders", tok, ""); rec.Code != http.StatusOK {
+		t.Errorf("folders = %d", rec.Code)
+	}
+
+	rec = do(h, http.MethodGet, "/api/webmail/messages?folder=INBOX", tok, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("messages = %d", rec.Code)
+	}
+	var msgs []map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &msgs)
+	if len(msgs) > 0 {
+		uid := int(msgs[0]["uid"].(float64))
+		if r2 := do(h, http.MethodGet, fmt.Sprintf("/api/webmail/message?folder=INBOX&uid=%d", uid), tok, ""); r2.Code != http.StatusOK {
+			t.Errorf("read message = %d", r2.Code)
+		}
+	}
+	if rec := do(h, http.MethodGet, "/api/webmail/message?folder=INBOX&uid=notanumber", tok, ""); rec.Code != http.StatusBadRequest {
+		t.Errorf("invalid uid = %d", rec.Code)
+	}
+
+	if rec := do(h, http.MethodPost, "/api/webmail/logout", tok, ""); rec.Code != http.StatusOK {
+		t.Errorf("logout = %d", rec.Code)
+	}
+	if rec := do(h, http.MethodGet, "/api/webmail/folders", tok, ""); rec.Code != http.StatusUnauthorized {
+		t.Errorf("folders after logout = %d", rec.Code)
+	}
+}
+
+func TestWebmailNotConfigured(t *testing.T) {
+	h := newAPI(t, mockMailcow(t, 0, "").URL, []string{"*"}) // no IMAP address configured
+	if rec := do(h, http.MethodPost, "/api/webmail/login", "", `{"email":"u","password":"p"}`); rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("webmail login without config = %d, want 503", rec.Code)
 	}
 }
 
