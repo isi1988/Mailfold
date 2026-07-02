@@ -3,6 +3,7 @@ import { ACCOUNT, NAV, LOGS, LOG_SERVICES, tone, initials } from '../data/sample
 import { AppShell } from '../components/organisms/AppShell.jsx';
 import { PageHeader } from '../components/molecules/PageHeader.jsx';
 import { Card } from '../components/molecules/Card.jsx';
+import { Tabs } from '../components/molecules/Tabs.jsx';
 import { Pill } from '../components/atoms/Pill.jsx';
 import { Button } from '../components/atoms/Button.jsx';
 
@@ -23,11 +24,12 @@ export function Logs(props) {
           </>
         }
       />
-      <div className="mf-row" style={{ gap: 6, marginBottom: 12 }}>
-        {LOG_SERVICES.map(s => (
-          <span key={s} className={'mf-chip-tab' + (s === 'All' ? ' mf-chip-tab--active' : '')}>{s}</span>
-        ))}
-      </div>
+      <Tabs
+        variant="underline"
+        defaultActive="All"
+        items={LOG_SERVICES.map(s => ({ id: s, label: s }))}
+        style={{ marginBottom: 14 }}
+      />
       <Card flush>
         {LOGS.map((l, i) => (
           <div key={i} style={{ display: 'grid', gridTemplateColumns: '76px 76px 66px 1fr', gap: 14, alignItems: 'center', padding: '9px 16px', borderTop: i ? '1px solid var(--hair-soft)' : 'none' }}>

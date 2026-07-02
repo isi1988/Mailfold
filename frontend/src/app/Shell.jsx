@@ -8,6 +8,8 @@ import { getTheme, applyTheme } from './theme.js';
 import { initials } from '../ds/data/sample.js';
 import { useT } from '../i18n/index.jsx';
 import { MailboxesPage } from '../pages/MailboxesPage.jsx';
+import { DomainsPage } from '../pages/DomainsPage.jsx';
+import { AliasesPage } from '../pages/AliasesPage.jsx';
 
 // Temporary placeholder until each page is wired to live data.
 function Placeholder({ title }) {
@@ -63,8 +65,8 @@ export function Shell() {
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<Placeholder title={t('nav.dashboard')} />} />
         <Route path="/mailboxes" element={<MailboxesPage />} />
-        <Route path="/domains" element={<Placeholder title={t('nav.domains')} />} />
-        <Route path="/aliases" element={<Placeholder title={t('nav.aliases')} />} />
+        <Route path="/domains" element={<DomainsPage />} />
+        <Route path="/aliases" element={<AliasesPage />} />
         <Route path="/queue" element={<Placeholder title={t('nav.queue')} />} />
         <Route path="/quarantine" element={<Placeholder title={t('nav.quarantine')} />} />
         <Route path="/spam" element={<Placeholder title={t('nav.spam')} />} />

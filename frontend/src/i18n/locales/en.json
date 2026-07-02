@@ -10,7 +10,9 @@
     "close": "Close",
     "active": "active",
     "disabled": "disabled",
-    "docs": "Docs"
+    "inactive": "inactive",
+    "docs": "Docs",
+    "showing": "Showing {{from}}–{{to}} of {{total}}"
   },
   "states": {
     "loading": "Loading…",
@@ -78,6 +80,37 @@
       "status": "Status"
     },
     "empty": "No mailboxes yet.",
-    "emptyFilter": "No mailboxes match your filter."
+    "emptyFilter": "No mailboxes match your filter.",
+    "showing": "Showing {{from}}–{{to}} of {{total}}"
+  },
+  "domains": {
+    "title": "Domains",
+    "count_one": "{{count}} domain",
+    "count_other": "{{count}} domains",
+    "add": "+ Add domain",
+    "filter": "Filter domains…",
+    "col": {
+      "domain": "Domain",
+      "mailboxes": "Mailboxes",
+      "aliases": "Aliases",
+      "storage": "Storage",
+      "status": "Status"
+    },
+    "empty": "No domains yet.",
+    "emptyFilter": "No domains match your filter."
+  },
+  "aliases": {
+    "title": "Aliases",
+    "count_one": "{{count}} alias",
+    "count_other": "{{count}} aliases",
+    "add": "+ New alias",
+    "filter": "Filter aliases…",
+    "col": {
+      "alias": "Alias",
+      "forwards": "Forwards to",
+      "status": "Status"
+    },
+    "empty": "No aliases yet.",
+    "emptyFilter": "No aliases match your filter."
   }
 }

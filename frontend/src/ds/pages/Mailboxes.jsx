@@ -4,6 +4,7 @@ import { AppShell } from '../components/organisms/AppShell.jsx';
 import { PageHeader } from '../components/molecules/PageHeader.jsx';
 import { FilterTabs } from '../components/molecules/FilterTabs.jsx';
 import { SearchInput } from '../components/molecules/SearchInput.jsx';
+import { Pagination } from '../components/molecules/Pagination.jsx';
 import { Table, TableRow } from '../components/organisms/Table.jsx';
 import { Avatar } from '../components/atoms/Avatar.jsx';
 import { Pill } from '../components/atoms/Pill.jsx';
@@ -52,6 +53,10 @@ export function Mailboxes(props) {
           </TableRow>
         ))}
       </Table>
+
+      <div style={{ marginTop: 16 }}>
+        <Pagination page={1} pageCount={7} summary="Showing 1–20 of 128 mailboxes" />
+      </div>
     </AppShell>
   );
 }

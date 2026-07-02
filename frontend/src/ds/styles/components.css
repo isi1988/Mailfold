@@ -397,3 +397,56 @@
 /* ===== Hamburger (mobile) ============================== */
 .mf-burger { display: flex; flex-direction: column; gap: 4px; cursor: pointer; padding: 8px 6px; }
 .mf-burger span { width: 20px; height: 2px; background: var(--ink); border-radius: 2px; }
+
+/* ===== Pagination ====================================== */
+.mf-pager { display: flex; align-items: center; gap: 14px; }
+.mf-pager__summary { font-size: 12.5px; color: var(--faint); }
+.mf-pager__ctrls { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.mf-pager__nav, .mf-pager__page { height: 32px; min-width: 32px; display: inline-flex; align-items: center; justify-content: center; padding: 0 9px; border-radius: 9px; border: 1px solid transparent; background: transparent; font: 500 13px var(--font-sans); color: var(--muted); cursor: pointer; transition: background .12s, color .12s, box-shadow .12s; }
+.mf-pager__nav { color: var(--ink); border-color: var(--hair); background: var(--surface); }
+.mf-pager__nav:hover:not(:disabled) { background: var(--surface-2); }
+.mf-pager__nav:disabled { color: var(--faint); opacity: .5; cursor: not-allowed; background: transparent; border-color: var(--hair-soft); }
+.mf-pager__page:hover { background: var(--surface-2); color: var(--ink); }
+.mf-pager__page--active, .mf-pager__page--active:hover { background: var(--accent-soft); color: var(--accent-ink); box-shadow: inset 0 0 0 1px var(--accent); font-weight: 600; }
+.mf-pager__gap { min-width: 20px; text-align: center; color: var(--faint); font-size: 13px; user-select: none; }
+
+/* ===== Tooltip (CSS-only, hover / focus) =============== */
+.mf-tip { position: relative; display: inline-flex; }
+.mf-tip:focus-visible { outline: none; }
+.mf-tip__bubble { position: absolute; z-index: 40; width: max-content; max-width: 220px; padding: 6px 10px; border-radius: 8px; background: var(--ink-strong); color: var(--surface); font: 500 12px/1.4 var(--font-sans); text-align: center; box-shadow: var(--shadow-md); opacity: 0; visibility: hidden; transition: opacity .14s ease, transform .14s ease; pointer-events: none; }
+.mf-tip:hover .mf-tip__bubble, .mf-tip:focus-within .mf-tip__bubble { opacity: 1; visibility: visible; }
+.mf-tip__arrow { position: absolute; width: 8px; height: 8px; background: var(--ink-strong); transform: rotate(45deg); }
+/* top */
+.mf-tip--top .mf-tip__bubble { bottom: 100%; left: 50%; margin-bottom: 9px; transform: translate(-50%, 4px); }
+.mf-tip--top:hover .mf-tip__bubble, .mf-tip--top:focus-within .mf-tip__bubble { transform: translate(-50%, 0); }
+.mf-tip--top .mf-tip__arrow { bottom: -3px; left: 50%; margin-left: -4px; }
+/* bottom */
+.mf-tip--bottom .mf-tip__bubble { top: 100%; left: 50%; margin-top: 9px; transform: translate(-50%, -4px); }
+.mf-tip--bottom:hover .mf-tip__bubble, .mf-tip--bottom:focus-within .mf-tip__bubble { transform: translate(-50%, 0); }
+.mf-tip--bottom .mf-tip__arrow { top: -3px; left: 50%; margin-left: -4px; }
+/* left */
+.mf-tip--left .mf-tip__bubble { right: 100%; top: 50%; margin-right: 9px; transform: translate(4px, -50%); }
+.mf-tip--left:hover .mf-tip__bubble, .mf-tip--left:focus-within .mf-tip__bubble { transform: translate(0, -50%); }
+.mf-tip--left .mf-tip__arrow { right: -3px; top: 50%; margin-top: -4px; }
+/* right */
+.mf-tip--right .mf-tip__bubble { left: 100%; top: 50%; margin-left: 9px; transform: translate(-4px, -50%); }
+.mf-tip--right:hover .mf-tip__bubble, .mf-tip--right:focus-within .mf-tip__bubble { transform: translate(0, -50%); }
+.mf-tip--right .mf-tip__arrow { left: -3px; top: 50%; margin-top: -4px; }
+
+/* ===== Tabs =========================================== */
+.mf-tabset { width: 100%; }
+.mf-tabset__list { display: flex; }
+.mf-tabset__tab { display: inline-flex; align-items: center; gap: 7px; background: none; border: none; cursor: pointer; font: 600 13.5px var(--font-sans); color: var(--muted); transition: color .12s, background .12s, box-shadow .12s; }
+.mf-tabset__badge { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--hair-soft); color: var(--muted); font: 600 11px var(--font-sans); }
+.mf-tabset__tab.is-active .mf-tabset__badge { background: var(--accent-soft); color: var(--accent-ink); }
+.mf-tabset__panel { padding-top: 16px; }
+/* underline */
+.mf-tabset--underline .mf-tabset__list { gap: 2px; border-bottom: 1px solid var(--hair); }
+.mf-tabset--underline .mf-tabset__tab { padding: 10px 14px; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.mf-tabset--underline .mf-tabset__tab:hover { color: var(--ink); }
+.mf-tabset--underline .mf-tabset__tab.is-active { color: var(--accent-ink); border-bottom-color: var(--accent); }
+/* pill */
+.mf-tabset--pill .mf-tabset__list { display: inline-flex; gap: 4px; padding: 4px; background: var(--surface-2); border-radius: 11px; }
+.mf-tabset--pill .mf-tabset__tab { padding: 7px 14px; border-radius: 8px; }
+.mf-tabset--pill .mf-tabset__tab:hover { color: var(--ink); }
+.mf-tabset--pill .mf-tabset__tab.is-active { background: var(--surface); color: var(--ink-strong); box-shadow: 0 1px 2px rgba(0,0,0,.06), 0 0 0 1px var(--hair); }

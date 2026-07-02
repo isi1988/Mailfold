@@ -3,6 +3,7 @@ import { PageHeader } from '../ds/components/molecules/PageHeader.jsx';
 import { FilterTabs } from '../ds/components/molecules/FilterTabs.jsx';
 import { SearchInput } from '../ds/components/molecules/SearchInput.jsx';
 import { Table, TableRow } from '../ds/components/organisms/Table.jsx';
+import { Pagination } from '../ds/components/molecules/Pagination.jsx';
 import { Avatar } from '../ds/components/atoms/Avatar.jsx';
 import { Pill } from '../ds/components/atoms/Pill.jsx';
 import { Icon } from '../ds/components/atoms/Icon.jsx';
@@ -20,11 +21,14 @@ const TABS = [
   { value: 'Disabled', key: 'disabled' },
 ];
 
+const PAGE_SIZE = 20;
+
 export function MailboxesPage() {
   const t = useT();
   const { data, loading, error, reload } = useApi('/api/mailboxes', []);
   const [tab, setTab] = useState('All');
   const [q, setQ] = useState('');
+  const [page, setPage] = useState(1);
 
   const cols = [
     { label: t('mailboxes.col.mailbox'), w: '2.3fr' },
@@ -47,6 +51,16 @@ export function MailboxesPage() {
     return true;
   });
 
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const current = Math.min(page, pageCount);
+  const paged = filtered.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE);
+  const from = filtered.length === 0 ? 0 : (current - 1) * PAGE_SIZE + 1;
+  const to = Math.min(current * PAGE_SIZE, filtered.length);
+
+  // Any change to the filter or query resets to the first page.
+  const onTab = v => { setTab(v); setPage(1); };
+  const onQuery = e => { setQ(e.target.value); setPage(1); };
+
   return (
     <>
       <PageHeader
@@ -55,13 +69,13 @@ export function MailboxesPage() {
         actions={<Button variant="primary">{t('mailboxes.new')}</Button>}
       />
       <div className="mf-row" style={{ marginBottom: 14 }}>
-        <FilterTabs options={tabOptions} value={tab} onSelect={setTab} />
+        <FilterTabs options={tabOptions} value={tab} onSelect={onTab} />
         <SearchInput
           className="mf-spacer"
           style={{ width: 250 }}
           placeholder={t('mailboxes.filter')}
           value={q}
-          onChange={e => setQ(e.target.value)}
+          onChange={onQuery}
         />
       </div>
 
@@ -72,7 +86,7 @@ export function MailboxesPage() {
         empty={filtered.length === 0 ? (rows.length ? t('mailboxes.emptyFilter') : t('mailboxes.empty')) : null}
       >
         <Table columns={cols}>
-          {filtered.map(m => (
+          {paged.map(m => (
             <TableRow key={m.username}>
               <div className="mf-cell-user">
                 <Avatar size={34}>{initials(m.name || m.username)}</Avatar>
@@ -89,6 +103,16 @@ export function MailboxesPage() {
             </TableRow>
           ))}
         </Table>
+        {filtered.length > 0 && (
+          <div style={{ marginTop: 16 }}>
+            <Pagination
+              page={current}
+              pageCount={pageCount}
+              summary={t('mailboxes.showing', { from, to, total: filtered.length })}
+              onPage={setPage}
+            />
+          </div>
+        )}
       </AsyncView>
     </>
   );

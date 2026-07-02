@@ -1,0 +1,1100 @@
+openapi: 3.1.0
+info:
+  title: Mailfold API
+  version: 1.0.0
+  description: >
+    Backend contract behind the Mailfold interface (a modern UI shell for mailcow).
+    Derived from the UI designs. Pair with "Mailfold API Spec.dc.html" for the
+    human handoff (per-endpoint UI states + backend gap map).
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+tags:
+  - name: Auth
+  - name: Dashboard
+  - name: Mailboxes
+  - name: Domains
+  - name: Aliases
+  - name: Queue
+  - name: Quarantine
+  - name: SyncJobs
+  - name: Logs
+  - name: Spam
+  - name: Settings
+
+paths:
+  # ---------------- Auth & sessions ----------------
+  /auth/login:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Password login (may return a 2FA challenge)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string, format: email }
+                password: { type: string, format: password }
+      responses:
+        '200':
+          description: Token, or a 2FA challenge
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    properties:
+                      token: { type: string }
+                      requires_2fa: { type: boolean, enum: [false] }
+                  - type: object
+                    properties:
+                      requires_2fa: { type: boolean, enum: [true] }
+                      challenge_id: { type: string }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '423': { description: Account locked }
+  /auth/2fa:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Complete a TOTP challenge
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [challenge_id, code]
+              properties:
+                challenge_id: { type: string }
+                code: { type: string, pattern: '^[0-9]{6}$' }
+      responses:
+        '200':
+          description: Token
+          content:
+            application/json:
+              schema: { type: object, properties: { token: { type: string } } }
+        '401': { description: Wrong code }
+        '410': { description: Challenge expired }
+  /auth/sso/{provider}:
+    get:
+      tags: [Auth]
+      security: []
+      summary: Begin an OIDC/SAML redirect
+      parameters:
+        - { name: provider, in: path, required: true, schema: { type: string } }
+      responses:
+        '302': { description: Redirect to IdP }
+        '200':
+          description: Redirect URL
+          content:
+            application/json:
+              schema: { type: object, properties: { redirect_url: { type: string, format: uri } } }
+  /auth/forgot:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Request a password-reset email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [email], properties: { email: { type: string, format: email } } }
+      responses:
+        '202': { description: Accepted (no account enumeration) }
+  /auth/reset:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Set a new password from a reset token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token: { type: string }
+                password: { type: string, format: password }
+      responses:
+        '200': { description: OK }
+        '400': { description: Weak password }
+        '410': { description: Token expired }
+  /auth/change-password:
+    post:
+      tags: [Auth]
+      summary: Change password while signed in
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current, next]
+              properties:
+                current: { type: string, format: password }
+                next: { type: string, format: password }
+      responses:
+        '200': { description: OK }
+        '400': { description: Weak password }
+        '401': { description: Wrong current password }
+  /auth/sessions:
+    get:
+      tags: [Auth]
+      summary: List active device sessions
+      responses:
+        '200':
+          description: Sessions
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Session' } }
+    delete:
+      tags: [Auth]
+      summary: Revoke all sessions except the current one
+      responses:
+        '204': { description: Revoked }
+  /auth/sessions/{id}:
+    delete:
+      tags: [Auth]
+      summary: Revoke one session
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        '204': { description: Revoked }
+
+  # ---------------- Dashboard ----------------
+  /dashboard/stats:
+    get:
+      tags: [Dashboard]
+      summary: KPI tiles + service statuses
+      responses:
+        '200':
+          description: Stats
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DashboardStats' }
+  /dashboard/volume:
+    get:
+      tags: [Dashboard]
+      summary: Mail-volume time series
+      parameters:
+        - { name: range, in: query, schema: { type: string, enum: [24h, 7d, 30d], default: 7d } }
+      responses:
+        '200':
+          description: Series
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/VolumePoint' } }
+
+  # ---------------- Mailboxes ----------------
+  /mailboxes:
+    get:
+      tags: [Mailboxes]
+      summary: List mailboxes
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: domain, in: query, schema: { type: string } }
+        - { name: active, in: query, schema: { type: boolean } }
+        - { name: sort, in: query, schema: { type: string, example: 'quota_used:desc' } }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PerPage' }
+      responses:
+        '200':
+          description: Paginated mailboxes
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: '#/components/schemas/Mailbox' } }
+    post:
+      tags: [Mailboxes]
+      summary: Create a mailbox
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MailboxCreate' }
+      responses:
+        '201':
+          description: Created
+          content: { application/json: { schema: { $ref: '#/components/schemas/Mailbox' } } }
+        '409': { description: Address already exists }
+        '422': { $ref: '#/components/responses/Validation' }
+  /mailboxes/{id}:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    get:
+      tags: [Mailboxes]
+      summary: Get one mailbox
+      responses:
+        '200': { description: Mailbox, content: { application/json: { schema: { $ref: '#/components/schemas/Mailbox' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Mailboxes]
+      summary: Update a mailbox
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                quota_bytes: { type: integer }
+                active: { type: boolean }
+                password: { type: string, format: password }
+      responses:
+        '200': { description: Updated, content: { application/json: { schema: { $ref: '#/components/schemas/Mailbox' } } } }
+    delete:
+      tags: [Mailboxes]
+      summary: Delete a mailbox
+      responses:
+        '204': { description: Deleted }
+  /mailboxes/import:
+    post:
+      tags: [Mailboxes]
+      summary: Bulk import mailboxes from CSV
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { type: object, properties: { file: { type: string, format: binary } } }
+      responses:
+        '202':
+          description: Import queued
+          content: { application/json: { schema: { type: object, properties: { import_id: { type: string } } } } }
+  /mailboxes/import/{id}:
+    get:
+      tags: [Mailboxes]
+      summary: Poll import progress
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200':
+          description: Progress
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [processing, done, error] }
+                  total: { type: integer }
+                  done: { type: integer }
+                  errors:
+                    type: array
+                    items: { type: object, properties: { row: { type: integer }, message: { type: string } } }
+
+  # ---------------- Domains ----------------
+  /domains:
+    get:
+      tags: [Domains]
+      summary: List domains
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: active, in: query, schema: { type: boolean } }
+        - { name: sort, in: query, schema: { type: string } }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PerPage' }
+      responses:
+        '200':
+          description: Paginated domains
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: '#/components/schemas/Domain' } }
+    post:
+      tags: [Domains]
+      summary: Add a domain
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, quota_bytes]
+              properties:
+                name: { type: string }
+                description: { type: string }
+                quota_bytes: { type: integer }
+                relay_host: { type: string, nullable: true }
+                dkim_bits: { type: integer, enum: [1024, 2048], default: 2048 }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/Domain' } } } }
+        '409': { description: Exists }
+        '422': { $ref: '#/components/responses/Validation' }
+  /domains/{name}:
+    parameters: [{ name: name, in: path, required: true, schema: { type: string } }]
+    get:
+      tags: [Domains]
+      summary: Get one domain
+      responses:
+        '200': { description: Domain, content: { application/json: { schema: { $ref: '#/components/schemas/Domain' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Domains]
+      summary: Update a domain
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                quota_bytes: { type: integer }
+                relay_host: { type: string, nullable: true }
+                active: { type: boolean }
+      responses:
+        '200': { description: Updated, content: { application/json: { schema: { $ref: '#/components/schemas/Domain' } } } }
+    delete:
+      tags: [Domains]
+      summary: Delete a domain
+      responses:
+        '204': { description: Deleted }
+        '409': { description: Domain still has mailboxes }
+  /domains/{name}/dns/check:
+    post:
+      tags: [Domains]
+      summary: Verify DNS (resolver diff)
+      parameters: [{ name: name, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200':
+          description: Diff result
+          content: { application/json: { schema: { $ref: '#/components/schemas/DnsCheckResult' } } }
+  /domains/dns/check-all:
+    post:
+      tags: [Domains]
+      summary: Check DNS across all domains (async)
+      responses:
+        '202': { description: Job queued, content: { application/json: { schema: { $ref: '#/components/schemas/JobRef' } } } }
+  /domains/{name}/dkim:
+    get:
+      tags: [Domains]
+      summary: Get the DKIM key
+      parameters: [{ name: name, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: DKIM key, content: { application/json: { schema: { $ref: '#/components/schemas/DkimKey' } } } }
+  /domains/{name}/dkim/rotate:
+    post:
+      tags: [Domains]
+      summary: Generate / rotate the DKIM key
+      parameters: [{ name: name, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, properties: { bits: { type: integer, enum: [1024, 2048] } } }
+      responses:
+        '200': { description: New key, content: { application/json: { schema: { $ref: '#/components/schemas/DkimKey' } } } }
+
+  # ---------------- Aliases ----------------
+  /aliases:
+    get:
+      tags: [Aliases]
+      summary: List aliases
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: domain, in: query, schema: { type: string } }
+        - { name: active, in: query, schema: { type: boolean } }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PerPage' }
+      responses:
+        '200':
+          description: Paginated aliases
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: '#/components/schemas/Alias' } }
+    post:
+      tags: [Aliases]
+      summary: Create an alias
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [address, goto]
+              properties:
+                address: { type: string }
+                goto: { type: array, items: { type: string } }
+                active: { type: boolean, default: true }
+                catch_all: { type: boolean, default: false }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/Alias' } } } }
+        '409': { description: Exists }
+        '422': { $ref: '#/components/responses/Validation' }
+  /aliases/{id}:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    patch:
+      tags: [Aliases]
+      summary: Update an alias
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                goto: { type: array, items: { type: string } }
+                active: { type: boolean }
+                catch_all: { type: boolean }
+      responses:
+        '200': { description: Updated, content: { application/json: { schema: { $ref: '#/components/schemas/Alias' } } } }
+    delete:
+      tags: [Aliases]
+      summary: Delete an alias
+      responses:
+        '204': { description: Deleted }
+
+  # ---------------- Queue ----------------
+  /queue:
+    get:
+      tags: [Queue]
+      summary: List queued messages
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [active, deferred, retry, hold] } }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PerPage' }
+      responses:
+        '200':
+          description: Paginated queue
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: '#/components/schemas/QueueItem' } }
+    delete:
+      tags: [Queue]
+      summary: Delete all queued messages
+      responses:
+        '202':
+          description: Deleted
+          content: { application/json: { schema: { type: object, properties: { deleted: { type: integer } } } } }
+  /queue/flush:
+    post:
+      tags: [Queue]
+      summary: Deliver the entire queue
+      responses:
+        '202': { description: Flushing }
+  /queue/{id}:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    delete:
+      tags: [Queue]
+      summary: Delete one message
+      responses:
+        '204': { description: Deleted }
+  /queue/{id}/deliver:
+    post:
+      tags: [Queue]
+      summary: Deliver one message now
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        '202': { description: Delivering }
+  /queue/{id}/hold:
+    post:
+      tags: [Queue]
+      summary: Hold or unhold one message
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, properties: { hold: { type: boolean } } }
+      responses:
+        '200': { description: OK }
+
+  # ---------------- Quarantine ----------------
+  /quarantine:
+    get:
+      tags: [Quarantine]
+      summary: List held messages
+      parameters:
+        - { name: reason, in: query, schema: { type: string, enum: [spam, phishing, spoof, virus] } }
+        - { name: q, in: query, schema: { type: string } }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PerPage' }
+      responses:
+        '200':
+          description: Paginated quarantine
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: '#/components/schemas/QuarantineItem' } }
+  /quarantine/bulk:
+    post:
+      tags: [Quarantine]
+      summary: Bulk release or delete
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids, action]
+              properties:
+                ids: { type: array, items: { type: string } }
+                action: { type: string, enum: [release, delete] }
+      responses:
+        '200':
+          description: Done
+          content: { application/json: { schema: { type: object, properties: { affected: { type: integer } } } } }
+  /quarantine/{id}/release:
+    post:
+      tags: [Quarantine]
+      summary: Release a held message (optionally whitelist sender)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, properties: { whitelist: { type: boolean, default: false } } }
+      responses:
+        '200': { description: Released }
+  /quarantine/{id}/eml:
+    get:
+      tags: [Quarantine]
+      summary: Download the raw .eml
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200':
+          description: Raw message
+          content:
+            message/rfc822:
+              schema: { type: string, format: binary }
+  /quarantine/{id}:
+    delete:
+      tags: [Quarantine]
+      summary: Delete one held message
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        '204': { description: Deleted }
+
+  # ---------------- Sync jobs ----------------
+  /syncjobs:
+    get:
+      tags: [SyncJobs]
+      summary: List sync jobs
+      responses:
+        '200':
+          description: Jobs
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/SyncJob' } }
+    post:
+      tags: [SyncJobs]
+      summary: Create a sync job
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SyncJobCreate' }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/SyncJob' } } } }
+        '422': { $ref: '#/components/responses/Validation' }
+        '502': { description: IMAP host unreachable }
+  /syncjobs/{id}:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    patch:
+      tags: [SyncJobs]
+      summary: Update a sync job (toggle active = pause/resume)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                interval_minutes: { type: integer }
+                active: { type: boolean }
+      responses:
+        '200': { description: Updated, content: { application/json: { schema: { $ref: '#/components/schemas/SyncJob' } } } }
+    delete:
+      tags: [SyncJobs]
+      summary: Delete a sync job
+      responses:
+        '204': { description: Deleted }
+  /syncjobs/{id}/run:
+    post:
+      tags: [SyncJobs]
+      summary: Trigger a run now
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        '202':
+          description: Run started
+          content: { application/json: { schema: { type: object, properties: { run_id: { type: string } } } } }
+  /syncjobs/{id}/runs/{run}/log:
+    get:
+      tags: [SyncJobs]
+      summary: Live run log (SSE)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: run, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: text/event-stream of log lines
+          content:
+            text/event-stream:
+              schema: { type: string }
+
+  # ---------------- Logs ----------------
+  /logs:
+    get:
+      tags: [Logs]
+      summary: Paged log tail
+      parameters:
+        - { name: service, in: query, schema: { type: string } }
+        - { name: level, in: query, schema: { type: string, enum: [info, warn, error, reject] } }
+        - { name: q, in: query, schema: { type: string } }
+        - { name: since, in: query, schema: { type: string, format: date-time } }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PerPage' }
+      responses:
+        '200':
+          description: Paginated log entries
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paginated'
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: '#/components/schemas/LogEntry' } }
+  /logs/stream:
+    get:
+      tags: [Logs]
+      summary: Live log stream (SSE)
+      parameters:
+        - { name: service, in: query, schema: { type: string } }
+        - { name: level, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: text/event-stream of LogEntry
+          content:
+            text/event-stream:
+              schema: { type: string }
+  /logs/export:
+    get:
+      tags: [Logs]
+      summary: Download a filtered log range
+      parameters:
+        - { name: service, in: query, schema: { type: string } }
+        - { name: level, in: query, schema: { type: string } }
+        - { name: since, in: query, schema: { type: string, format: date-time } }
+        - { name: until, in: query, schema: { type: string, format: date-time } }
+      responses:
+        '200':
+          description: Plain-text log file
+          content:
+            text/plain:
+              schema: { type: string }
+
+  # ---------------- Spam ----------------
+  /spam/settings:
+    get:
+      tags: [Spam]
+      summary: Spam thresholds + policy flags
+      responses:
+        '200': { description: Settings, content: { application/json: { schema: { $ref: '#/components/schemas/SpamSettings' } } } }
+    patch:
+      tags: [Spam]
+      summary: Update spam settings
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SpamSettings' }
+      responses:
+        '200': { description: Updated }
+  /spam/lists:
+    get:
+      tags: [Spam]
+      summary: Allow + block lists
+      responses:
+        '200':
+          description: Lists
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  allow: { type: array, items: { type: string } }
+                  block: { type: array, items: { type: string } }
+  /spam/lists/{kind}:
+    parameters: [{ name: kind, in: path, required: true, schema: { type: string, enum: [allow, block] } }]
+    post:
+      tags: [Spam]
+      summary: Add a list entry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [value], properties: { value: { type: string } } }
+      responses:
+        '201': { description: Added }
+    delete:
+      tags: [Spam]
+      summary: Remove a list entry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [value], properties: { value: { type: string } } }
+      responses:
+        '204': { description: Removed }
+  /spam/stats:
+    get:
+      tags: [Spam]
+      summary: 24h spam counters
+      responses:
+        '200':
+          description: Counters
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  scanned: { type: integer }
+                  rejected: { type: integer }
+                  greylisted: { type: integer }
+                  ham_learned: { type: integer }
+
+  # ---------------- Settings ----------------
+  /settings/profile:
+    get:
+      tags: [Settings]
+      summary: Get admin profile
+      responses:
+        '200': { description: Profile, content: { application/json: { schema: { $ref: '#/components/schemas/Profile' } } } }
+    patch:
+      tags: [Settings]
+      summary: Update profile
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Profile' }
+      responses:
+        '200': { description: Updated }
+  /settings/avatar:
+    post:
+      tags: [Settings]
+      summary: Upload an avatar
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { type: object, properties: { file: { type: string, format: binary } } }
+      responses:
+        '200':
+          description: New avatar URL
+          content: { application/json: { schema: { type: object, properties: { url: { type: string, format: uri } } } } }
+  /settings/i18n:
+    get:
+      tags: [Settings]
+      summary: Get locale prefs
+      responses:
+        '200': { description: Prefs, content: { application/json: { schema: { $ref: '#/components/schemas/I18nPrefs' } } } }
+    patch:
+      tags: [Settings]
+      summary: Update locale prefs
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/I18nPrefs' }
+      responses:
+        '200': { description: Updated }
+  /settings/server:
+    get:
+      tags: [Settings]
+      summary: Server info + backup/update health
+      responses:
+        '200':
+          description: Server
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  hostname: { type: string }
+                  version: { type: string }
+                  update_available: { type: boolean }
+                  backups:
+                    type: object
+                    properties:
+                      last_ok: { type: string, format: date-time }
+                      healthy: { type: boolean }
+  /settings/backup/run:
+    post:
+      tags: [Settings]
+      summary: Trigger a backup (async)
+      responses:
+        '202': { description: Job queued, content: { application/json: { schema: { $ref: '#/components/schemas/JobRef' } } } }
+  /settings/update/run:
+    post:
+      tags: [Settings]
+      summary: Trigger an update (async)
+      responses:
+        '202': { description: Job queued, content: { application/json: { schema: { $ref: '#/components/schemas/JobRef' } } } }
+
+  # ---------------- Async jobs ----------------
+  /jobs/{id}:
+    get:
+      tags: [Settings]
+      summary: Poll a background job
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200':
+          description: Job status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  status: { type: string, enum: [queued, running, done, error] }
+                  progress: { type: number }
+                  result: {}
+                  error: { type: string }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    Page: { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+    PerPage: { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 25 } }
+  responses:
+    BadRequest:
+      description: Malformed request
+      content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } }
+    Unauthorized:
+      description: Missing or invalid credentials
+      content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } }
+    NotFound:
+      description: Not found
+      content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } }
+    Validation:
+      description: Validation failed (field-level)
+      content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } }
+  schemas:
+    ApiError:
+      type: object
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            field: { type: string }
+    Paginated:
+      type: object
+      required: [data, page, per_page, total]
+      properties:
+        data: { type: array, items: {} }
+        page: { type: integer }
+        per_page: { type: integer }
+        total: { type: integer }
+    JobRef:
+      type: object
+      properties: { job_id: { type: string } }
+    Mailbox:
+      type: object
+      properties:
+        id: { type: string }
+        local_part: { type: string }
+        domain: { type: string }
+        address: { type: string }
+        name: { type: string }
+        quota_bytes: { type: integer }
+        quota_used: { type: integer, description: 'NEW projection field (bytes used)' }
+        quota_pct: { type: number }
+        active: { type: boolean }
+        last_login: { type: string, format: date-time, nullable: true, description: 'NEW projection field' }
+        created_at: { type: string, format: date-time }
+    MailboxCreate:
+      type: object
+      required: [local_part, domain, password, quota_bytes]
+      properties:
+        local_part: { type: string }
+        domain: { type: string }
+        name: { type: string }
+        password: { type: string, format: password }
+        quota_bytes: { type: integer }
+        active: { type: boolean, default: true }
+    Domain:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        mailbox_count: { type: integer }
+        alias_count: { type: integer }
+        quota_bytes: { type: integer }
+        quota_used: { type: integer, description: 'NEW projection field' }
+        dkim_status: { type: string, enum: [active, missing] }
+        dns_status: { type: string, enum: [ok, pending, error] }
+        active: { type: boolean }
+        created_at: { type: string, format: date-time }
+    DnsRecord:
+      type: object
+      properties:
+        type: { type: string, enum: [MX, A, SPF, DKIM, DMARC, TXT, PTR] }
+        host: { type: string }
+        expected: { type: string }
+        found: { type: string, nullable: true }
+        status: { type: string, enum: [ok, mismatch, missing] }
+    DnsCheckResult:
+      type: object
+      properties:
+        domain: { type: string }
+        ok: { type: boolean }
+        checked_at: { type: string, format: date-time }
+        records: { type: array, items: { $ref: '#/components/schemas/DnsRecord' } }
+    DkimKey:
+      type: object
+      properties:
+        domain: { type: string }
+        selector: { type: string }
+        algorithm: { type: string, enum: [rsa, ed25519] }
+        bits: { type: integer }
+        public_key: { type: string }
+        created_at: { type: string, format: date-time }
+    Alias:
+      type: object
+      properties:
+        id: { type: string }
+        address: { type: string }
+        goto: { type: array, items: { type: string } }
+        active: { type: boolean }
+        catch_all: { type: boolean }
+        created_at: { type: string, format: date-time }
+    QueueItem:
+      type: object
+      properties:
+        id: { type: string }
+        queue_id: { type: string }
+        sender: { type: string }
+        recipients: { type: array, items: { type: string } }
+        recipient_count: { type: integer }
+        size_bytes: { type: integer }
+        arrival: { type: string, format: date-time }
+        status: { type: string, enum: [active, deferred, retry, hold] }
+        last_error: { type: string }
+    QuarantineItem:
+      type: object
+      properties:
+        id: { type: string }
+        subject: { type: string }
+        from: { type: string }
+        to: { type: string }
+        score: { type: number }
+        reason: { type: string, enum: [spam, phishing, spoof, virus] }
+        size_bytes: { type: integer }
+        held_at: { type: string, format: date-time }
+    SyncJob:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        source:
+          type: object
+          properties:
+            host: { type: string }
+            port: { type: integer }
+            username: { type: string }
+            encryption: { type: string, enum: [ssl, tls, none] }
+        target: { type: string }
+        status: { type: string, enum: [running, idle, error, paused] }
+        last_run: { type: string, format: date-time, nullable: true }
+        interval_minutes: { type: integer }
+        active: { type: boolean }
+        last_error: { type: string }
+    SyncJobCreate:
+      type: object
+      required: [name, source, target, interval_minutes]
+      properties:
+        name: { type: string }
+        source:
+          type: object
+          required: [host, port, username, password, encryption]
+          properties:
+            host: { type: string }
+            port: { type: integer }
+            username: { type: string }
+            password: { type: string, format: password }
+            encryption: { type: string, enum: [ssl, tls, none] }
+        target: { type: string }
+        interval_minutes: { type: integer }
+        active: { type: boolean, default: true }
+    LogEntry:
+      type: object
+      properties:
+        ts: { type: string, format: date-time }
+        service: { type: string }
+        level: { type: string, enum: [info, warn, error, reject] }
+        message: { type: string }
+    ServiceStatus:
+      type: object
+      properties:
+        name: { type: string }
+        state: { type: string, enum: [up, degraded, down] }
+        uptime: { type: string }
+    DashboardStats:
+      type: object
+      properties:
+        mailboxes: { type: object, properties: { count: { type: integer }, delta_7d: { type: integer } } }
+        domains: { type: object, properties: { count: { type: integer }, pending_dns: { type: integer } } }
+        storage: { type: object, properties: { used_bytes: { type: integer }, total_bytes: { type: integer }, pct: { type: number } } }
+        queue: { type: object, properties: { count: { type: integer }, deferred: { type: integer } } }
+        services: { type: array, items: { $ref: '#/components/schemas/ServiceStatus' } }
+    VolumePoint:
+      type: object
+      properties:
+        t: { type: string, format: date-time }
+        inbound: { type: integer }
+        outbound: { type: integer }
+        rejected: { type: integer }
+    Session:
+      type: object
+      properties:
+        id: { type: string }
+        device: { type: string }
+        ip: { type: string }
+        location: { type: string }
+        last_seen: { type: string, format: date-time }
+        current: { type: boolean }
+    SpamSettings:
+      type: object
+      properties:
+        threshold_reject: { type: number }
+        greylisting: { type: boolean }
+        bayes: { type: boolean }
+        auth_enforce: { type: boolean }
+        rate_limit: { type: boolean }
+    Profile:
+      type: object
+      properties:
+        name: { type: string }
+        email: { type: string, format: email }
+        role: { type: string }
+        timezone: { type: string }
+    I18nPrefs:
+      type: object
+      properties:
+        language: { type: string }
+        region_format: { type: string }
+        timezone: { type: string }
+        time_format: { type: string, enum: ['24h', '12h'] }
+        first_day_of_week: { type: string, enum: [monday, sunday] }
