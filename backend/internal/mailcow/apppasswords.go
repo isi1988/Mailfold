@@ -3,6 +3,7 @@ package mailcow
 import (
 	"context"
 	"encoding/json"
+	"net/url"
 )
 
 // AppPasswords returns every application password configured for the given
@@ -14,7 +15,9 @@ import (
 // and acts on, so the payload is passed through as json.RawMessage rather than
 // decoded here. The GET is delegated to rawGet in client.go.
 func (c *Client) AppPasswords(ctx context.Context, mailbox string) (json.RawMessage, error) {
-	return c.rawGet(ctx, "/api/v1/get/app-passwd/all/"+mailbox)
+	// Escape the mailbox before interpolating it into the path so an address
+	// containing path separators or control characters cannot alter the request.
+	return c.rawGet(ctx, "/api/v1/get/app-passwd/all/"+url.PathEscape(mailbox))
 }
 
 // AddAppPassword creates a new application password from the attributes in attr

@@ -123,6 +123,32 @@ SQLite database (`MAILFOLD_DB_PATH`) and are disabled when that path is empty.
 Point a standard client (Thunderbird, iOS/macOS Contacts & Calendar, DAVx⁵) at
 the endpoints to sync.
 
+## API keys (send & collect mail from other services)
+
+Mailfold can issue durable, individually-revocable API keys so a third-party
+service can **send** and **collect** mail for a single mailbox over a simple REST
+API — without ever handling the mailbox password. A key is a thin bearer handle
+in front of a mailcow application password scoped to **IMAP + SMTP only**; the
+app-password is encrypted at rest (AES-256-GCM) and the plaintext token is shown
+exactly once, at creation.
+
+Enable it with `MAILFOLD_APIKEY_ENABLED=true` and a `MAILFOLD_APIKEY_MASTER_KEY`
+(≥32 bytes, hex or base64). It reuses `MAILFOLD_DB_PATH` for storage and stays
+off until both are set.
+
+- Admin (normal session) mints/lists/revokes keys: `POST/GET /api/apikeys`,
+  `DELETE /api/apikeys/{id}`. Revoking a key also deletes its upstream
+  app-password.
+- The key itself authenticates the machine surface with
+  `Authorization: Bearer mf_live_…`:
+  - **Send** (`mail:send`): `POST /api/v1/mail/send` — `From` is forced to the
+    bound mailbox (no spoofing), with recipient and body-size caps.
+  - **Collect** (`mail:read`): `GET /api/v1/mail/folders|messages|message|search|attachment`.
+  - **Mutate** (`mail:write`): `POST /api/v1/mail/flag`, `DELETE /api/v1/mail/message`.
+
+Requests are rate-limited per source IP (before authentication) and per key, and
+all token verification is constant-time. See `/api/docs` for the full schema.
+
 ## License
 
 Mailfold is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE).

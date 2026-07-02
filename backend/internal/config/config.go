@@ -6,6 +6,8 @@
 package config
 
 import (
+	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"strconv"
@@ -85,6 +87,25 @@ type Config struct {
 	// DBPath is the path to the SQLite database backing the CardDAV/CalDAV
 	// groupware store. When empty, the DAV endpoints are disabled.
 	DBPath string
+	// APIKeyEnabled turns on the machine-to-machine API-key subsystem (durable
+	// bearer keys for sending and collecting mail over the REST API). It reuses
+	// DBPath for storage and self-disables when that is empty.
+	APIKeyEnabled bool
+	// APIKeyMasterKey is the decoded master key (>= 32 bytes) from which the
+	// AES-256-GCM key that encrypts stored mailcow app-passwords is derived. It is
+	// required, and validated, only when APIKeyEnabled is true, and is never
+	// logged.
+	APIKeyMasterKey []byte
+	// APIKeyRateMax and APIKeyRateWindow bound how many API requests a single key
+	// may make per window before receiving HTTP 429.
+	APIKeyRateMax    int
+	APIKeyRateWindow time.Duration
+	// APIKeyDefaultTTL is applied as the key expiry at mint time when the request
+	// omits one (0 = never expires).
+	APIKeyDefaultTTL time.Duration
+	// APIKeyMaxRecipients caps the total To+Cc+Bcc count a single send may target,
+	// bounding an authorized key's use as a bulk mailer.
+	APIKeyMaxRecipients int
 }
 
 // Load reads every configuration value from the environment, applies sensible
@@ -94,24 +115,29 @@ type Config struct {
 // startup rather than surfacing as a confusing runtime failure later.
 func Load() (*Config, error) {
 	cfg := &Config{
-		Addr:               getenv("MAILFOLD_ADDR", ":8080"),
-		MailcowBaseURL:     getenv("MAILFOLD_MAILCOW_URL", ""),
-		MailcowAPIKey:      os.Getenv("MAILFOLD_MAILCOW_API_KEY"),
-		MailcowInsecureTLS: getbool("MAILFOLD_MAILCOW_INSECURE_TLS", false),
-		FrontendDir:        getenv("MAILFOLD_FRONTEND_DIR", "./frontend/dist"),
-		AdminUser:          getenv("MAILFOLD_ADMIN_USER", "admin"),
-		AdminPassword:      os.Getenv("MAILFOLD_ADMIN_PASSWORD"),
-		SessionTTL:         getdur("MAILFOLD_SESSION_TTL", 12*time.Hour),
-		CORSOrigins:        getlist("MAILFOLD_CORS_ORIGINS", []string{"*"}),
-		LoginRateMax:       int(getint64("MAILFOLD_LOGIN_RATE_MAX", 5)),
-		LoginRateWindow:    getdur("MAILFOLD_LOGIN_RATE_WINDOW", time.Minute),
-		MaxBodyBytes:       getint64("MAILFOLD_MAX_BODY_BYTES", 1<<20),
-		IMAPAddr:           os.Getenv("MAILFOLD_IMAP_ADDR"),
-		SMTPAddr:           os.Getenv("MAILFOLD_SMTP_ADDR"),
-		MailUseTLS:         getbool("MAILFOLD_MAIL_TLS", true),
-		MailInsecureTLS:    getbool("MAILFOLD_MAIL_INSECURE_TLS", false),
-		WebmailSessionTTL:  getdur("MAILFOLD_WEBMAIL_SESSION_TTL", 12*time.Hour),
-		DBPath:             os.Getenv("MAILFOLD_DB_PATH"),
+		Addr:                getenv("MAILFOLD_ADDR", ":8080"),
+		MailcowBaseURL:      getenv("MAILFOLD_MAILCOW_URL", ""),
+		MailcowAPIKey:       os.Getenv("MAILFOLD_MAILCOW_API_KEY"),
+		MailcowInsecureTLS:  getbool("MAILFOLD_MAILCOW_INSECURE_TLS", false),
+		FrontendDir:         getenv("MAILFOLD_FRONTEND_DIR", "./frontend/dist"),
+		AdminUser:           getenv("MAILFOLD_ADMIN_USER", "admin"),
+		AdminPassword:       os.Getenv("MAILFOLD_ADMIN_PASSWORD"),
+		SessionTTL:          getdur("MAILFOLD_SESSION_TTL", 12*time.Hour),
+		CORSOrigins:         getlist("MAILFOLD_CORS_ORIGINS", []string{"*"}),
+		LoginRateMax:        int(getint64("MAILFOLD_LOGIN_RATE_MAX", 5)),
+		LoginRateWindow:     getdur("MAILFOLD_LOGIN_RATE_WINDOW", time.Minute),
+		MaxBodyBytes:        getint64("MAILFOLD_MAX_BODY_BYTES", 1<<20),
+		IMAPAddr:            os.Getenv("MAILFOLD_IMAP_ADDR"),
+		SMTPAddr:            os.Getenv("MAILFOLD_SMTP_ADDR"),
+		MailUseTLS:          getbool("MAILFOLD_MAIL_TLS", true),
+		MailInsecureTLS:     getbool("MAILFOLD_MAIL_INSECURE_TLS", false),
+		WebmailSessionTTL:   getdur("MAILFOLD_WEBMAIL_SESSION_TTL", 12*time.Hour),
+		DBPath:              os.Getenv("MAILFOLD_DB_PATH"),
+		APIKeyEnabled:       getbool("MAILFOLD_APIKEY_ENABLED", false),
+		APIKeyRateMax:       int(getint64("MAILFOLD_APIKEY_RATE_MAX", 120)),
+		APIKeyRateWindow:    getdur("MAILFOLD_APIKEY_RATE_WINDOW", time.Minute),
+		APIKeyDefaultTTL:    getdur("MAILFOLD_APIKEY_DEFAULT_TTL", 0),
+		APIKeyMaxRecipients: int(getint64("MAILFOLD_APIKEY_MAX_RECIPIENTS", 50)),
 	}
 
 	// The following three values have no safe default: without an upstream
@@ -126,7 +152,39 @@ func Load() (*Config, error) {
 	if cfg.AdminPassword == "" {
 		return nil, fmt.Errorf("MAILFOLD_ADMIN_PASSWORD is required")
 	}
+
+	// The API-key subsystem needs an encryption master key. It is only required
+	// when the feature is enabled, so operators who never turn it on are not
+	// forced to configure it.
+	if cfg.APIKeyEnabled {
+		key, err := decodeMasterKey(os.Getenv("MAILFOLD_APIKEY_MASTER_KEY"))
+		if err != nil {
+			return nil, err
+		}
+		cfg.APIKeyMasterKey = key
+	}
 	return cfg, nil
+}
+
+// decodeMasterKey parses the API-key master key from its environment string,
+// accepting either hex or base64 (standard or raw) and requiring at least 32
+// decoded bytes. It returns a clear error rather than a weak key so a
+// misconfigured deployment fails fast at startup.
+func decodeMasterKey(raw string) ([]byte, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, fmt.Errorf("MAILFOLD_APIKEY_MASTER_KEY is required (>=32 bytes, hex or base64) when MAILFOLD_APIKEY_ENABLED=true")
+	}
+	for _, dec := range []func(string) ([]byte, error){
+		hex.DecodeString,
+		base64.StdEncoding.DecodeString,
+		base64.RawStdEncoding.DecodeString,
+	} {
+		if b, err := dec(raw); err == nil && len(b) >= 32 {
+			return b, nil
+		}
+	}
+	return nil, fmt.Errorf("MAILFOLD_APIKEY_MASTER_KEY must decode (hex or base64) to at least 32 bytes")
 }
 
 // getenv returns the value of the environment variable named key, or def when

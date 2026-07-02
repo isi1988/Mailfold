@@ -439,3 +439,83 @@ paths:
     get: { tags: [temp-aliases], summary: List time-limited aliases for a mailbox, parameters: [{ name: mailbox, in: path, required: true, schema: { type: string } }], responses: { "200": { $ref: "#/components/responses/Upstream" } } }
   /api/temp-aliases:
     post: { tags: [temp-aliases], summary: Create a time-limited alias, requestBody: { $ref: "#/components/requestBodies/Attr" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+
+  # --- Machine-to-machine API keys (admin management, admin-session auth) ---
+  /api/apikeys:
+    post:
+      tags: [apikeys]
+      summary: Mint an API key bound to a mailbox (returns the token exactly once)
+      description: Creates an IMAP+SMTP-scoped mailcow app-password, encrypts it at rest, and returns the full token once. Requires the admin session. Disabled unless MAILFOLD_APIKEY_ENABLED is set.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mailbox]
+              properties:
+                mailbox: { type: string, description: "Owning mailbox address" }
+                label: { type: string }
+                scopes: { type: array, items: { type: string, enum: [mail:send, mail:read, mail:write] } }
+                expires_in_seconds: { type: integer, description: "0 or omitted = never" }
+      responses:
+        "201": { description: "Key minted; body carries the one-time token." }
+        "400": { description: Invalid mailbox or scope. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { description: Upstream app-password creation could not be confirmed. }
+    get:
+      tags: [apikeys]
+      summary: List API-key metadata (never returns tokens or secrets)
+      parameters: [{ name: mailbox, in: query, required: false, schema: { type: string } }]
+      responses:
+        "200": { description: Array of key metadata. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/apikeys/{id}:
+    delete:
+      tags: [apikeys]
+      summary: Revoke a key and delete its upstream app-password (idempotent)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Revoked. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { description: Unknown key id. }
+
+  # --- API-key authenticated mail surface (Authorization: Bearer mf_live_...) ---
+  /api/v1/mail/send:
+    post:
+      tags: [mail-v1]
+      summary: Send a message as the bound mailbox (scope mail:send)
+      description: From is forced to the key's mailbox (no spoofing). Recipient count and body size are capped.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                to: { type: array, items: { type: string } }
+                cc: { type: array, items: { type: string } }
+                bcc: { type: array, items: { type: string } }
+                subject: { type: string }
+                text: { type: string }
+                html: { type: string }
+      responses:
+        "200": { description: Accepted for delivery. }
+        "400": { description: No recipients / too many recipients / injection rejected. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: Key lacks the mail:send scope. }
+        "413": { description: Message body too large. }
+        "429": { description: Rate limit exceeded. }
+  /api/v1/mail/folders:
+    get: { tags: [mail-v1], summary: "List IMAP folders (scope mail:read)", responses: { "200": { description: Folder list. }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { description: Missing scope. } } }
+  /api/v1/mail/messages:
+    get: { tags: [mail-v1], summary: "Collect: list message headers newest-first (scope mail:read)", parameters: [{ name: folder, in: query, schema: { type: string } }, { name: limit, in: query, schema: { type: integer } }], responses: { "200": { description: Header list. }, "401": { $ref: "#/components/responses/Unauthorized" } } }
+  /api/v1/mail/message:
+    get: { tags: [mail-v1], summary: "Fetch one full message by uid (scope mail:read)", parameters: [{ name: folder, in: query, schema: { type: string } }, { name: uid, in: query, required: true, schema: { type: integer } }], responses: { "200": { description: Full message. }, "400": { description: Invalid uid. }, "401": { $ref: "#/components/responses/Unauthorized" } } }
+    delete: { tags: [mail-v1], summary: "Delete a collected message (scope mail:write)", requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { folder: { type: string }, uid: { type: integer } } } } } }, responses: { "200": { description: Deleted. }, "403": { description: Missing scope. } } }
+  /api/v1/mail/search:
+    get: { tags: [mail-v1], summary: "IMAP text search (scope mail:read)", parameters: [{ name: folder, in: query, schema: { type: string } }, { name: q, in: query, schema: { type: string } }], responses: { "200": { description: Matching headers. }, "401": { $ref: "#/components/responses/Unauthorized" } } }
+  /api/v1/mail/attachment:
+    get: { tags: [mail-v1], summary: "Stream one attachment (scope mail:read)", parameters: [{ name: folder, in: query, schema: { type: string } }, { name: uid, in: query, required: true, schema: { type: integer } }, { name: index, in: query, schema: { type: integer } }], responses: { "200": { description: Attachment bytes. }, "400": { description: Invalid uid. } } }
+  /api/v1/mail/flag:
+    post: { tags: [mail-v1], summary: "Mark a collected message, default \\Seen (scope mail:write)", requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { folder: { type: string }, uid: { type: integer }, flag: { type: string }, set: { type: boolean } } } } } }, responses: { "200": { description: Flag updated. }, "403": { description: Missing scope. } } }

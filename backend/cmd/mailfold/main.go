@@ -58,6 +58,7 @@ func main() {
 			authn.GC()
 			loginLimiter.GC()
 			server.GCWebmail()
+			server.GCAPIKeys()
 		}
 	}()
 

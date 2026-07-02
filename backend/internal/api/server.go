@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/isi1988/Mailfold/backend/internal/apikey"
 	"github.com/isi1988/Mailfold/backend/internal/auth"
 	"github.com/isi1988/Mailfold/backend/internal/config"
 	"github.com/isi1988/Mailfold/backend/internal/dav"
@@ -31,6 +32,10 @@ type Server struct {
 	webmailSessions *webmail.Sessions
 	davStore        *dav.Store
 	davAuth         *davVerifier
+	apikeyStore     *apikey.Store
+	apikeyCipher    *apikey.Cipher
+	apikeyKeyLimit  *ratelimit.Limiter // per-key request budget
+	apikeyIPLimit   *ratelimit.Limiter // pre-auth per-IP guard against token guessing
 	logger          *slog.Logger
 }
 
@@ -55,6 +60,37 @@ func NewServer(cfg *config.Config, mc Mailcow, authn *auth.Authenticator, limite
 		}
 	}
 
+	// Open the API-key subsystem when enabled and a database path is configured.
+	// Like DAV, any failure disables the feature rather than aborting startup.
+	var akStore *apikey.Store
+	var akCipher *apikey.Cipher
+	var akKeyLimit, akIPLimit *ratelimit.Limiter
+	switch {
+	case !cfg.APIKeyEnabled:
+		// feature off
+	case cfg.DBPath == "":
+		logger.Warn("MAILFOLD_APIKEY_ENABLED is set but MAILFOLD_DB_PATH is empty; API keys disabled")
+	default:
+		st, err := apikey.Open(cfg.DBPath)
+		if err != nil {
+			logger.Error("failed to open API-key store; API keys disabled", "error", err)
+			break
+		}
+		ci, err := apikey.NewCipher(cfg.APIKeyMasterKey)
+		if err != nil {
+			logger.Error("failed to initialise API-key cipher; API keys disabled", "error", err)
+			_ = st.Close()
+			break
+		}
+		akStore = st
+		akCipher = ci
+		akKeyLimit = ratelimit.New(cfg.APIKeyRateMax, cfg.APIKeyRateWindow)
+		// The pre-auth IP guard counts every attempt (including failed token
+		// guesses); it is looser than the per-key budget so a busy legitimate
+		// integrator sharing one egress IP is not throttled.
+		akIPLimit = ratelimit.New(cfg.APIKeyRateMax*20, cfg.APIKeyRateWindow)
+	}
+
 	return &Server{
 		cfg:             cfg,
 		mc:              mc,
@@ -65,6 +101,10 @@ func NewServer(cfg *config.Config, mc Mailcow, authn *auth.Authenticator, limite
 		webmailSessions: webmail.NewSessions(cfg.WebmailSessionTTL),
 		davStore:        davStore,
 		davAuth:         davAuth,
+		apikeyStore:     akStore,
+		apikeyCipher:    akCipher,
+		apikeyKeyLimit:  akKeyLimit,
+		apikeyIPLimit:   akIPLimit,
 		logger:          logger,
 	}
 }
@@ -72,6 +112,19 @@ func NewServer(cfg *config.Config, mc Mailcow, authn *auth.Authenticator, limite
 // GCWebmail evicts expired webmail sessions. It is intended to be called
 // periodically from a background goroutine.
 func (s *Server) GCWebmail() { s.webmailSessions.GC() }
+
+// GCAPIKeys reclaims stale entries from the API-key rate limiters so their maps
+// do not grow without bound (every distinct client IP and key id would otherwise
+// leave a permanent entry). It is a no-op when the subsystem is disabled and is
+// intended to be called on the same periodic sweep as GCWebmail.
+func (s *Server) GCAPIKeys() {
+	if s.apikeyKeyLimit != nil {
+		s.apikeyKeyLimit.GC()
+	}
+	if s.apikeyIPLimit != nil {
+		s.apikeyIPLimit.GC()
+	}
+}
 
 // Handler builds the HTTP handler with all routes registered.
 func (s *Server) Handler() http.Handler {
@@ -92,6 +145,9 @@ func (s *Server) Handler() http.Handler {
 
 	// Self-hosted CardDAV/CalDAV (contacts/calendar), when configured.
 	s.registerDAV(mux)
+
+	// Machine-to-machine API keys (send/collect mail), when configured.
+	s.registerAPIKeyRoutes(mux)
 
 	// Management resources (all require authentication).
 	s.registerStatusRoutes(mux)

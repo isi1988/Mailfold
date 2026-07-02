@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
+	"strings"
 	"time"
 
 	"github.com/emersion/go-message/mail"
@@ -20,6 +21,25 @@ type OutgoingMessage struct {
 	Subject string   `json:"subject"`
 	Text    string   `json:"text"`
 	HTML    string   `json:"html"`
+}
+
+// validate rejects header/CRLF injection at the primitive so every caller — the
+// webmail UI and API-key send endpoint alike — is protected. A raw CR or LF in a
+// header value (a pure-ASCII Subject in particular, which go-message does not
+// Q-encode) would otherwise be passed through verbatim and let a caller inject
+// arbitrary headers or extra recipients.
+func (m *OutgoingMessage) validate() error {
+	if strings.ContainsAny(m.Subject, "\r\n") {
+		return fmt.Errorf("subject must not contain a line break")
+	}
+	for _, list := range [][]string{m.To, m.Cc, m.Bcc} {
+		for _, addr := range list {
+			if strings.ContainsAny(addr, "\r\n") {
+				return fmt.Errorf("recipient address must not contain a line break")
+			}
+		}
+	}
+	return nil
 }
 
 // recipients returns every envelope recipient (To + Cc + Bcc).
@@ -39,6 +59,9 @@ func (m *OutgoingMessage) recipients() []string {
 func (c *Client) Send(email, password string, msg *OutgoingMessage) error {
 	if len(msg.recipients()) == 0 {
 		return fmt.Errorf("message has no recipients")
+	}
+	if err := msg.validate(); err != nil {
+		return err
 	}
 	raw, err := renderMessage(email, msg)
 	if err != nil {
