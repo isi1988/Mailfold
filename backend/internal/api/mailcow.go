@@ -161,6 +161,16 @@ type Mailcow interface {
 
 	// Pushover (per mailbox push notifications; edit-only in mailcow).
 	EditPushover(ctx context.Context, items []string, attr any) ([]mailcow.ActionResult, error)
+
+	// Sieve filters.
+	Filters(ctx context.Context) (json.RawMessage, error)
+	AddFilter(ctx context.Context, attr any) ([]mailcow.ActionResult, error)
+	EditFilter(ctx context.Context, items []string, attr any) ([]mailcow.ActionResult, error)
+	DeleteFilter(ctx context.Context, items []string) ([]mailcow.ActionResult, error)
+
+	// Time-limited (spam) aliases.
+	TempAliases(ctx context.Context, mailbox string) (json.RawMessage, error)
+	AddTempAlias(ctx context.Context, attr any) ([]mailcow.ActionResult, error)
 }
 
 // Compile-time assertion that the concrete client satisfies the interface.

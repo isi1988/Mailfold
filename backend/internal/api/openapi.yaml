@@ -410,3 +410,12 @@ paths:
               properties:
                 name: { type: string }
       responses: { "200": { description: Created. }, "400": { description: Missing name. }, "401": { $ref: "#/components/responses/Unauthorized" } }
+  /api/filters:
+    get: { tags: [filters], summary: List Sieve filters, responses: { "200": { $ref: "#/components/responses/Upstream" } } }
+    post: { tags: [filters], summary: Create a Sieve filter, requestBody: { $ref: "#/components/requestBodies/Attr" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+    put: { tags: [filters], summary: Edit Sieve filters, requestBody: { $ref: "#/components/requestBodies/Edit" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+    delete: { tags: [filters], summary: Delete Sieve filters, requestBody: { $ref: "#/components/requestBodies/Items" }, responses: { "200": { $ref: "#/components/responses/Action" } } }
+  /api/temp-aliases/{mailbox}:
+    get: { tags: [temp-aliases], summary: List time-limited aliases for a mailbox, parameters: [{ name: mailbox, in: path, required: true, schema: { type: string } }], responses: { "200": { $ref: "#/components/responses/Upstream" } } }
+  /api/temp-aliases:
+    post: { tags: [temp-aliases], summary: Create a time-limited alias, requestBody: { $ref: "#/components/requestBodies/Attr" }, responses: { "200": { $ref: "#/components/responses/Action" } } }

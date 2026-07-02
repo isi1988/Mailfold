@@ -242,6 +242,12 @@ func TestClientAllMethodsErrorPaths(t *testing.T) {
 		func() error { _, e := c.RateLimitDomains(ctx); return e },
 		func() error { _, e := c.EditRateLimitDomain(ctx, items, attr); return e },
 		func() error { _, e := c.EditPushover(ctx, items, attr); return e },
+		func() error { _, e := c.Filters(ctx); return e },
+		func() error { _, e := c.AddFilter(ctx, attr); return e },
+		func() error { _, e := c.EditFilter(ctx, items, attr); return e },
+		func() error { _, e := c.DeleteFilter(ctx, items); return e },
+		func() error { _, e := c.TempAliases(ctx, "u@example.com"); return e },
+		func() error { _, e := c.AddTempAlias(ctx, attr); return e },
 	}
 	for i, fn := range calls {
 		if err := fn(); err == nil {

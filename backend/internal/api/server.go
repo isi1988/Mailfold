@@ -98,6 +98,8 @@ func (s *Server) Handler() http.Handler {
 	s.registerRateLimitMailboxRoutes(mux)
 	s.registerRateLimitDomainRoutes(mux)
 	s.registerPushoverRoutes(mux)
+	s.registerFilterRoutes(mux)
+	s.registerTempAliasRoutes(mux)
 
 	// Static SPA (served only when a build directory is present).
 	s.registerFrontend(mux)

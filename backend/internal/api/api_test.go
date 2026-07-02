@@ -235,6 +235,13 @@ func TestResourceEndpoints(t *testing.T) {
 		{http.MethodGet, "/api/ratelimits/domain", "", 200},
 		{http.MethodPut, "/api/ratelimits/domain", edit, 200},
 		{http.MethodPut, "/api/pushover", edit, 200},
+		// Phase W2 resources.
+		{http.MethodGet, "/api/filters", "", 200},
+		{http.MethodPost, "/api/filters", attr, 200},
+		{http.MethodPut, "/api/filters", edit, 200},
+		{http.MethodDelete, "/api/filters", del, 200},
+		{http.MethodGet, "/api/temp-aliases/user@example.com", "", 200},
+		{http.MethodPost, "/api/temp-aliases", attr, 200},
 	}
 	for _, c := range cases {
 		rec := do(h, c.method, c.path, token, c.body)
