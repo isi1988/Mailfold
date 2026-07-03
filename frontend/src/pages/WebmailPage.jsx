@@ -1,5 +1,8 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { FolderItem } from '../ds/components/molecules/FolderItem.jsx';
+import { LabelItem } from '../ds/components/molecules/LabelItem.jsx';
+import { IconButton } from '../ds/components/atoms/IconButton.jsx';
+import { Checkbox } from '../ds/components/atoms/Checkbox.jsx';
 import { MailListItem } from '../ds/components/molecules/MailListItem.jsx';
 import { SearchInput } from '../ds/components/molecules/SearchInput.jsx';
 import { FormField } from '../ds/components/molecules/FormField.jsx';
@@ -18,7 +21,40 @@ import { useT } from '../i18n/index.jsx';
 import { wm, downloadAttachment, subscribeMail } from '../api/webmail.js';
 import { Loading, ErrorState, Empty } from '../components/States.jsx';
 
-const FOLDER_ICON = { inbox: 'inbox', sent: 'send', drafts: 'drafts', archive: 'archive', junk: 'shield', spam: 'shield', trash: 'trash' };
+const SYS_ICON = { inbox: 'inbox', sent: 'send', drafts: 'drafts', archive: 'archive', junk: 'shield', spam: 'shield', trash: 'trash' };
+const SYS_ORDER = ['inbox', 'sent', 'drafts', 'archive', 'junk', 'spam', 'trash'];
+const SYS_ATTRS = ['\\sent', '\\drafts', '\\junk', '\\trash', '\\archive', '\\all'];
+const LABEL_PALETTE = ['#B07C33', '#4B7B58', '#3C6187', '#9B5A4A', '#8A6D3B', '#6E6860'];
+
+function sysRank(name) {
+  const i = SYS_ORDER.indexOf((name || '').toLowerCase());
+  return i === -1 ? 99 : i;
+}
+// classifyFolders splits IMAP folders into ordered system folders and the rest.
+function classifyFolders(folders) {
+  const sys = [];
+  const custom = [];
+  (folders || []).forEach(f => {
+    const key = (f.name || '').toLowerCase();
+    const attrs = (f.attributes || []).map(a => a.toLowerCase());
+    const isSys = SYS_ORDER.includes(key) || attrs.some(a => SYS_ATTRS.includes(a));
+    (isSys ? sys : custom).push(f);
+  });
+  sys.sort((a, b) => sysRank(a.name) - sysRank(b.name));
+  return { sys, custom };
+}
+// folderLeaf returns the last segment of a hierarchical IMAP folder name.
+function folderLeaf(name) {
+  const parts = String(name || '').split(/[/.]/);
+  return parts[parts.length - 1] || name;
+}
+const labelStoreKey = email => 'mailfold.webmail.labels.' + (email || '');
+function loadLabels(email) {
+  try { return JSON.parse(localStorage.getItem(labelStoreKey(email)) || '[]'); } catch { return []; }
+}
+function saveLabels(email, labels) {
+  try { localStorage.setItem(labelStoreKey(email), JSON.stringify(labels)); } catch { /* storage may be unavailable */ }
+}
 
 const hasFlag = (flags, f) => Array.isArray(flags) && flags.includes(f);
 const addrLabel = list => {
@@ -138,6 +174,10 @@ function WebmailClient() {
   const [loadingList, setLoadingList] = useState(true);
   const [error, setError] = useState(null);
   const [composing, setComposing] = useState(false);
+  const [filterMode, setFilterMode] = useState(null); // null | 'starred' | 'label:<name>'
+  const [labels, setLabels] = useState(() => loadLabels(email));
+
+  const { sys: sysFolders, custom: customFolders } = useMemo(() => classifyFolders(folders), [folders]);
 
   const onErr = useCallback(err => {
     if (err && err.status === 401) { expire(); return; }
@@ -249,34 +289,112 @@ function WebmailClient() {
     setComposing({ to: sender, subject: subj.startsWith('Re:') ? subj : 'Re: ' + subj, text: quote });
   }
 
+  function forward(m) {
+    const subj = m.subject || '';
+    const quote = body && body.text ? '\n\n---------- Forwarded message ----------\n' + body.text : '';
+    setComposing({ subject: subj.startsWith('Fwd:') ? subj : 'Fwd: ' + subj, text: quote });
+  }
+
+  function selectFolder(name) { setFilterMode(null); setFolder(name); }
+
+  async function createFolder() {
+    const name = (window.prompt(t('webmail.folderNamePrompt')) || '').trim();
+    if (!name) return;
+    try {
+      await wm.createFolder(name);
+      toast(t('webmail.folderCreated', { name }));
+      wm.folders().then(setFolders).catch(onErr);
+    } catch (err) {
+      toast(t('webmail.createFolderFailed'), (err && err.body && err.body.error) || (err && err.message) || '');
+    }
+  }
+
+  function createLabel() {
+    const name = (window.prompt(t('webmail.labelNamePrompt')) || '').trim();
+    if (!name || labels.some(l => l.name === name)) return;
+    const next = [...labels, { name, color: LABEL_PALETTE[labels.length % LABEL_PALETTE.length] }];
+    setLabels(next);
+    saveLabels(email, next);
+    toast(t('webmail.labelCreated', { name }));
+  }
+
+  // The message list is filtered by the active favourite/label view and the
+  // search box. Labels match on IMAP keywords, which the server returns in each
+  // message's flags array, so filtering is a client-side flag check.
+  let base = messages;
+  if (filterMode === 'starred') base = base.filter(m => hasFlag(m.flags, '\\Flagged'));
+  else if (filterMode && filterMode.startsWith('label:')) {
+    const lbl = filterMode.slice(6);
+    base = base.filter(m => hasFlag(m.flags, lbl));
+  }
   const filtered = q
-    ? messages.filter(m => (addrLabel(m.from) + ' ' + (m.subject || '')).toLowerCase().includes(q.toLowerCase()))
-    : messages;
+    ? base.filter(m => (addrLabel(m.from) + ' ' + (m.subject || '')).toLowerCase().includes(q.toLowerCase()))
+    : base;
+  const unreadCount = messages.filter(m => !hasFlag(m.flags, '\\Seen')).length;
+  const listTitle = filterMode === 'starred'
+    ? t('webmail.starred')
+    : filterMode && filterMode.startsWith('label:') ? filterMode.slice(6) : folderLeaf(folder);
 
   return (
-    <div style={{ display: 'flex', height: 'calc(100vh - 150px)', minHeight: 420, border: '1px solid var(--hair)', borderRadius: 12, overflow: 'hidden', background: 'var(--surface)' }}>
-      {/* Folders */}
-      <div style={{ width: 220, borderRight: '1px solid var(--hair)', padding: 10, overflow: 'auto', flex: 'none' }}>
-        <Button variant="primary" block onClick={() => setComposing(true)} style={{ marginBottom: 12 }}>{t('webmail.compose')}</Button>
-        {folders.map(f => {
-          const key = (f.name || '').toLowerCase();
-          const icon = FOLDER_ICON[key] || 'folder';
+    <div className="mf-webmail" style={{ height: 'calc(100vh - 150px)', minHeight: 460, border: '1px solid var(--hair)', borderRadius: 12, overflow: 'hidden', background: 'var(--surface)' }}>
+      {/* Folder rail */}
+      <div className="mf-webmail__folders">
+        <Button variant="primary" block onClick={() => setComposing(true)} style={{ margin: '2px 0 12px' }}>{t('webmail.compose')}</Button>
+
+        <div className="mf-side-label">{t('webmail.favourites')}</div>
+        <FolderItem icon={<Icon name="star" size={14} style={{ color: 'var(--amber)' }} />} label={t('webmail.starred')}
+          active={filterMode === 'starred'} onClick={() => setFilterMode('starred')} style={{ cursor: 'pointer' }} />
+        <FolderItem icon={<Icon name="flag" size={14} style={{ color: 'var(--red)' }} />} label={t('webmail.flagged')}
+          onClick={() => setFilterMode('starred')} style={{ cursor: 'pointer' }} />
+        <FolderItem icon={<Icon name="clock" size={14} style={{ color: 'var(--faint)' }} />} label={t('webmail.snoozed')}
+          onClick={() => toast(t('webmail.snoozeUnavailable'))} style={{ cursor: 'pointer' }} />
+
+        <div className="mf-row" style={{ gap: 7, padding: '13px 10px 5px' }}>
+          <Icon name="chevron-down" size={12} style={{ color: 'var(--faint)' }} />
+          <span className="mf-u-mono mf-u-muted mf-truncate" style={{ fontSize: 11, fontWeight: 600 }}>{email}</span>
+        </div>
+        {sysFolders.map(f => {
+          const isActive = f.name === folder && !filterMode;
           return (
-            <FolderItem key={f.name} label={f.name} active={f.name === folder}
-              icon={<Icon name={icon} size={14} style={{ color: 'var(--faint)' }} />}
-              onClick={() => setFolder(f.name)} style={{ cursor: 'pointer' }} />
+            <FolderItem key={f.name} label={folderLeaf(f.name)} active={isActive}
+              count={isActive && unreadCount ? unreadCount : undefined}
+              icon={<Icon name={SYS_ICON[(f.name || '').toLowerCase()] || 'folder'} size={15} style={{ color: isActive ? 'var(--accent-ink)' : 'var(--faint)' }} />}
+              onClick={() => selectFolder(f.name)} style={{ cursor: 'pointer' }} />
           );
         })}
-        <div className="mf-u-faint mf-u-mono mf-truncate" style={{ fontSize: 11, padding: '14px 10px 4px' }}>{email}</div>
-        <div style={{ padding: '0 10px' }}>
+
+        {customFolders.length > 0 && <div className="mf-side-label">{t('webmail.folders')}</div>}
+        {customFolders.map(f => (
+          <FolderItem key={f.name} label={folderLeaf(f.name)} nested={/[/.]/.test(f.name)} active={f.name === folder && !filterMode}
+            icon={<Icon name="folder" size={15} style={{ color: f.name === folder && !filterMode ? 'var(--accent-ink)' : 'var(--faint)' }} />}
+            onClick={() => selectFolder(f.name)} style={{ cursor: 'pointer' }} />
+        ))}
+        <div className="mf-row" onClick={createFolder} style={{ gap: 9, padding: '7px 10px', font: '600 12.5px var(--font-sans)', color: 'var(--accent-ink)', cursor: 'pointer' }}>
+          <span style={{ width: 15, textAlign: 'center' }}>+</span>{t('webmail.newFolder')}
+        </div>
+
+        <div className="mf-side-label">{t('webmail.labels')}</div>
+        {labels.map(l => (
+          <LabelItem key={l.name} color={l.color} label={l.name}
+            className={filterMode === 'label:' + l.name ? 'mf-folder--active' : ''}
+            onClick={() => setFilterMode('label:' + l.name)} style={{ cursor: 'pointer' }} />
+        ))}
+        <div className="mf-row" onClick={createLabel} style={{ gap: 9, padding: '7px 10px', font: '600 12.5px var(--font-sans)', color: 'var(--accent-ink)', cursor: 'pointer' }}>
+          <span style={{ width: 15, textAlign: 'center' }}>+</span>{t('webmail.newLabel')}
+        </div>
+
+        <div style={{ padding: '12px 10px 0' }}>
           <Button variant="link" size="sm" onClick={logout}>{t('webmail.signOut')}</Button>
         </div>
       </div>
 
       {/* Message list */}
-      <div style={{ width: 360, borderRight: '1px solid var(--hair)', display: 'flex', flexDirection: 'column', flex: 'none', minHeight: 0 }}>
-        <div style={{ padding: 10, borderBottom: '1px solid var(--hair)' }}>
-          <SearchInput sm placeholder={t('webmail.search')} value={q} onChange={e => setQ(e.target.value)} />
+      <div className="mf-webmail__list">
+        <div className="mf-webmail__list-head">
+          <Checkbox />
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{listTitle}</span>
+          <span className="mf-u-faint" style={{ fontSize: 12 }}>{unreadCount} {t('webmail.unread')}</span>
+          <SearchInput sm className="mf-spacer" placeholder={t('webmail.search')} value={q} onChange={e => setQ(e.target.value)} style={{ width: 150 }} />
         </div>
         <div style={{ overflow: 'auto', flex: 1 }}>
           {loadingList ? <Loading /> : error ? <ErrorState error={error} onRetry={() => loadMessages(folder)} />
@@ -296,31 +414,30 @@ function WebmailClient() {
       </div>
 
       {/* Reading pane */}
-      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+      <div className="mf-webmail__reader">
         {!selected ? (
           <div style={{ margin: 'auto', color: 'var(--faint)', fontSize: 14 }}>{t('webmail.selectPrompt')}</div>
         ) : (
           <>
-            <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--hair)' }}>
-              <div className="mf-row mf-row--between">
-                <div className="mf-page-head__title" style={{ fontSize: 20 }}>{selected.subject || t('webmail.noSubject')}</div>
-                <div className="mf-row" style={{ gap: 4 }}>
-                  <Button variant="secondary" size="sm" onClick={() => reply(selected)}>{t('webmail.reply')}</Button>
-                  <Button variant="ghost" size="sm" onClick={e => toggleStar(selected, e)} title={t('webmail.star')}><Icon name="star" size={15} style={{ color: hasFlag(selected.flags, '\\Flagged') ? 'var(--amber)' : 'var(--faint)' }} /></Button>
-                  <Button variant="ghost" size="sm" onClick={() => archive(selected)} title={t('webmail.archive')}><Icon name="archive" size={15} /></Button>
-                  <Button variant="ghost" size="sm" onClick={() => del(selected)} title={t('webmail.delete')}><Icon name="trash" size={15} /></Button>
-                </div>
-              </div>
-              <div className="mf-row" style={{ gap: 10, marginTop: 10 }}>
-                <Avatar size={34}>{initials(addrLabel(selected.from) || '?')}</Avatar>
-                <div className="mf-min0">
-                  <div className="mf-cell-name mf-truncate">{addrLabel(selected.from)}</div>
-                  <div className="mf-cell-sub mf-truncate">{selected.from && selected.from[0] ? selected.from[0].email : ''}</div>
-                </div>
-                <span className="mf-u-faint mf-u-mono mf-spacer" style={{ fontSize: 12 }}>{shortTime(selected.date)}</span>
+            <div className="mf-webmail__toolbar">
+              <Button variant="primary" size="sm" onClick={() => reply(selected)}><Icon name="reply" size={14} style={{ marginRight: 6 }} />{t('webmail.reply')}</Button>
+              <Button variant="secondary" size="sm" onClick={() => forward(selected)}><Icon name="forward" size={14} style={{ marginRight: 6 }} />{t('webmail.forward')}</Button>
+              <div className="mf-spacer mf-row" style={{ gap: 2 }}>
+                <IconButton onClick={() => archive(selected)} title={t('webmail.archive')}><Icon name="archive" size={16} /></IconButton>
+                <IconButton onClick={() => del(selected)} title={t('webmail.delete')}><Icon name="trash" size={16} /></IconButton>
+                <IconButton onClick={e => toggleStar(selected, e)} title={t('webmail.star')}><Icon name="star" size={16} style={{ color: hasFlag(selected.flags, '\\Flagged') ? 'var(--amber)' : 'var(--faint)' }} /></IconButton>
               </div>
             </div>
-            <div style={{ overflow: 'auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <div className="mf-webmail__body" style={{ overflow: 'auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
+              <div style={{ fontFamily: 'var(--font-serif)', fontSize: 22, fontWeight: 600, color: 'var(--ink-strong)', lineHeight: 1.25 }}>{selected.subject || t('webmail.noSubject')}</div>
+              <div className="mf-row" style={{ gap: 12, margin: '16px 0 20px' }}>
+                <Avatar size={38}>{initials(addrLabel(selected.from) || '?')}</Avatar>
+                <div className="mf-min0" style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>{addrLabel(selected.from)}</div>
+                  <div className="mf-u-faint mf-u-mono mf-truncate" style={{ fontSize: 12.5 }}>{selected.from && selected.from[0] ? selected.from[0].email : ''}</div>
+                </div>
+                <span className="mf-u-faint" style={{ fontSize: 12.5 }}>{shortTime(selected.date)}</span>
+              </div>
               {body === null ? (
                 <div style={{ padding: 22 }}><Loading message={t('webmail.loadingMessage')} /></div>
               ) : body.html ? (
@@ -345,6 +462,7 @@ function WebmailClient() {
                   </div>
                 </div>
               )}
+              <div className="mf-reply-box" onClick={() => reply(selected)}>{t('webmail.replyTo', { name: addrLabel(selected.from) })}…</div>
             </div>
           </>
         )}

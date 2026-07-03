@@ -84,6 +84,7 @@ export const wm = {
   flag: (folder, uid, flag, set) => req('POST', '/api/webmail/flag', { folder, uid, flag, set }),
   del: (folder, uid) => req('POST', '/api/webmail/delete', { folder, uid }),
   move: (folder, uid, target) => req('POST', '/api/webmail/move', { folder, uid, target }),
+  createFolder: name => req('POST', '/api/webmail/folders', { name }),
 };
 
 // subscribeMail opens a Server-Sent Events stream that fires onMail(data) when
