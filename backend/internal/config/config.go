@@ -116,6 +116,25 @@ type Config struct {
 	// indicator (for example "mail.example.com"). It is display-only and defaults
 	// to empty, in which case the UI simply omits the hostname.
 	ServerName string
+
+	// AdminEncKey is the decoded master key (>= 32 bytes) from which the
+	// AES-256-GCM key that encrypts the admin account's secrets (a TOTP seed,
+	// the system-notification mailbox password) is derived. It is optional:
+	// when unset, two-factor enrollment and the notification sender cannot be
+	// configured (their endpoints report 501), but everything else — password
+	// change, profile, sessions — still works off DBPath alone.
+	AdminEncKey []byte
+
+	// OIDCIssuer/OIDCClientID/OIDCClientSecret/OIDCRedirectURL/OIDCAllowedEmail
+	// configure optional single sign-on. SSO is only offered to the frontend
+	// (and only enabled server-side) when every one of these is set; an
+	// operator who does not configure an identity provider sees no SSO option
+	// at all, rather than a button that would fail.
+	OIDCIssuer       string
+	OIDCClientID     string
+	OIDCClientSecret string
+	OIDCRedirectURL  string
+	OIDCAllowedEmail string
 }
 
 // Load reads every configuration value from the environment, applies sensible
@@ -150,6 +169,11 @@ func Load() (*Config, error) {
 		APIKeyDefaultTTL:    getdur("MAILFOLD_APIKEY_DEFAULT_TTL", 0),
 		APIKeyMaxRecipients: int(getint64("MAILFOLD_APIKEY_MAX_RECIPIENTS", 50)),
 		ServerName:          getenv("MAILFOLD_SERVER_NAME", ""),
+		OIDCIssuer:          os.Getenv("MAILFOLD_OIDC_ISSUER"),
+		OIDCClientID:        os.Getenv("MAILFOLD_OIDC_CLIENT_ID"),
+		OIDCClientSecret:    os.Getenv("MAILFOLD_OIDC_CLIENT_SECRET"),
+		OIDCRedirectURL:     os.Getenv("MAILFOLD_OIDC_REDIRECT_URL"),
+		OIDCAllowedEmail:    os.Getenv("MAILFOLD_OIDC_ALLOWED_EMAIL"),
 	}
 
 	// The following three values have no safe default: without an upstream
@@ -175,7 +199,35 @@ func Load() (*Config, error) {
 		}
 		cfg.APIKeyMasterKey = key
 	}
+
+	// The admin-account encryption key is optional. When the operator sets it,
+	// it must be valid (fail fast); when unset, the admin-secret features it
+	// gates simply stay off.
+	if raw := os.Getenv("MAILFOLD_ADMIN_ENC_KEY"); raw != "" {
+		key, err := decodeOptionalKey(raw)
+		if err != nil {
+			return nil, fmt.Errorf("MAILFOLD_ADMIN_ENC_KEY must decode (hex or base64) to at least 32 bytes")
+		}
+		cfg.AdminEncKey = key
+	}
 	return cfg, nil
+}
+
+// decodeOptionalKey decodes a hex- or base64-encoded key of at least 32 bytes.
+// Unlike decodeMasterKey it never treats an empty string specially — callers
+// only invoke it once they know the raw value is non-empty.
+func decodeOptionalKey(raw string) ([]byte, error) {
+	raw = strings.TrimSpace(raw)
+	for _, dec := range []func(string) ([]byte, error){
+		hex.DecodeString,
+		base64.StdEncoding.DecodeString,
+		base64.RawStdEncoding.DecodeString,
+	} {
+		if b, err := dec(raw); err == nil && len(b) >= 32 {
+			return b, nil
+		}
+	}
+	return nil, fmt.Errorf("key too short or not hex/base64")
 }
 
 // decodeMasterKey parses the API-key master key from its environment string,

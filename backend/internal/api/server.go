@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/isi1988/Mailfold/backend/internal/admin"
 	"github.com/isi1988/Mailfold/backend/internal/apikey"
 	"github.com/isi1988/Mailfold/backend/internal/auth"
 	"github.com/isi1988/Mailfold/backend/internal/config"
@@ -36,6 +37,9 @@ type Server struct {
 	apikeyCipher    *apikey.Cipher
 	apikeyKeyLimit  *ratelimit.Limiter // per-key request budget
 	apikeyIPLimit   *ratelimit.Limiter // pre-auth per-IP guard against token guessing
+	adminStore      *admin.Store       // password/profile/2FA/notify-sender/reset-tokens; nil when DBPath is empty
+	adminCipher     *admin.Cipher      // nil when MAILFOLD_ADMIN_ENC_KEY is unset (2FA/notify-sender then report 501)
+	resetLimiter    *ratelimit.Limiter // throttles the public forgot-password endpoint per IP
 	logger          *slog.Logger
 }
 
@@ -91,6 +95,11 @@ func NewServer(cfg *config.Config, mc Mailcow, authn *auth.Authenticator, limite
 		akIPLimit = ratelimit.New(cfg.APIKeyRateMax*20, cfg.APIKeyRateWindow)
 	}
 
+	// Open the admin-account store whenever a database is configured — it backs
+	// password change, profile, sessions and (when MAILFOLD_ADMIN_ENC_KEY is
+	// also set) two-factor auth and the notification sender.
+	adminStore, adminCipher := openAdminStore(cfg, authn, logger)
+
 	return &Server{
 		cfg:             cfg,
 		mc:              mc,
@@ -105,8 +114,41 @@ func NewServer(cfg *config.Config, mc Mailcow, authn *auth.Authenticator, limite
 		apikeyCipher:    akCipher,
 		apikeyKeyLimit:  akKeyLimit,
 		apikeyIPLimit:   akIPLimit,
+		adminStore:      adminStore,
+		adminCipher:     adminCipher,
+		resetLimiter:    ratelimit.New(5, time.Hour),
 		logger:          logger,
 	}
+}
+
+// openAdminStore opens the admin-account store when a database is configured
+// and, on success, loads any previously-saved password-hash override into authn
+// so a password changed in an earlier run takes effect immediately on this one,
+// and initialises the admin cipher when MAILFOLD_ADMIN_ENC_KEY is set. Any
+// failure along the way disables just the affected feature rather than
+// preventing the whole backend from starting, matching the DAV/API-key stores'
+// behaviour above.
+func openAdminStore(cfg *config.Config, authn *auth.Authenticator, logger *slog.Logger) (*admin.Store, *admin.Cipher) {
+	if cfg.DBPath == "" {
+		return nil, nil
+	}
+	st, err := admin.Open(cfg.DBDriver, cfg.DBPath)
+	if err != nil {
+		logger.Error("failed to open admin-account store; password change/2FA/profile disabled", "error", err)
+		return nil, nil
+	}
+	if acct, err := st.GetAccount(cfg.AdminUser); err == nil && acct.PasswordHash != "" {
+		authn.SetPasswordHash(acct.PasswordHash)
+	}
+	var adminCipher *admin.Cipher
+	if len(cfg.AdminEncKey) > 0 {
+		if ci, err := admin.NewCipher(cfg.AdminEncKey); err == nil {
+			adminCipher = ci
+		} else {
+			logger.Error("failed to initialise admin cipher; 2FA/notify-sender disabled", "error", err)
+		}
+	}
+	return st, adminCipher
 }
 
 // GCWebmail evicts expired webmail sessions. It is intended to be called
@@ -139,6 +181,13 @@ func (s *Server) Handler() http.Handler {
 
 	// Authentication.
 	s.registerAuthRoutes(mux)
+	s.registerPasswordResetRoutes(mux)
+
+	// Admin account settings: profile, password, sessions, two-factor auth,
+	// and the notification sender used to email reset links.
+	s.registerAccountRoutes(mux)
+	s.registerTOTPRoutes(mux)
+	s.registerNotifySenderRoutes(mux)
 
 	// End-user webmail (IMAP/SMTP-backed).
 	s.registerWebmailRoutes(mux)
