@@ -8,10 +8,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/emersion/go-imap"
+	"github.com/emersion/go-imap/client"
 	"github.com/emersion/go-message/mail"
 	"github.com/emersion/go-sasl"
 	"github.com/emersion/go-smtp"
 )
+
+// sentSpecialUse is the IMAP special-use attribute marking the Sent folder.
+const sentSpecialUse = "\\Sent"
 
 // OutgoingMessage is a message composed by the user to be submitted for delivery.
 type OutgoingMessage struct {
@@ -93,6 +98,51 @@ func (c *Client) Send(email, password string, msg *OutgoingMessage) error {
 		return err
 	}
 	return sc.Quit()
+}
+
+// SaveToSent appends a copy of a composed message to the user's Sent folder,
+// marked \Seen. It is best-effort and meant to run after Send: the message has
+// already been submitted over SMTP, so a failure here only means the sent copy is
+// missing, not that delivery failed.
+func (c *Client) SaveToSent(email, password string, msg *OutgoingMessage) error {
+	raw, err := renderMessage(email, msg)
+	if err != nil {
+		return err
+	}
+	ic, err := c.dial(email, password)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = ic.Logout() }()
+
+	sent := sentMailbox(ic)
+	flags := []string{imap.SeenFlag}
+	now := time.Now()
+	if err := ic.Append(sent, flags, now, bytes.NewReader(raw)); err != nil {
+		// The Sent folder may not exist yet; create it and retry once. A fresh
+		// reader is needed because the first attempt consumed the previous one.
+		_ = ic.Create(sent)
+		return ic.Append(sent, flags, now, bytes.NewReader(raw))
+	}
+	return nil
+}
+
+// sentMailbox resolves the Sent folder name, preferring the mailbox flagged with
+// the \Sent special-use attribute and falling back to the conventional "Sent".
+func sentMailbox(ic *client.Client) string {
+	ch := make(chan *imap.MailboxInfo, 32)
+	done := make(chan error, 1)
+	go func() { done <- ic.List("", "*", ch) }()
+	name := "Sent"
+	for m := range ch {
+		for _, attr := range m.Attributes {
+			if attr == sentSpecialUse {
+				name = m.Name
+			}
+		}
+	}
+	<-done
+	return name
 }
 
 // renderMessage builds an RFC 5322 message with a text and/or HTML body.

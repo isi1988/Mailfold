@@ -213,6 +213,11 @@ func (s *Server) handleWebmailSend(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusBadGateway, err)
 		return
 	}
+	// Save a copy to the Sent folder. Best-effort: the mail has already been
+	// submitted, so a failed copy is logged, not surfaced as a send failure.
+	if err := s.webmail.SaveToSent(cred.Email, cred.Password, &msg); err != nil {
+		s.logger.Warn("message sent but not saved to Sent folder", "email", cred.Email, "error", err)
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "sent"})
 }
 

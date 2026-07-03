@@ -32,6 +32,10 @@ func (s *Server) handleMailSend(w http.ResponseWriter, r *http.Request, mailbox,
 		s.writeError(w, http.StatusBadGateway, err)
 		return
 	}
+	// Keep a copy in the mailbox's Sent folder (best-effort, as for webmail).
+	if err := s.webmail.SaveToSent(mailbox, appPw, &msg); err != nil {
+		s.logger.Warn("api-key message sent but not saved to Sent folder", "mailbox", mailbox, "error", err)
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "sent"})
 }
 

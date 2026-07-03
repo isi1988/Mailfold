@@ -281,3 +281,26 @@ func TestCheckSince(t *testing.T) {
 		t.Error("CheckSince should fail when the server is unreachable")
 	}
 }
+
+func TestSaveToSent(t *testing.T) {
+	c := NewClient(startIMAP(t), "", false, false)
+	msg := &OutgoingMessage{To: []string{"x@example.com"}, Subject: "hi", Text: "body"}
+
+	// The sample backend has no Sent folder; SaveToSent must create it and append.
+	if err := c.SaveToSent("username", "password", msg); err != nil {
+		t.Fatalf("SaveToSent: %v", err)
+	}
+	msgs, err := c.Messages("username", "password", "Sent", 10)
+	if err != nil {
+		t.Fatalf("read Sent: %v", err)
+	}
+	if len(msgs) == 0 {
+		t.Fatal("expected the sent copy to appear in Sent")
+	}
+
+	// A dial failure propagates.
+	bad := NewClient("127.0.0.1:1", "", false, false)
+	if err := bad.SaveToSent("u", "p", msg); err == nil {
+		t.Error("SaveToSent should fail when the server is unreachable")
+	}
+}
