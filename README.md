@@ -35,8 +35,9 @@ and live new-mail notifications (over SSE). Compose is a rich-text editor
 (bold/italic/lists/links, sending HTML), sent mail is saved to Sent, and folders
 and labels can be created inline. A user can hold **several mailboxes in one
 place** — switch between linked Mailfold accounts, or connect an **external
-IMAP mailbox** that syncs into the inbox — so end users read and send mail
-without a separate client.
+IMAP mailbox** (Gmail, Yandex, …) that syncs into the inbox — and a Mail /
+Calendar toggle opens a **month-view calendar** backed by the self-hosted
+CalDAV store, so end users read, send and schedule without a separate client.
 
 **One unified login** — a single sign-in screen checks the credentials against
 *both* the admin login and a mailbox (webmail) login in parallel: whoever you
