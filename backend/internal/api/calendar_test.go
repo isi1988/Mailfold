@@ -353,6 +353,75 @@ func TestWebmailCalendarUpdate(t *testing.T) {
 	}
 }
 
+// TestEditEventPreservesRichProps verifies an in-place edit keeps recurrence
+// detail, foreign alarms, the organiser and guest parameters that the webmail
+// form cannot model.
+func TestEditEventPreservesRichProps(t *testing.T) {
+	const raw = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//ext//EN\r\n" +
+		"BEGIN:VEVENT\r\nUID:rich@ext\r\nSUMMARY:Standup\r\nLOCATION:Old room\r\n" +
+		"DTSTART:20260706T090000Z\r\nDTEND:20260706T093000Z\r\n" +
+		"RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR;COUNT=10;INTERVAL=2\r\n" +
+		"ORGANIZER:mailto:boss@acme.io\r\n" +
+		"ATTENDEE;PARTSTAT=ACCEPTED:mailto:me@acme.io\r\n" +
+		"ATTENDEE;CN=Kai;PARTSTAT=TENTATIVE:mailto:kai@acme.io\r\n" +
+		"BEGIN:VALARM\r\nACTION:EMAIL\r\nTRIGGER:-P1D\r\nDESCRIPTION:ping\r\nEND:VALARM\r\n" +
+		"END:VEVENT\r\nEND:VCALENDAR\r\n"
+
+	// Edit only the summary/location/time; keep WEEKLY, keep guest kai.
+	req := createEventRequest{
+		Summary: "Standup (moved)", Location: "New room", Calendar: "Work", Repeat: "WEEKLY",
+		Start: time.Date(2026, 7, 6, 10, 0, 0, 0, time.UTC), End: time.Date(2026, 7, 6, 10, 30, 0, 0, time.UTC),
+		Guests: []string{"kai@acme.io", "new@acme.io"},
+	}
+	out, ok := editEvent(raw, req, "me@acme.io")
+	if !ok {
+		t.Fatal("editEvent failed")
+	}
+	for _, want := range []string{
+		"SUMMARY:Standup (moved)", "LOCATION:New room",
+		"BYDAY=MO,WE,FR", "COUNT=10", "INTERVAL=2", // recurrence detail preserved (freq unchanged)
+		"ACTION:EMAIL", "TRIGGER:-P1D", // foreign alarm preserved
+		"ORGANIZER:mailto:boss@acme.io", // organiser preserved
+		"PARTSTAT=ACCEPTED", "CN=Kai",   // owner RSVP + guest params preserved
+		"mailto:new@acme.io", // new guest added
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in output; got:\n%s", want, out)
+		}
+	}
+
+	// Parse back: owner not a guest, WEEKLY reported, times moved.
+	ev, _ := parseEvent(out, "me@acme.io")
+	if ev.Repeat != "WEEKLY" || ev.Summary != "Standup (moved)" {
+		t.Errorf("parsed = %+v", ev)
+	}
+	if len(ev.Guests) != 2 {
+		t.Errorf("guests = %v", ev.Guests)
+	}
+
+	// Changing the frequency replaces the rule; clearing it removes the rule.
+	if o, _ := editEvent(raw, createEventRequest{Summary: "x", Repeat: "MONTHLY", Start: req.Start, End: req.End}, "me@acme.io"); strings.Contains(o, "BYDAY") || !strings.Contains(o, "FREQ=MONTHLY") {
+		t.Error("changing frequency should replace the rule")
+	}
+	if o, _ := editEvent(raw, createEventRequest{Summary: "x", Repeat: "", Start: req.Start, End: req.End}, "me@acme.io"); strings.Contains(o, "RRULE") {
+		t.Error("clearing repeat should drop the rule")
+	}
+
+	// Setting a reminder keeps the foreign EMAIL alarm and adds our display alarm.
+	if o, _ := editEvent(raw, createEventRequest{Summary: "x", Repeat: "WEEKLY", Reminder: 15, Start: req.Start, End: req.End}, "me@acme.io"); !strings.Contains(o, "ACTION:EMAIL") || !strings.Contains(o, "-PT15M") {
+		t.Error("changing reminder should keep the EMAIL alarm and add -PT15M")
+	}
+
+	// An event whose only alarm is our simple reminder: editing swaps its trigger.
+	const simple = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//x//EN\r\n" +
+		"BEGIN:VEVENT\r\nUID:s@x\r\nSUMMARY:s\r\nDTSTART:20260706T090000Z\r\nDTEND:20260706T093000Z\r\n" +
+		"BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER:-PT10M\r\nDESCRIPTION:s\r\nEND:VALARM\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+	o3, _ := editEvent(simple, createEventRequest{Summary: "s", Reminder: 30, Start: req.Start, End: req.End}, "me@x")
+	if strings.Contains(o3, "-PT10M") || !strings.Contains(o3, "-PT30M") || strings.Count(o3, "BEGIN:VALARM") != 1 {
+		t.Errorf("simple reminder should be replaced 10->30 with one alarm:\n%s", o3)
+	}
+}
+
 func TestRsvpPartstatMapping(t *testing.T) {
 	cases := []struct{ rsvp, partstat string }{
 		{"yes", "ACCEPTED"}, {"maybe", "TENTATIVE"}, {"no", "DECLINED"}, {"none", "NEEDS-ACTION"}, {"bogus", "NEEDS-ACTION"},

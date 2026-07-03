@@ -180,15 +180,146 @@ func (s *Server) handleCalendarUpdate(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusNotFound, errEventNotFound)
 		return
 	}
-	if e, ok := firstEvent(existing.Data); ok {
-		req.Attachments = extractAttachments(e) // keep files across an edit/move
-		req.Rsvp = ownerRsvp(e, user)           // keep the owner's response
+	data, ok := editEvent(existing.Data, req, user)
+	if !ok {
+		s.writeError(w, http.StatusInternalServerError, fmt.Errorf("could not update the event"))
+		return
 	}
-	if _, err := s.davStore.PutCalObject(user, webmailCalendarID, uid, buildEvent(uid, req, user)); err != nil {
+	if _, err := s.davStore.PutCalObject(user, webmailCalendarID, uid, data); err != nil {
 		s.writeError(w, http.StatusInternalServerError, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"uid": uid})
+}
+
+// editEvent rewrites the user-editable fields of an existing VEVENT in place,
+// preserving everything the webmail form does not model: attachments, the
+// owner's RSVP, the recurrence detail (when the frequency is unchanged), other
+// alarms, guest parameters, and any external properties (ORGANIZER, STATUS, …).
+func editEvent(data string, req createEventRequest, owner string) (string, bool) {
+	cal, err := ical.NewDecoder(strings.NewReader(data)).Decode()
+	if err != nil {
+		return "", false
+	}
+	var ev *ical.Component
+	for _, ch := range cal.Children {
+		if ch.Name == ical.CompEvent {
+			ev = ch
+			break
+		}
+	}
+	if ev == nil {
+		return "", false
+	}
+	ev.Props.SetText(ical.PropSummary, icalText(req.Summary))
+	setOrDelete(ev, ical.PropLocation, req.Location)
+	setOrDelete(ev, ical.PropDescription, req.Description)
+	setOrDelete(ev, ical.PropCategories, strings.TrimSpace(req.Calendar))
+	ev.Props.SetDateTime(ical.PropDateTimeStamp, time.Now().UTC())
+	setEventTimes(&ical.Event{Component: ev}, req)
+	editRRule(ev, req.Repeat)
+	editReminder(ev, req)
+	editGuests(ev, req.Guests, owner)
+
+	var buf strings.Builder
+	if err := ical.NewEncoder(&buf).Encode(cal); err != nil {
+		return "", false
+	}
+	return buf.String(), true
+}
+
+// setOrDelete writes a text property, or removes it when the value is empty.
+func setOrDelete(ev *ical.Component, name, value string) {
+	if v := strings.TrimSpace(value); v != "" {
+		ev.Props.SetText(name, icalText(value))
+	} else {
+		ev.Props.Del(name)
+	}
+}
+
+// editRRule updates the recurrence rule only when the frequency changes, so an
+// externally-authored rule (BYDAY, COUNT, INTERVAL, …) survives an unrelated edit.
+func editRRule(ev *ical.Component, repeat string) {
+	newFreq := normalizeFreq(repeat)
+	if newFreq == rruleFreq(propText(ev.Props, ical.PropRecurrenceRule)) {
+		return
+	}
+	if newFreq == "" {
+		ev.Props.Del(ical.PropRecurrenceRule)
+		return
+	}
+	p := ical.NewProp(ical.PropRecurrenceRule)
+	p.Value = "FREQ=" + newFreq
+	ev.Props.Set(p)
+}
+
+// editReminder replaces only the simple display reminder the form manages,
+// leaving any other VALARM (EMAIL/AUDIO or non-minute triggers) intact.
+func editReminder(ev *ical.Component, req createEventRequest) {
+	if req.Reminder == alarmMinutes(ev.Children) {
+		return
+	}
+	kept := ev.Children[:0:0]
+	for _, ch := range ev.Children {
+		if !isSimpleReminder(ch) {
+			kept = append(kept, ch)
+		}
+	}
+	ev.Children = kept
+	if req.Reminder > 0 {
+		alarm := ical.NewComponent(ical.CompAlarm)
+		alarm.Props.SetText(ical.PropAction, "DISPLAY")
+		alarm.Props.SetText(ical.PropDescription, icalText(req.Summary))
+		tp := ical.NewProp(ical.PropTrigger)
+		tp.Value = fmt.Sprintf("-PT%dM", req.Reminder)
+		alarm.Props.Set(tp)
+		ev.Children = append(ev.Children, alarm)
+	}
+}
+
+// isSimpleReminder reports whether a VALARM is the minutes-before display alarm
+// the webmail form owns.
+func isSimpleReminder(ch *ical.Component) bool {
+	if ch.Name != ical.CompAlarm {
+		return false
+	}
+	if a := ch.Props.Get(ical.PropAction); a == nil || !strings.EqualFold(a.Value, "DISPLAY") {
+		return false
+	}
+	tp := ch.Props.Get(ical.PropTrigger)
+	return tp != nil && triggerMinutes(tp.Value) > 0
+}
+
+// editGuests reconciles the guest ATTENDEE set to req.Guests, keeping existing
+// entries (and their CN/ROLE/PARTSTAT) and the owner's ATTENDEE untouched.
+func editGuests(ev *ical.Component, guests []string, owner string) {
+	want := map[string]bool{}
+	for _, g := range guests {
+		if g = strings.TrimSpace(g); g != "" && !strings.EqualFold(g, owner) {
+			want[strings.ToLower(g)] = true
+		}
+	}
+	have := map[string]bool{}
+	kept := make([]ical.Prop, 0, len(ev.Props[ical.PropAttendee]))
+	for _, p := range ev.Props[ical.PropAttendee] {
+		email := strings.ToLower(strings.TrimPrefix(p.Value, mailtoPrefix))
+		if strings.EqualFold(email, owner) {
+			kept = append(kept, p) // owner (with RSVP) stays
+			continue
+		}
+		if want[email] {
+			kept = append(kept, p) // keep guest, preserving its params
+			have[email] = true
+		}
+	}
+	ev.Props[ical.PropAttendee] = kept
+	for g := range want {
+		if !have[g] {
+			p := ical.NewProp(ical.PropAttendee)
+			p.Value = mailtoPrefix + g
+			ev.Props.Add(p)
+		}
+	}
 }
 
 func (s *Server) handleCalendarDelete(w http.ResponseWriter, r *http.Request) {
@@ -290,7 +421,7 @@ func parseEvent(data, owner string) (calendarEvent, bool) {
 		AllDay:      isAllDay(e),
 		Guests:      eventGuests(e, owner),
 		Repeat:      rruleFreq(propText(e.Props, ical.PropRecurrenceRule)),
-		Reminder:    alarmMinutes(e),
+		Reminder:    alarmMinutes(e.Children),
 		Rsvp:        ownerRsvp(e, owner),
 		Attachments: eventAttachments(e),
 	}
@@ -432,20 +563,6 @@ func eventAttachments(e ical.Event) []eventAttachment {
 			att.Size = len(raw)
 		}
 		out = append(out, att)
-	}
-	return out
-}
-
-// extractAttachments reads attachments back WITH their base64 data, so an update
-// can rebuild the event without losing files.
-func extractAttachments(e ical.Event) []eventAttachment {
-	var out []eventAttachment
-	for i, p := range e.Props.Values(ical.PropAttach) {
-		a := eventAttachment{Filename: p.Params.Get(attachFilenameParam), Mime: p.Params.Get(ical.ParamFormatType), Data: p.Value}
-		if a.Filename == "" {
-			a.Filename = fmt.Sprintf(attachNameFmt, i+1)
-		}
-		out = append(out, a)
 	}
 	return out
 }
@@ -633,8 +750,8 @@ func rruleFreq(rule string) string {
 
 // alarmMinutes reads a VALARM's minutes-before-start trigger, returning 0 when
 // the event has no simple reminder.
-func alarmMinutes(e ical.Event) int {
-	for _, ch := range e.Children {
+func alarmMinutes(children []*ical.Component) int {
+	for _, ch := range children {
 		if ch.Name != ical.CompAlarm {
 			continue
 		}

@@ -35,7 +35,7 @@ const CAL_COLORS = {
   holiday: ['var(--amber-soft)', 'var(--amber)', 'var(--amber)'],
   holidays: ['var(--amber-soft)', 'var(--amber)', 'var(--amber)'],
 };
-const CAL_LIST = [['work', 'Work'], ['personal', 'Personal'], ['team', 'Team'], ['holiday', 'Holidays']];
+const CAL_LIST = [['work', 'Work'], ['personal', 'Personal'], ['team', 'Team'], ['holidays', 'Holidays']];
 const calKey = cal => (cal || 'work').toLowerCase();
 const calColors = cal => CAL_COLORS[calKey(cal)] || CAL_COLORS.work;
 const calName = cal => ({ work: 'Work', personal: 'Personal', team: 'Team', holiday: 'Holidays', holidays: 'Holidays' }[calKey(cal)] || cal || 'Work');
@@ -85,7 +85,12 @@ function weekRangeLabel(d) {
     ? `${mo(a.getMonth())} ${a.getDate()} – ${b.getDate()}, ${b.getFullYear()}`
     : `${mo(a.getMonth())} ${a.getDate()} – ${mo(b.getMonth())} ${b.getDate()}`;
 }
-const eventsOn = (events, day) => events.filter(e => sameDay(new Date(e.start), day)).sort((a, b) => new Date(a.start) - new Date(b.start));
+// All-day events are stored at UTC midnight; read their calendar day in UTC so
+// they do not shift a day in non-UTC time zones.
+const allDayToLocal = iso => { const d = new Date(iso); return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()); };
+const eventStartDate = ev => (ev && ev.all_day ? allDayToLocal(ev.start) : new Date(ev.start));
+const eventEndDate = ev => (ev && ev.all_day ? allDayToLocal(ev.end) : new Date(ev.end));
+const eventsOn = (events, day) => events.filter(e => sameDay(eventStartDate(e), day)).sort((a, b) => eventStartDate(a) - eventStartDate(b));
 
 // ---- event pill --------------------------------------------------------------
 
@@ -154,12 +159,12 @@ function EventModal({ date, event, onClose, onSaved }) {
   const t = useT();
   const { toast } = useToast();
   const editing = !!event;
-  const base = event ? new Date(event.start) : date;
+  const base = event ? eventStartDate(event) : date;
   const [summary, setSummary] = useState(event ? event.summary : '');
   const [allDay, setAllDay] = useState(event ? !!event.all_day : false);
   const [startDate, setStartDate] = useState(ymd(base));
   const [startTime, setStartTime] = useState(event ? hhmm(event.start) : '09:30');
-  const [endDate, setEndDate] = useState(ymd(event && event.end ? new Date(event.end) : base));
+  const [endDate, setEndDate] = useState(ymd(event && event.end ? eventEndDate(event) : base));
   const [endTime, setEndTime] = useState(event ? hhmm(event.end || event.start) : '10:30');
   const [calendar, setCalendar] = useState(event ? calName(event.calendar) : 'Work');
   const [location, setLocation] = useState(event ? event.location || '' : '');
@@ -190,8 +195,10 @@ function EventModal({ date, event, onClose, onSaved }) {
     try {
       let start, end;
       if (allDay) {
-        start = new Date(startDate + 'T00:00');
-        end = new Date(endDate + 'T00:00');
+        // Date-only strings parse as UTC midnight, so the picked day survives the
+        // toISOString() -> backend round trip regardless of the user's time zone.
+        start = new Date(startDate);
+        end = new Date(endDate);
         if (!(end > start)) end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
       } else {
         start = new Date(startDate + 'T' + startTime);
@@ -330,7 +337,7 @@ function EventDetail({ ev, onClose, onChanged, onDeleted, onEdit }) {
     catch (e) { toast(t('calendar.saveFailed'), (e && e.message) || ''); setBusy(false); }
   }
 
-  const dateLabel = new Date(ev.start).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+  const dateLabel = new Date(ev.start).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', ...(ev.all_day ? { timeZone: 'UTC' } : {}) });
   const timeLabel = ev.all_day ? t('calendar.allDay') : hhmm(ev.start) + (ev.end ? ' – ' + hhmm(ev.end) : '');
   const repeatKey = ev.repeat && 'repeat' + ev.repeat.charAt(0) + ev.repeat.slice(1).toLowerCase();
 
@@ -455,12 +462,14 @@ function DayView({ cursor, events, onOpen, drag }) {
   const now = new Date();
   const isToday = sameDay(cursor, now);
   const dayEvents = eventsOn(events, cursor);
-  const hourOf = ev => Math.min(DAY_END, Math.max(DAY_START, new Date(ev.start).getHours()));
+  const inWindow = ev => { const h = new Date(ev.start).getHours(); return h >= DAY_START && h <= DAY_END; };
+  // All-day events and anything outside the 07:00–21:00 window sit above the
+  // timeline (each keeps its real time) rather than being clamped to a boundary hour.
+  const otherEvents = dayEvents.filter(ev => ev.all_day || !inWindow(ev));
   const rows = [];
   for (let h = DAY_START; h <= DAY_END; h++) {
-    rows.push({ h, events: dayEvents.filter(ev => !ev.all_day && hourOf(ev) === h) });
+    rows.push({ h, events: dayEvents.filter(ev => !ev.all_day && inWindow(ev) && new Date(ev.start).getHours() === h) });
   }
-  const allDayEvents = dayEvents.filter(ev => ev.all_day);
   return (
     <div className="mf-cal-card">
       <div className="mf-day__head">
@@ -469,7 +478,7 @@ function DayView({ cursor, events, onOpen, drag }) {
       </div>
       <div className="mf-day__body">
         <div className="mf-day__hint">{t('calendar.dragHint')}</div>
-        {allDayEvents.map(ev => <div key={ev.uid} style={{ marginBottom: 6 }}><EventPill ev={ev} size="md" onOpen={onOpen} drag={drag} /></div>)}
+        {otherEvents.map(ev => <div key={ev.uid} style={{ marginBottom: 6 }}><EventPill ev={ev} size="md" onOpen={onOpen} drag={drag} /></div>)}
         {rows.map(({ h, events: evs }) => (
           <div key={h} className="mf-day__row"
             onDragOver={drag.canDrop ? e => drag.over(e, 'h' + h) : undefined}
@@ -626,12 +635,22 @@ export function CalendarView({ onAppView }) {
     over: (e, key) => { e.preventDefault(); setOverKey(key); },
     dropDay: (e, day) => {
       e.preventDefault();
-      if (dragEv) { const s = new Date(dragEv.start); moveTo(dragEv, new Date(day.getFullYear(), day.getMonth(), day.getDate(), s.getHours(), s.getMinutes())); }
+      if (dragEv) {
+        const start = dragEv.all_day
+          ? new Date(Date.UTC(day.getFullYear(), day.getMonth(), day.getDate()))
+          : (() => { const s = new Date(dragEv.start); return new Date(day.getFullYear(), day.getMonth(), day.getDate(), s.getHours(), s.getMinutes()); })();
+        moveTo(dragEv, start);
+      }
       setDragEv(null); setOverKey(null);
     },
     dropHour: (e, hour) => {
       e.preventDefault();
-      if (dragEv) { const s = new Date(dragEv.start); moveTo(dragEv, new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), hour, s.getMinutes())); }
+      if (dragEv) {
+        const start = dragEv.all_day
+          ? new Date(Date.UTC(cursor.getFullYear(), cursor.getMonth(), cursor.getDate()))
+          : (() => { const s = new Date(dragEv.start); return new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), hour, s.getMinutes()); })();
+        moveTo(dragEv, start);
+      }
       setDragEv(null); setOverKey(null);
     },
   };
