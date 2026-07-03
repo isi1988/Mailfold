@@ -15,6 +15,7 @@ const PROVIDERS = [
   { name: 'Yandex', host: 'imap.yandex.com', port: '993', encryption: 'SSL' },
   { name: 'Mail.ru', host: 'imap.mail.ru', port: '993', encryption: 'SSL' },
   { name: 'Outlook', host: 'outlook.office365.com', port: '993', encryption: 'SSL' },
+  { name: 'Exchange', host: '', port: '993', encryption: 'SSL', placeholder: 'mail.company.com' },
 ];
 
 function TabBtn({ active, onClick, children }) {
@@ -48,6 +49,7 @@ export function AddAccountModal({ onClose }) {
   const [error, setError] = useState('');
 
   const [ext, setExt] = useState({ host: '', port: '993', user: '', password: '', encryption: 'SSL', interval: '15' });
+  const [sel, setSel] = useState(''); // selected provider preset name
   const setE = (k, v) => setExt(x => ({ ...x, [k]: v }));
 
   async function addLocal() {
@@ -110,9 +112,9 @@ export function AddAccountModal({ onClose }) {
             <>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
                 {PROVIDERS.map(p => {
-                  const on = ext.host === p.host;
+                  const on = sel === p.name;
                   return (
-                    <button key={p.name} onClick={() => setExt(x => ({ ...x, host: p.host, port: p.port, encryption: p.encryption }))}
+                    <button key={p.name} onClick={() => { setSel(p.name); setExt(x => ({ ...x, host: p.host, port: p.port, encryption: p.encryption })); }}
                       style={{ padding: '7px 12px', borderRadius: 8, border: '1px solid ' + (on ? 'var(--accent)' : 'var(--hair)'), background: on ? 'var(--accent-soft)' : 'transparent', color: on ? 'var(--accent-ink)' : 'var(--muted)', font: '600 12.5px system-ui', cursor: 'pointer' }}>
                       {p.name}
                     </button>
@@ -120,7 +122,7 @@ export function AddAccountModal({ onClose }) {
                 })}
               </div>
               <FormField label={t('webmail.account.imapHost')}>
-                <Input placeholder="imap.gmail.com" value={ext.host} onChange={e => setE('host', e.target.value)} />
+                <Input placeholder={(PROVIDERS.find(p => p.name === sel) || {}).placeholder || 'imap.gmail.com'} value={ext.host} onChange={e => { setE('host', e.target.value); setSel(''); }} />
               </FormField>
               <div className="mf-row" style={{ gap: 10 }}>
                 <FormField label={t('webmail.account.port')} style={{ width: 96 }}>
