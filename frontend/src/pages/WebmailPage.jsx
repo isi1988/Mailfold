@@ -172,7 +172,9 @@ function WebmailClient() {
       const full = await wm.message(folder, m.uid);
       setBody(full);
       if (!hasFlag(m.flags, '\\Seen')) {
-        await wm.flag(folder, m.uid, '\\Seen', true);
+        // The write API takes friendly flag names ('seen'); the flags array
+        // returned by the read API uses raw IMAP flags ('\\Seen').
+        await wm.flag(folder, m.uid, 'seen', true);
         setMessages(list => list.map(x => (x.uid === m.uid ? { ...x, flags: [...(x.flags || []), '\\Seen'] } : x)));
       }
     } catch (err) {
@@ -184,7 +186,7 @@ function WebmailClient() {
     e.stopPropagation();
     const starred = hasFlag(m.flags, '\\Flagged');
     try {
-      await wm.flag(folder, m.uid, '\\Flagged', !starred);
+      await wm.flag(folder, m.uid, 'flagged', !starred);
       setMessages(list => list.map(x => (x.uid === m.uid
         ? { ...x, flags: starred ? x.flags.filter(f => f !== '\\Flagged') : [...(x.flags || []), '\\Flagged'] }
         : x)));
