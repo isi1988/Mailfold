@@ -1,5 +1,4 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Icon } from '../ds/components/atoms/Icon.jsx';
 import { Button } from '../ds/components/atoms/Button.jsx';
 import { Token } from '../ds/components/atoms/Token.jsx';
 import { wm } from '../api/webmail.js';
@@ -110,14 +109,22 @@ export function ComposeModal({ initial = {}, onClose, onSent }) {
   }
 
   return (
-    <div className="mf-overlay mf-overlay--right" onClick={onClose}>
-      <div className="mf-drawer" style={{ display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
-        <div className="mf-drawer__head">
-          <div className="mf-drawer__title">{t('webmail.composer.newMessage')}</div>
-          <div className="mf-modal-close mf-spacer" onClick={onClose}><Icon name="close" size={18} /></div>
+    <div className="mf-overlay mf-overlay--center" onClick={onClose}>
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{ width: 'min(760px, 94vw)', maxHeight: '82vh', background: 'var(--surface)', border: '1px solid var(--hair)', borderRadius: 16, boxShadow: 'var(--shadow-modal)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 24px', borderBottom: '1px solid var(--hair-soft)', background: 'var(--surface-2)' }}>
+          <div style={{ width: 32, height: 32, borderRadius: 9, background: 'var(--accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
+            <svg width="17" height="17" viewBox="0 0 20 20" fill="none"><path d="M2.5 6l7.5 5 7.5-5M3 4.5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1z" stroke="var(--accent-ink)" strokeWidth="1.4" strokeLinejoin="round" /></svg>
+          </div>
+          <div style={{ fontFamily: 'var(--font-serif)', fontSize: 22, fontWeight: 600, color: 'var(--ink-strong)', letterSpacing: '-.01em' }}>{t('webmail.composer.newMessage')}</div>
+          <div onClick={onClose} title={t('common.close')} className="mf-spacer" style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto', cursor: 'pointer', color: 'var(--faint)', padding: '7px 12px', borderRadius: 9, font: '500 12.5px system-ui' }}>
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>{t('common.close')}
+          </div>
         </div>
 
-        <div style={{ padding: '12px 20px 0', display: 'flex', flexDirection: 'column', overflow: 'auto', flex: 1 }}>
+        <div style={{ padding: '14px 24px 0', display: 'flex', flexDirection: 'column', overflow: 'auto', flex: 1 }}>
           {rows.map(r => (
             <div key={r.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, borderBottom: '1px solid var(--hair-soft)', paddingBottom: 9, marginBottom: 3 }}>
               <span style={{ fontSize: 12.5, color: 'var(--faint)', width: 32, flex: 'none', paddingTop: 8 }}>{r.label}</span>
