@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -12,6 +13,12 @@ import (
 
 	"github.com/emersion/go-ical"
 )
+
+// errEventNotFound is returned when an event UID does not resolve.
+var errEventNotFound = errors.New("event not found")
+
+// attachNameFmt names an attachment that carries no filename.
+const attachNameFmt = "attachment-%d"
 
 // webmailCalendarID is the single calendar collection each mailbox's webmail
 // calendar uses. It is created on demand.
@@ -68,6 +75,7 @@ func (s *Server) registerWebmailCalendar(mux *http.ServeMux) {
 	}
 	mux.HandleFunc("GET /api/webmail/calendar/events", s.requireWebmail(s.handleCalendarList))
 	mux.HandleFunc("POST /api/webmail/calendar/events", s.requireWebmail(s.handleCalendarCreate))
+	mux.HandleFunc("PUT /api/webmail/calendar/events/{uid}", s.requireWebmail(s.handleCalendarUpdate))
 	mux.HandleFunc("DELETE /api/webmail/calendar/events/{uid}", s.requireWebmail(s.handleCalendarDelete))
 	mux.HandleFunc("PATCH /api/webmail/calendar/events/{uid}/rsvp", s.requireWebmail(s.handleCalendarRsvp))
 	mux.HandleFunc("GET /api/webmail/calendar/events/{uid}/attachments/{index}", s.requireWebmail(s.handleCalendarAttachment))
@@ -146,6 +154,43 @@ func (s *Server) handleCalendarCreate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]string{"uid": uid})
 }
 
+// handleCalendarUpdate rewrites an event in place from the request while
+// preserving its attachments and the owner's RSVP (which are not edited here).
+// It serves both the edit form and drag-to-reschedule.
+func (s *Server) handleCalendarUpdate(w http.ResponseWriter, r *http.Request) {
+	user := webmailCreds(r).Email
+	uid := r.PathValue("uid")
+	var req createEventRequest
+	if err := decodeJSON(r, &req); err != nil {
+		s.writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if strings.TrimSpace(req.Summary) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "summary is required"})
+		return
+	}
+	if req.Start.IsZero() {
+		req.Start = time.Now().UTC()
+	}
+	if !req.End.After(req.Start) {
+		req.End = req.Start.Add(time.Hour)
+	}
+	existing, err := s.davStore.GetCalObject(user, webmailCalendarID, uid)
+	if err != nil || existing == nil {
+		s.writeError(w, http.StatusNotFound, errEventNotFound)
+		return
+	}
+	if e, ok := firstEvent(existing.Data); ok {
+		req.Attachments = extractAttachments(e) // keep files across an edit/move
+		req.Rsvp = ownerRsvp(e, user)           // keep the owner's response
+	}
+	if _, err := s.davStore.PutCalObject(user, webmailCalendarID, uid, buildEvent(uid, req, user)); err != nil {
+		s.writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"uid": uid})
+}
+
 func (s *Server) handleCalendarDelete(w http.ResponseWriter, r *http.Request) {
 	user := webmailCreds(r).Email
 	uid := r.PathValue("uid")
@@ -170,7 +215,7 @@ func (s *Server) handleCalendarRsvp(w http.ResponseWriter, r *http.Request) {
 	}
 	obj, err := s.davStore.GetCalObject(user, webmailCalendarID, uid)
 	if err != nil || obj == nil {
-		s.writeError(w, http.StatusNotFound, fmt.Errorf("event not found"))
+		s.writeError(w, http.StatusNotFound, errEventNotFound)
 		return
 	}
 	partstat := rsvpToPartstat(req.Rsvp)
@@ -198,7 +243,7 @@ func (s *Server) handleCalendarAttachment(w http.ResponseWriter, r *http.Request
 	}
 	obj, err := s.davStore.GetCalObject(user, webmailCalendarID, uid)
 	if err != nil || obj == nil {
-		s.writeError(w, http.StatusNotFound, fmt.Errorf("event not found"))
+		s.writeError(w, http.StatusNotFound, errEventNotFound)
 		return
 	}
 	name, mime, raw, ok := eventAttachmentAt(obj.Data, idx)
@@ -381,12 +426,26 @@ func eventAttachments(e ical.Event) []eventAttachment {
 	for i, p := range e.Props.Values(ical.PropAttach) {
 		att := eventAttachment{Filename: p.Params.Get(attachFilenameParam), Mime: p.Params.Get(ical.ParamFormatType)}
 		if att.Filename == "" {
-			att.Filename = fmt.Sprintf("attachment-%d", i+1)
+			att.Filename = fmt.Sprintf(attachNameFmt, i+1)
 		}
 		if raw, err := p.Binary(); err == nil {
 			att.Size = len(raw)
 		}
 		out = append(out, att)
+	}
+	return out
+}
+
+// extractAttachments reads attachments back WITH their base64 data, so an update
+// can rebuild the event without losing files.
+func extractAttachments(e ical.Event) []eventAttachment {
+	var out []eventAttachment
+	for i, p := range e.Props.Values(ical.PropAttach) {
+		a := eventAttachment{Filename: p.Params.Get(attachFilenameParam), Mime: p.Params.Get(ical.ParamFormatType), Data: p.Value}
+		if a.Filename == "" {
+			a.Filename = fmt.Sprintf(attachNameFmt, i+1)
+		}
+		out = append(out, a)
 	}
 	return out
 }
@@ -408,7 +467,7 @@ func eventAttachmentAt(data string, idx int) (name, mime string, raw []byte, ok 
 	}
 	name = p.Params.Get(attachFilenameParam)
 	if name == "" {
-		name = fmt.Sprintf("attachment-%d", idx+1)
+		name = fmt.Sprintf(attachNameFmt, idx+1)
 	}
 	return name, p.Params.Get(ical.ParamFormatType), b, true
 }

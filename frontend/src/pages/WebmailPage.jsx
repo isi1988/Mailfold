@@ -9,6 +9,7 @@ import { FormField } from '../ds/components/molecules/FormField.jsx';
 import { Input } from '../ds/components/atoms/Input.jsx';
 import { PasswordField } from '../components/PasswordField.jsx';
 import { Button } from '../ds/components/atoms/Button.jsx';
+import { Segmented } from '../ds/components/atoms/Segmented.jsx';
 import { Icon } from '../ds/components/atoms/Icon.jsx';
 import { Avatar } from '../ds/components/atoms/Avatar.jsx';
 import { initials } from '../ds/data/sample.js';
@@ -289,20 +290,14 @@ function WebmailClient() {
     ? t('webmail.starred')
     : filterMode && filterMode.startsWith('label:') ? filterMode.slice(6) : folderLeaf(folder);
 
-  const viewTab = (key, label) => (
-    <button onClick={() => setView(key)}
-      style={{ padding: '7px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', font: '600 13px system-ui', background: view === key ? 'var(--accent-soft)' : 'transparent', color: view === key ? 'var(--accent-ink)' : 'var(--muted)' }}>
-      {label}
-    </button>
-  );
-
   return (
     <>
-      <div className="mf-row" style={{ gap: 4, marginBottom: 12 }}>
-        {viewTab('mail', t('webmail.view.mail'))}
-        {viewTab('calendar', t('webmail.view.calendar'))}
+      {view === 'calendar' ? <CalendarView onAppView={setView} /> : (
+      <>
+      <div style={{ marginBottom: 12 }}>
+        <Segmented options={[t('webmail.view.mail'), t('webmail.view.calendar')]} value={t('webmail.view.mail')}
+          onSelect={v => setView(v === t('webmail.view.calendar') ? 'calendar' : 'mail')} className="mf-cal-appseg" style={{ display: 'inline-flex' }} />
       </div>
-      {view === 'calendar' ? <CalendarView /> : (
     <div className="mf-webmail" style={{ height: 'calc(100vh - 190px)', minHeight: 460, border: '1px solid var(--hair)', borderRadius: 12, overflow: 'hidden', background: 'var(--surface)' }}>
       {/* Folder rail */}
       <div className="mf-webmail__folders">
@@ -454,6 +449,7 @@ function WebmailClient() {
       )}
       {addingAccount && <AddAccountModal onClose={() => setAddingAccount(false)} />}
     </div>
+      </>
       )}
     </>
   );

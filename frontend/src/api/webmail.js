@@ -136,6 +136,7 @@ export const wm = {
   calendar: {
     list: () => req('GET', '/api/webmail/calendar/events'),
     create: ev => req('POST', '/api/webmail/calendar/events', ev),
+    update: (uid, ev) => req('PUT', '/api/webmail/calendar/events/' + encodeURIComponent(uid), ev),
     del: uid => req('DELETE', '/api/webmail/calendar/events/' + encodeURIComponent(uid)),
     setRsvp: (uid, rsvp) => req('PATCH', '/api/webmail/calendar/events/' + encodeURIComponent(uid) + '/rsvp', { rsvp }),
     // downloadAttachment streams a stored event attachment with the webmail

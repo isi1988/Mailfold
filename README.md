@@ -36,13 +36,14 @@ and live new-mail notifications (over SSE). Compose is a rich-text editor
 and labels can be created inline. A user can hold **several mailboxes in one
 place** — switch between linked Mailfold accounts, or connect an **external
 IMAP mailbox** (Gmail, Yandex, …) that syncs into the inbox — and a Mail /
-Calendar toggle opens a **month-view calendar** backed by the self-hosted
-CalDAV store. Its event editor covers all-day and timed events, guests,
-recurrence, reminders and **file attachments** (stored inline in the VEVENT);
-events are colour-coded by calendar (work / personal / team / holidays), and
-clicking one opens a detail card with an Outlook-style **RSVP** row
-(Going / Maybe / Can't, persisted as the owner's ATTENDEE `PARTSTAT`). So end
-users read, send and schedule without a separate client.
+Calendar toggle opens a full **Month / Week / Day calendar** backed by the
+self-hosted CalDAV store, with a sidebar (mini-month, calendar legend and an
+upcoming list) and drag-to-reschedule. Its event editor covers all-day and
+timed events, guests, recurrence, reminders and **file attachments** (stored
+inline in the VEVENT); events are colour-coded by calendar (work / personal /
+team / holidays), and clicking one opens a detail card with an Outlook-style
+**RSVP** row (Going / Maybe / Can't, persisted as the owner's ATTENDEE
+`PARTSTAT`). So end users read, send and schedule without a separate client.
 
 **One unified login** — a single sign-in screen checks the credentials against
 *both* the admin login and a mailbox (webmail) login in parallel: whoever you

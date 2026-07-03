@@ -298,6 +298,61 @@ func TestWebmailCalendarRsvp(t *testing.T) {
 	}
 }
 
+// TestWebmailCalendarUpdate checks that an edit/move rewrites the editable
+// fields while preserving attachments and the owner's RSVP.
+func TestWebmailCalendarUpdate(t *testing.T) {
+	h := newAPIWithDAV(t, mockMailcow(t, 0, "").URL, startMemIMAP(t))
+	wt := webmailToken(t, h)
+
+	create := createEventRequest{
+		Summary: "Draft", Start: time.Date(2026, 7, 12, 9, 0, 0, 0, time.UTC), End: time.Date(2026, 7, 12, 10, 0, 0, 0, time.UTC),
+		Calendar: "Work", Rsvp: "yes",
+		Attachments: []eventAttachment{{Filename: "spec.txt", Mime: "text/plain", Data: base64.StdEncoding.EncodeToString([]byte("keep me"))}},
+	}
+	raw, _ := json.Marshal(create)
+	rec := do(h, http.MethodPost, "/api/webmail/calendar/events", wt, string(raw))
+	var created struct {
+		UID string `json:"uid"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &created)
+
+	// Move + rename; send no attachments and no rsvp — both must survive.
+	upd := createEventRequest{Summary: "Renamed", Start: time.Date(2026, 7, 13, 14, 0, 0, 0, time.UTC), End: time.Date(2026, 7, 13, 15, 0, 0, 0, time.UTC), Calendar: "Team"}
+	uraw, _ := json.Marshal(upd)
+	if r := do(h, http.MethodPut, "/api/webmail/calendar/events/"+created.UID, wt, string(uraw)); r.Code != http.StatusOK {
+		t.Fatalf("update: %d %s", r.Code, r.Body.String())
+	}
+
+	rec = do(h, http.MethodGet, "/api/webmail/calendar/events", wt, "")
+	var evs []calendarEvent
+	_ = json.Unmarshal(rec.Body.Bytes(), &evs)
+	if len(evs) != 1 {
+		t.Fatalf("want 1 event, got %d", len(evs))
+	}
+	ev := evs[0]
+	if ev.Summary != "Renamed" || ev.Calendar != "Team" {
+		t.Errorf("edit not applied: %q / %q", ev.Summary, ev.Calendar)
+	}
+	if !ev.Start.Equal(time.Date(2026, 7, 13, 14, 0, 0, 0, time.UTC)) {
+		t.Errorf("move not applied: %v", ev.Start)
+	}
+	if ev.Rsvp != "yes" {
+		t.Errorf("rsvp not preserved: %q", ev.Rsvp)
+	}
+	if len(ev.Attachments) != 1 || ev.Attachments[0].Filename != "spec.txt" {
+		t.Fatalf("attachments not preserved: %+v", ev.Attachments)
+	}
+	dl := do(h, http.MethodGet, "/api/webmail/calendar/events/"+created.UID+"/attachments/0", wt, "")
+	if dl.Body.String() != "keep me" {
+		t.Errorf("attachment data lost: %q", dl.Body.String())
+	}
+
+	// Unknown event -> 404.
+	if r := do(h, http.MethodPut, "/api/webmail/calendar/events/nope", wt, string(uraw)); r.Code != http.StatusNotFound {
+		t.Errorf("update missing: want 404, got %d", r.Code)
+	}
+}
+
 func TestRsvpPartstatMapping(t *testing.T) {
 	cases := []struct{ rsvp, partstat string }{
 		{"yes", "ACCEPTED"}, {"maybe", "TENTATIVE"}, {"no", "DECLINED"}, {"none", "NEEDS-ACTION"}, {"bogus", "NEEDS-ACTION"},
