@@ -9,6 +9,14 @@ import { useToast } from '../components/Toast.jsx';
 import { useT } from '../i18n/index.jsx';
 import { wm } from '../api/webmail.js';
 
+// Quick-pick IMAP presets for common providers.
+const PROVIDERS = [
+  { name: 'Gmail', host: 'imap.gmail.com', port: '993', encryption: 'SSL' },
+  { name: 'Yandex', host: 'imap.yandex.com', port: '993', encryption: 'SSL' },
+  { name: 'Mail.ru', host: 'imap.mail.ru', port: '993', encryption: 'SSL' },
+  { name: 'Outlook', host: 'outlook.office365.com', port: '993', encryption: 'SSL' },
+];
+
 function TabBtn({ active, onClick, children }) {
   return (
     <button
@@ -96,10 +104,21 @@ export function AddAccountModal({ onClose }) {
               <FormField label={t('webmail.password')}>
                 <PasswordField value={password} onChange={e => setPassword(e.target.value)} />
               </FormField>
-              {error && <div className="mf-u-danger" style={{ fontSize: 13, marginTop: 10 }} role="alert">{error}</div>}
+              {error && <div className="mf-form-error" style={{ marginTop: 10 }} role="alert">{error}</div>}
             </>
           ) : (
             <>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+                {PROVIDERS.map(p => {
+                  const on = ext.host === p.host;
+                  return (
+                    <button key={p.name} onClick={() => setExt(x => ({ ...x, host: p.host, port: p.port, encryption: p.encryption }))}
+                      style={{ padding: '7px 12px', borderRadius: 8, border: '1px solid ' + (on ? 'var(--accent)' : 'var(--hair)'), background: on ? 'var(--accent-soft)' : 'transparent', color: on ? 'var(--accent-ink)' : 'var(--muted)', font: '600 12.5px system-ui', cursor: 'pointer' }}>
+                      {p.name}
+                    </button>
+                  );
+                })}
+              </div>
               <FormField label={t('webmail.account.imapHost')}>
                 <Input placeholder="imap.gmail.com" value={ext.host} onChange={e => setE('host', e.target.value)} />
               </FormField>

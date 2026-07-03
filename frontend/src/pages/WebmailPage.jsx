@@ -104,7 +104,7 @@ function WebmailLogin() {
         <FormField label={t('webmail.password')}>
           <PasswordField value={password} onChange={e => setPassword(e.target.value)} />
         </FormField>
-        {error && <div className="mf-u-danger" style={{ marginTop: 14, fontSize: 13 }} role="alert">{error}</div>}
+        {error && <div className="mf-form-error" style={{ marginTop: 14 }} role="alert">{error}</div>}
         <Button variant="primary" block size="lg" type="submit" disabled={busy} style={{ marginTop: 22 }}>{busy ? t('webmail.signingIn') : t('webmail.signIn')}</Button>
       </form>
     </div>

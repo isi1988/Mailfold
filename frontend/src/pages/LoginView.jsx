@@ -105,7 +105,7 @@ export function LoginView() {
               </div>
               <PasswordField value={password} onChange={e => setPassword(e.target.value)} />
             </div>
-            {error && <div className="mf-u-danger" style={{ marginTop: 14, fontSize: 13 }} role="alert">{error}</div>}
+            {error && <div className="mf-form-error" style={{ marginTop: 14 }} role="alert">{error}</div>}
             <Button variant="primary" block size="lg" type="submit" disabled={busy} style={{ marginTop: 22 }}>
               {busy ? t('login.signingIn') : t('login.signIn')}
             </Button>

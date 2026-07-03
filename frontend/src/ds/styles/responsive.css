@@ -74,3 +74,14 @@
   border-left: 3px solid var(--hair);
   color: var(--muted);
 }
+
+/* Framed error message (login / forms). */
+.mf-form-error {
+  padding: 10px 13px;
+  border: 1px solid var(--red);
+  background: var(--red-soft);
+  color: var(--red);
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 500;
+}
