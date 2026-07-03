@@ -6,11 +6,8 @@ import { Checkbox } from '../ds/components/atoms/Checkbox.jsx';
 import { MailListItem } from '../ds/components/molecules/MailListItem.jsx';
 import { SearchInput } from '../ds/components/molecules/SearchInput.jsx';
 import { FormField } from '../ds/components/molecules/FormField.jsx';
-import { Drawer } from '../ds/components/organisms/Drawer.jsx';
 import { Input } from '../ds/components/atoms/Input.jsx';
 import { PasswordField } from '../components/PasswordField.jsx';
-import { Textarea } from '../ds/components/atoms/Textarea.jsx';
-import { Label } from '../ds/components/atoms/Label.jsx';
 import { Button } from '../ds/components/atoms/Button.jsx';
 import { Icon } from '../ds/components/atoms/Icon.jsx';
 import { Avatar } from '../ds/components/atoms/Avatar.jsx';
@@ -19,6 +16,7 @@ import { useWebmailAuth } from '../auth/WebmailAuthContext.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { useT } from '../i18n/index.jsx';
 import { wm, downloadAttachment, subscribeMail } from '../api/webmail.js';
+import { ComposeModal } from './ComposeModal.jsx';
 import { Loading, ErrorState, Empty } from '../components/States.jsx';
 
 const SYS_ICON = { inbox: 'inbox', sent: 'send', drafts: 'drafts', archive: 'archive', junk: 'shield', spam: 'shield', trash: 'trash' };
@@ -109,54 +107,6 @@ function WebmailLogin() {
         <Button variant="primary" block size="lg" type="submit" disabled={busy} style={{ marginTop: 22 }}>{busy ? t('webmail.signingIn') : t('webmail.signIn')}</Button>
       </form>
     </div>
-  );
-}
-
-// Compose slide-over wired to POST /api/webmail/send. `initial` prefills the
-// fields for a reply.
-function ComposeDrawer({ onClose, onSent, initial = {} }) {
-  const t = useT();
-  const { toast } = useToast();
-  const [to, setTo] = useState(initial.to || '');
-  const [subject, setSubject] = useState(initial.subject || '');
-  const [text, setText] = useState(initial.text || '');
-  const [busy, setBusy] = useState(false);
-
-  async function send() {
-    if (busy) return;
-    const recipients = to.split(',').map(s => s.trim()).filter(Boolean);
-    if (recipients.length === 0) return;
-    setBusy(true);
-    try {
-      await wm.send({ to: recipients, subject, text });
-      toast(t('webmail.sent'));
-      onSent();
-      onClose();
-    } catch (err) {
-      toast(t('webmail.sendFailed'), (err && err.body && err.body.error) || (err && err.message) || '');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const footer = (
-    <>
-      <Button variant="secondary" className="mf-spacer" onClick={onClose}>{t('common.cancel')}</Button>
-      <Button variant="primary" onClick={send} disabled={busy}>{busy ? t('webmail.sending') : t('webmail.send')}</Button>
-    </>
-  );
-
-  return (
-    <Drawer title={t('webmail.newMessage')} footer={footer} onClose={onClose} wide>
-      <FormField label={t('webmail.to')}>
-        <Input placeholder="name@example.com, other@example.com" value={to} onChange={e => setTo(e.target.value)} />
-      </FormField>
-      <FormField label={t('webmail.subject')}>
-        <Input value={subject} onChange={e => setSubject(e.target.value)} />
-      </FormField>
-      <Label>{t('webmail.body')}</Label>
-      <Textarea placeholder={t('webmail.body')} value={text} onChange={e => setText(e.target.value)} style={{ minHeight: 220 }} />
-    </Drawer>
   );
 }
 
@@ -469,7 +419,7 @@ function WebmailClient() {
       </div>
 
       {composing && (
-        <ComposeDrawer
+        <ComposeModal
           initial={typeof composing === 'object' ? composing : {}}
           onClose={() => setComposing(false)}
           onSent={() => loadMessages(folder)}

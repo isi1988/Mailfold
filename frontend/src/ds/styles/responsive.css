@@ -61,3 +61,16 @@
   /* Slide-over drawers take (almost) the whole width. */
   .mf-drawer { width: 100vw; max-width: 100vw; }
 }
+
+/* Rich-text compose editor placeholder (contenteditable has no native one). */
+.mf-rt-editor:empty::before {
+  content: attr(data-placeholder);
+  color: var(--faint);
+  pointer-events: none;
+}
+.mf-rt-editor blockquote {
+  margin: 8px 0;
+  padding-left: 12px;
+  border-left: 3px solid var(--hair);
+  color: var(--muted);
+}
