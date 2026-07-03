@@ -153,6 +153,7 @@ func (s *Server) Handler() http.Handler {
 	// Management resources (all require authentication).
 	s.registerStatusRoutes(mux)
 	s.registerDomainRoutes(mux)
+	s.registerDomainDNSRoutes(mux)
 	s.registerMailboxRoutes(mux)
 	s.registerAliasRoutes(mux)
 	s.registerDKIMRoutes(mux)

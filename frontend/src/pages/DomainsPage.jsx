@@ -17,6 +17,7 @@ import { useToast } from '../components/Toast.jsx';
 import { isActive, human, asList } from '../lib/format.js';
 import { useT } from '../i18n/index.jsx';
 import { DomainDrawer } from './DomainDrawer.jsx';
+import { DomainDetailPage } from './DomainDetailPage.jsx';
 
 const PAGE_SIZE = 20;
 
@@ -33,6 +34,7 @@ export function DomainsPage() {
   const [page, setPage] = useState(1);
   const [drawer, setDrawer] = useState(null); // { mode:'create' } | { mode:'edit', domain }
   const [confirmDom, setConfirmDom] = useState(null);
+  const [detailName, setDetailName] = useState(null); // domain shown in the detail view
 
   async function doDelete() {
     const d = confirmDom;
@@ -56,6 +58,7 @@ export function DomainsPage() {
   ];
 
   const rows = asList(data);
+  const detail = detailName ? rows.find(d => d.domain_name === detailName) : null;
   const filtered = q
     ? rows.filter(d => (d.domain_name || '').toLowerCase().includes(q.toLowerCase()))
     : rows;
@@ -66,6 +69,26 @@ export function DomainsPage() {
   const from = filtered.length === 0 ? 0 : (current - 1) * PAGE_SIZE + 1;
   const to = Math.min(current * PAGE_SIZE, filtered.length);
   const onQuery = e => { setQ(e.target.value); setPage(1); };
+
+  if (detail) {
+    return (
+      <>
+        <DomainDetailPage
+          domain={detail}
+          onBack={() => setDetailName(null)}
+          onSettings={() => setDrawer({ mode: 'edit', domain: detail })}
+        />
+        {drawer && (
+          <DomainDrawer mode={drawer.mode} domain={drawer.domain} onClose={() => setDrawer(null)} onSaved={reload}
+            onDelete={d => { setDrawer(null); setDetailName(null); setConfirmDom(d); }} />
+        )}
+        {confirmDom && (
+          <ConfirmModal title={t('domains.form.deleteTitle')} msg={t('domains.form.deleteMsg', { domain: confirmDom.domain_name })}
+            cta={t('common.delete')} danger onCancel={() => setConfirmDom(null)} onConfirm={doDelete} />
+        )}
+      </>
+    );
+  }
 
   return (
     <>
@@ -89,7 +112,7 @@ export function DomainsPage() {
             const used = Number(d.bytes_total) || 0;
             const max = Number(d.max_quota_for_domain) || 0;
             return (
-              <TableRow key={d.domain_name} onClick={() => setDrawer({ mode: 'edit', domain: d })} style={{ cursor: 'pointer' }}>
+              <TableRow key={d.domain_name} onClick={() => setDetailName(d.domain_name)} style={{ cursor: 'pointer' }}>
                 <div className="mf-cell-user">
                   <div className="mf-avatar mf-avatar--square mf-avatar--34">
                     <Logo wordmark={false} markSize={18} color="var(--accent-ink)" />

@@ -344,6 +344,23 @@
       "title": "DKIM signing",
       "txtRecord": "DNS TXT record"
     },
+    "dns": {
+      "title": "DNS records",
+      "verify": "Verify DNS",
+      "verifying": "Checking…",
+      "recheck": "Re-check now",
+      "verified": "DNS verified",
+      "pending": "DNS pending",
+      "dkimActive": "DKIM active",
+      "dkimMissing": "DKIM missing",
+      "settings": "Domain settings",
+      "found": "found",
+      "copyExpected": "Copy expected",
+      "ok": "found",
+      "missing": "missing",
+      "mismatch": "mismatch",
+      "failed": "Could not check DNS."
+    },
     "rl": {
       "day": "Day",
       "failed": "Could not update rate limit",
