@@ -37,7 +37,9 @@ and labels can be created inline. A user can hold **several mailboxes in one
 place** — switch between linked Mailfold accounts, or connect an **external
 IMAP mailbox** (Gmail, Yandex, …) that syncs into the inbox — and a Mail /
 Calendar toggle opens a **month-view calendar** backed by the self-hosted
-CalDAV store, so end users read, send and schedule without a separate client.
+CalDAV store. Its event editor covers all-day and timed events, guests,
+recurrence, reminders and **file attachments** (stored inline in the VEVENT),
+so end users read, send and schedule without a separate client.
 
 **One unified login** — a single sign-in screen checks the credentials against
 *both* the admin login and a mailbox (webmail) login in parallel: whoever you

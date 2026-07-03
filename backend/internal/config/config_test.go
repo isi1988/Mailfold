@@ -33,7 +33,7 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.MailcowInsecureTLS {
 		t.Error("MailcowInsecureTLS should default to false")
 	}
-	if cfg.LoginRateMax != 5 || cfg.LoginRateWindow != time.Minute || cfg.MaxBodyBytes != 1<<20 {
+	if cfg.LoginRateMax != 5 || cfg.LoginRateWindow != time.Minute || cfg.MaxBodyBytes != 25<<20 {
 		t.Errorf("rate/body defaults wrong: max=%d window=%v body=%d",
 			cfg.LoginRateMax, cfg.LoginRateWindow, cfg.MaxBodyBytes)
 	}
@@ -83,7 +83,7 @@ func TestLoadInvalidFallbacks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if cfg.MaxBodyBytes != 1<<20 {
+	if cfg.MaxBodyBytes != 25<<20 {
 		t.Errorf("bad int should fall back to default: %d", cfg.MaxBodyBytes)
 	}
 	if cfg.MailcowInsecureTLS {

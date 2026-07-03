@@ -136,7 +136,7 @@ func Load() (*Config, error) {
 		CORSOrigins:         getlist("MAILFOLD_CORS_ORIGINS", []string{"*"}),
 		LoginRateMax:        int(getint64("MAILFOLD_LOGIN_RATE_MAX", 5)),
 		LoginRateWindow:     getdur("MAILFOLD_LOGIN_RATE_WINDOW", time.Minute),
-		MaxBodyBytes:        getint64("MAILFOLD_MAX_BODY_BYTES", 1<<20),
+		MaxBodyBytes:        getint64("MAILFOLD_MAX_BODY_BYTES", 25<<20),
 		IMAPAddr:            os.Getenv("MAILFOLD_IMAP_ADDR"),
 		SMTPAddr:            os.Getenv("MAILFOLD_SMTP_ADDR"),
 		MailUseTLS:          getbool("MAILFOLD_MAIL_TLS", true),

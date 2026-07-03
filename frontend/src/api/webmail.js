@@ -137,6 +137,24 @@ export const wm = {
     list: () => req('GET', '/api/webmail/calendar/events'),
     create: ev => req('POST', '/api/webmail/calendar/events', ev),
     del: uid => req('DELETE', '/api/webmail/calendar/events/' + encodeURIComponent(uid)),
+    // downloadAttachment streams a stored event attachment with the webmail
+    // token (a plain link cannot send the Authorization header).
+    downloadAttachment: async (uid, index, filename) => {
+      const res = await fetch(
+        '/api/webmail/calendar/events/' + encodeURIComponent(uid) + '/attachments/' + index,
+        { headers: { Authorization: 'Bearer ' + getWebmailToken() } },
+      );
+      if (!res.ok) throw new Error('download failed');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename || 'attachment';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    },
   },
 };
 
