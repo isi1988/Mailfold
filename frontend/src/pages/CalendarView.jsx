@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Button } from '../ds/components/atoms/Button.jsx';
 import { Segmented } from '../ds/components/atoms/Segmented.jsx';
 import { Toggle } from '../ds/components/atoms/Toggle.jsx';
@@ -403,8 +403,8 @@ function MonthView({ cursor, events, onOpen, onNew, drag }) {
           const over = drag.overKey === ymd(day);
           return (
             <div key={i} onClick={() => onNew(day)}
-              onDragOver={drag.canDrop ? e => drag.over(e, ymd(day)) : undefined}
-              onDrop={drag.canDrop ? e => drag.dropDay(e, day) : undefined}
+              onDragOver={e => drag.over(e, ymd(day))}
+              onDrop={e => drag.dropDay(e, day)}
               className={cx('mf-month__cell', !inMonth && 'mf-month__cell--out', weekend && inMonth && 'mf-month__cell--wknd')}
               style={{ cursor: 'pointer', boxShadow: over ? 'inset 0 0 0 2px var(--accent)' : 'none' }}>
               <div className={cx('mf-month__num', sameDay(day, now) && 'mf-month__num--today', !inMonth && 'mf-month__num--muted')}>{day.getDate()}</div>
@@ -446,8 +446,8 @@ function WeekView({ cursor, events, onOpen, drag }) {
         )}
         {days.map((d, i) => (
           <div key={i} className={cx('mf-week__col', sameDay(d, now) && 'mf-week__col--today')}
-            onDragOver={drag.canDrop ? e => drag.over(e, ymd(d)) : undefined}
-            onDrop={drag.canDrop ? e => drag.dropDay(e, d) : undefined}
+            onDragOver={e => drag.over(e, ymd(d))}
+            onDrop={e => drag.dropDay(e, d)}
             style={{ boxShadow: drag.overKey === ymd(d) ? 'inset 0 0 0 2px var(--accent)' : 'none' }}>
             {eventsOn(events, d).map(ev => <EventPill key={ev.uid} ev={ev} size="md" onOpen={onOpen} drag={drag} />)}
           </div>
@@ -481,8 +481,8 @@ function DayView({ cursor, events, onOpen, drag }) {
         {otherEvents.map(ev => <div key={ev.uid} style={{ marginBottom: 6 }}><EventPill ev={ev} size="md" onOpen={onOpen} drag={drag} /></div>)}
         {rows.map(({ h, events: evs }) => (
           <div key={h} className="mf-day__row"
-            onDragOver={drag.canDrop ? e => drag.over(e, 'h' + h) : undefined}
-            onDrop={drag.canDrop ? e => drag.dropHour(e, h) : undefined}
+            onDragOver={e => drag.over(e, 'h' + h)}
+            onDrop={e => drag.dropHour(e, h)}
             style={{ background: drag.overKey === 'h' + h ? 'color-mix(in srgb, var(--accent-soft) 45%, transparent)' : undefined }}>
             {isToday && now.getHours() === h && (
               <div className="mf-nowline mf-nowline--day" style={{ top: (now.getMinutes() / 60) * 100 + '%' }}>
@@ -589,7 +589,7 @@ export function CalendarView({ onAppView }) {
   const [hidden, setHidden] = useState(() => new Set());
   const [modal, setModal] = useState(null);   // { date } new | { event } edit
   const [detail, setDetail] = useState(null);
-  const [dragEv, setDragEv] = useState(null);
+  const dragRef = useRef(null); // the event being dragged — a ref so drop reads it synchronously
   const [overKey, setOverKey] = useState(null);
 
   const load = useCallback(async () => {
@@ -628,30 +628,31 @@ export function CalendarView({ onAppView }) {
   }
 
   const drag = {
-    canDrop: !!dragEv,
     overKey,
-    start: (e, ev) => { setDragEv(ev); try { e.dataTransfer.setData('text/plain', ev.uid); e.dataTransfer.effectAllowed = 'move'; } catch { /* noop */ } },
-    end: () => { setDragEv(null); setOverKey(null); },
-    over: (e, key) => { e.preventDefault(); setOverKey(key); },
+    start: (e, ev) => { dragRef.current = ev; try { e.dataTransfer.setData('text/plain', ev.uid); e.dataTransfer.effectAllowed = 'move'; } catch { /* noop */ } },
+    end: () => { dragRef.current = null; setOverKey(null); },
+    over: (e, key) => { if (!dragRef.current) return; e.preventDefault(); setOverKey(key); },
     dropDay: (e, day) => {
       e.preventDefault();
-      if (dragEv) {
-        const start = dragEv.all_day
+      const ev = dragRef.current;
+      if (ev) {
+        const start = ev.all_day
           ? new Date(Date.UTC(day.getFullYear(), day.getMonth(), day.getDate()))
-          : (() => { const s = new Date(dragEv.start); return new Date(day.getFullYear(), day.getMonth(), day.getDate(), s.getHours(), s.getMinutes()); })();
-        moveTo(dragEv, start);
+          : (() => { const s = new Date(ev.start); return new Date(day.getFullYear(), day.getMonth(), day.getDate(), s.getHours(), s.getMinutes()); })();
+        moveTo(ev, start);
       }
-      setDragEv(null); setOverKey(null);
+      dragRef.current = null; setOverKey(null);
     },
     dropHour: (e, hour) => {
       e.preventDefault();
-      if (dragEv) {
-        const start = dragEv.all_day
+      const ev = dragRef.current;
+      if (ev) {
+        const start = ev.all_day
           ? new Date(Date.UTC(cursor.getFullYear(), cursor.getMonth(), cursor.getDate()))
-          : (() => { const s = new Date(dragEv.start); return new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), hour, s.getMinutes()); })();
-        moveTo(dragEv, start);
+          : (() => { const s = new Date(ev.start); return new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), hour, s.getMinutes()); })();
+        moveTo(ev, start);
       }
-      setDragEv(null); setOverKey(null);
+      dragRef.current = null; setOverKey(null);
     },
   };
 
