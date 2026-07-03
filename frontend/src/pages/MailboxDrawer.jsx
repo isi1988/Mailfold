@@ -129,11 +129,16 @@ function AppPasswordsSection({ mailbox }) {
           </SectionRow>
         ))
       )}
-      <div className="mf-row" style={{ gap: 8, marginTop: 12 }}>
-        <Input placeholder={t('mailboxes.appPw.namePlaceholder')} value={name} onChange={e => setName(e.target.value)} style={{ flex: 1 }} />
-        <Input className="mf-spacer" type="text" mono placeholder={t('mailboxes.appPw.pwPlaceholder')} value={pw} onChange={e => setPw(e.target.value)} />
-        <Button variant="secondary" size="sm" onClick={() => setPw(randomPassword())}>{t('mailboxes.form.generate')}</Button>
-        <Button variant="primary" size="sm" onClick={add} disabled={busy}>{t('common.add')}</Button>
+      <div style={{ marginTop: 12 }}>
+        <Input placeholder={t('mailboxes.appPw.namePlaceholder')} value={name} onChange={e => setName(e.target.value)} style={{ width: '100%' }} />
+        <div className="mf-row" style={{ gap: 8, marginTop: 8 }}>
+          <Input className="mf-spacer" type="text" mono placeholder={t('mailboxes.appPw.pwPlaceholder')} value={pw} onChange={e => setPw(e.target.value)} />
+          <Button variant="secondary" size="sm" onClick={() => setPw(randomPassword())}>{t('mailboxes.form.generate')}</Button>
+        </div>
+        <div className="mf-row mf-row--between" style={{ marginTop: 8 }}>
+          <span />
+          <Button variant="primary" size="sm" onClick={add} disabled={busy}>{t('common.add')}</Button>
+        </div>
       </div>
     </Section>
   );
@@ -199,13 +204,11 @@ function FiltersSection({ mailbox }) {
         ))
       )}
       <div style={{ marginTop: 12 }}>
-        <div className="mf-row" style={{ gap: 8 }}>
-          <Input placeholder={t('mailboxes.filters.descPlaceholder')} value={desc} onChange={e => setDesc(e.target.value)} style={{ flex: 1 }} />
-          <select className="mf-input" value={type} onChange={e => setType(e.target.value)}>
-            <option value="prefilter">{t('mailboxes.filters.typePre')}</option>
-            <option value="postfilter">{t('mailboxes.filters.typePost')}</option>
-          </select>
-        </div>
+        <Input placeholder={t('mailboxes.filters.descPlaceholder')} value={desc} onChange={e => setDesc(e.target.value)} style={{ width: '100%' }} />
+        <select className="mf-input" style={{ width: '100%', marginTop: 8 }} value={type} onChange={e => setType(e.target.value)}>
+          <option value="prefilter">{t('mailboxes.filters.typePre')}</option>
+          <option value="postfilter">{t('mailboxes.filters.typePost')}</option>
+        </select>
         <textarea
           className="mf-input"
           style={{ marginTop: 8, minHeight: 90, fontFamily: 'var(--font-mono)', fontSize: 12.5, width: '100%' }}
