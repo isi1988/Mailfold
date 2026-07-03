@@ -293,14 +293,6 @@ function WebmailClient() {
       <div className="mf-webmail__folders">
         <Button variant="primary" block onClick={() => setComposing(true)} style={{ margin: '2px 0 12px' }}>{t('webmail.compose')}</Button>
 
-        <div className="mf-side-label">{t('webmail.favourites')}</div>
-        <FolderItem icon={<Icon name="star" size={14} style={{ color: 'var(--amber)' }} />} label={t('webmail.starred')}
-          active={filterMode === 'starred'} onClick={() => setFilterMode('starred')} style={{ cursor: 'pointer' }} />
-        <FolderItem icon={<Icon name="flag" size={14} style={{ color: 'var(--red)' }} />} label={t('webmail.flagged')}
-          onClick={() => setFilterMode('starred')} style={{ cursor: 'pointer' }} />
-        <FolderItem icon={<Icon name="clock" size={14} style={{ color: 'var(--faint)' }} />} label={t('webmail.snoozed')}
-          onClick={() => toast(t('webmail.snoozeUnavailable'))} style={{ cursor: 'pointer' }} />
-
         <div className="mf-side-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <Icon name="chevron-down" size={11} style={{ color: 'var(--faint)' }} />{t('webmail.account.accounts')}
         </div>
@@ -314,6 +306,15 @@ function WebmailClient() {
         <div onClick={() => setAddingAccount(true)} className="mf-row" style={{ gap: 9, padding: '6px 10px', color: 'var(--accent-ink)', font: '600 12.5px var(--font-sans)', cursor: 'pointer' }}>
           <span style={{ width: 22, height: 22, borderRadius: 6, border: '1px dashed var(--hair)', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none', fontSize: 15, lineHeight: 1 }}>+</span>{t('webmail.account.add')}
         </div>
+
+        <div className="mf-side-label">{t('webmail.favourites')}</div>
+        <FolderItem icon={<Icon name="star" size={14} style={{ color: 'var(--amber)' }} />} label={t('webmail.starred')}
+          active={filterMode === 'starred'} onClick={() => setFilterMode('starred')} style={{ cursor: 'pointer' }} />
+        <FolderItem icon={<Icon name="flag" size={14} style={{ color: 'var(--red)' }} />} label={t('webmail.flagged')}
+          onClick={() => setFilterMode('starred')} style={{ cursor: 'pointer' }} />
+        <FolderItem icon={<Icon name="clock" size={14} style={{ color: 'var(--faint)' }} />} label={t('webmail.snoozed')}
+          onClick={() => toast(t('webmail.snoozeUnavailable'))} style={{ cursor: 'pointer' }} />
+
         {sysFolders.map(f => {
           const isActive = f.name === folder && !filterMode;
           return (
