@@ -171,6 +171,7 @@ func TestResourceEndpoints(t *testing.T) {
 		{http.MethodGet, "/api/fail2ban", "", 200},
 		{http.MethodPut, "/api/fail2ban", attr, 200},
 		{http.MethodGet, "/api/quarantine", "", 200},
+		{http.MethodPut, "/api/quarantine", edit, 200},
 		{http.MethodDelete, "/api/quarantine", del, 200},
 		{http.MethodGet, "/api/policy/allow/example.com", "", 200},
 		{http.MethodGet, "/api/policy/deny/example.com", "", 200},

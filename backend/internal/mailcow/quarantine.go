@@ -25,3 +25,12 @@ func (c *Client) Quarantine(ctx context.Context) (json.RawMessage, error) {
 func (c *Client) DeleteQuarantine(ctx context.Context, items []string) ([]ActionResult, error) {
 	return c.action(ctx, "/api/v1/delete/qitem", items)
 }
+
+// EditQuarantine applies an action to quarantined items via mailcow's
+// /api/v1/edit/qitem endpoint. attr carries the action (for example
+// {"action":"release"} to deliver a held message, or "learnham"/"learnspam" to
+// train the spam filter). Items and attr are wrapped in the standard EditRequest
+// shape mailcow expects; the response is the usual []ActionResult.
+func (c *Client) EditQuarantine(ctx context.Context, items []string, attr any) ([]ActionResult, error) {
+	return c.action(ctx, "/api/v1/edit/qitem", EditRequest{Items: items, Attr: attr})
+}

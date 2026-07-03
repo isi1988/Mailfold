@@ -13,7 +13,12 @@
     "inactive": "inactive",
     "docs": "Docs",
     "showing": "Showing {{from}}–{{to}} of {{total}}",
-    "add": "Add"
+    "add": "Add",
+    "saving": "Saving…",
+    "saved": "Saved.",
+    "created": "Created.",
+    "deleted": "Deleted.",
+    "failed": "Something went wrong."
   },
   "states": {
     "loading": "Loading…",
@@ -36,9 +41,22 @@
       "mail": "Mail",
       "flow": "Flow",
       "system": "System",
-      "apps": "Apps"
+      "apps": "Apps",
+      "advanced": "Advanced",
+      "admin": "Administration"
     },
-    "apikeys": "API keys"
+    "apikeys": "API keys",
+    "relayhosts": "Relay hosts",
+    "transports": "Transports",
+    "tlspolicies": "TLS policies",
+    "fwdhosts": "Forwarding hosts",
+    "bcc": "BCC maps",
+    "recipientmaps": "Recipient maps",
+    "domaintemplates": "Domain templates",
+    "mailboxtemplates": "Mailbox templates",
+    "admins": "Admins",
+    "domainadmins": "Domain admins",
+    "oauth2": "OAuth2 clients"
   },
   "shell": {
     "role": "Administrator",
@@ -362,7 +380,7 @@
       "held": "Held"
     },
     "release": "Release selected",
-    "releaseHint": "Releasing is not supported by the mail server API.",
+    "releaseHint": "Deliver the selected held messages to their recipients",
     "delete": "Delete",
     "deleteN_one": "Delete {{count}} selected",
     "deleteN_other": "Delete {{count}} selected",
@@ -375,7 +393,9 @@
     "deleting": "Deleting…",
     "deleted_one": "{{count}} message deleted",
     "deleted_other": "{{count}} messages deleted",
-    "failed": "Action failed"
+    "failed": "Action failed",
+    "released": "Released {count} message(s) for delivery.",
+    "releaseN": "Release {count}"
   },
   "spam": {
     "title": "Spam & policy",
@@ -585,6 +605,330 @@
       "copied": "Token copied.",
       "done": "Done",
       "usageHint": "Use it as a bearer token: Authorization: Bearer <token> against /api/v1/mail/*."
+    }
+  },
+  "advanced": {
+    "admins": {
+      "add": "+ Add admin",
+      "col": {
+        "status": "Status",
+        "username": "Username"
+      },
+      "created": "Admin created",
+      "deleteMsg": "Delete admin \"{{name}}\"? This cannot be undone.",
+      "deleteTitle": "Delete admin",
+      "deleted": "Admin deleted",
+      "editTitle": "Edit admin",
+      "empty": "No admins yet",
+      "f": {
+        "password": "Password",
+        "password2": "Confirm password",
+        "passwordHint": "Leave blank when editing to keep the current password",
+        "username": "Username"
+      },
+      "failed": "Something went wrong",
+      "filter": "Filter by username",
+      "newTitle": "New admin",
+      "sub": "mailcow super-administrators with full control over every domain",
+      "title": "Admins",
+      "updated": "Admin updated"
+    },
+    "bcc": {
+      "add": "Add BCC map",
+      "col": {
+        "bccDest": "BCC destination",
+        "localDest": "Local destination",
+        "status": "Status",
+        "type": "Type"
+      },
+      "created": "BCC map created",
+      "deleteMsg": "Delete the BCC map for \"{{name}}\"? This cannot be undone.",
+      "deleteTitle": "Delete BCC map",
+      "deleted": "BCC map deleted",
+      "empty": "No BCC maps configured yet.",
+      "f": {
+        "bccDest": "BCC destination",
+        "localDest": "Local destination",
+        "localDestHint": "The local mailbox or domain whose mail is copied.",
+        "type": "Type"
+      },
+      "failed": "Something went wrong",
+      "filter": "Filter by local or BCC address",
+      "newTitle": "New BCC map",
+      "sub": "Silently copy a mailbox or domain's mail to another address for archiving or compliance.",
+      "title": "BCC maps",
+      "type": {
+        "rcpt": "Recipient",
+        "sender": "Sender"
+      }
+    },
+    "domainadmins": {
+      "add": "Add domain admin",
+      "col": {
+        "domains": "Domains",
+        "status": "Status",
+        "username": "Username"
+      },
+      "created": "Domain admin created",
+      "deleteMsg": "Delete domain admin \"{name}\"? This cannot be undone.",
+      "deleteTitle": "Delete domain admin",
+      "deleted": "Domain admin deleted",
+      "editTitle": "Edit domain admin",
+      "empty": "No domain admins yet",
+      "f": {
+        "domains": "Domains",
+        "domainsHint": "One or more domains this admin may manage, comma or newline separated",
+        "password": "Password",
+        "password2": "Confirm password",
+        "passwordHint": "Leave blank to keep the current password when editing",
+        "username": "Username"
+      },
+      "failed": "Something went wrong",
+      "filter": "Filter by username or domain",
+      "newTitle": "New domain admin",
+      "sub": "Scoped administrators who manage a subset of domains",
+      "title": "Domain admins",
+      "updated": "Domain admin updated"
+    },
+    "domaintemplates": {
+      "add": "Add template",
+      "col": {
+        "maxMailboxes": "Max mailboxes",
+        "maxQuota": "Max quota (MiB)",
+        "name": "Name",
+        "status": "Status"
+      },
+      "created": "Domain template created",
+      "deleteMsg": "Delete domain template \"{name}\"? Domains already created from it are not affected.",
+      "deleteTitle": "Delete domain template",
+      "deleted": "Domain template deleted",
+      "editTitle": "Edit domain template",
+      "empty": "No domain templates yet",
+      "f": {
+        "backupmx": "Relay / backup MX",
+        "defQuota": "Default mailbox quota (MiB)",
+        "gal": "Global address list",
+        "galHint": "Show all domain mailboxes in a shared address book",
+        "maxAliases": "Max aliases",
+        "maxMailboxes": "Max mailboxes",
+        "maxQuota": "Max domain quota (MiB)",
+        "name": "Template name",
+        "nameHint": "Unique identifier for this template; cannot be changed later",
+        "quotaHint": "Size in MiB",
+        "relayAll": "Relay all recipients"
+      },
+      "failed": "Something went wrong",
+      "filter": "Filter by name",
+      "newTitle": "New domain template",
+      "sub": "Reusable default limits and feature flags applied when a new domain is provisioned",
+      "title": "Domain templates",
+      "updated": "Domain template updated"
+    },
+    "fwdhosts": {
+      "add": "Add forwarding host",
+      "col": {
+        "host": "Host",
+        "keepSpam": "Spam filter",
+        "source": "Source"
+      },
+      "created": "Forwarding host added",
+      "deleteMsg": "Delete forwarding host {name}? This cannot be undone.",
+      "deleteTitle": "Delete forwarding host",
+      "deleted": "Forwarding host deleted",
+      "empty": "No forwarding hosts configured yet.",
+      "f": {
+        "hostname": "Hostname, IP or CIDR",
+        "hostnameHint": "A hostname, IP address or CIDR range. Hostnames are resolved to their addresses.",
+        "keepSpam": "Spam filter",
+        "keepSpamHint": "Whether mail from this host should still be checked for spam."
+      },
+      "failed": "Something went wrong",
+      "filter": "Filter by host or source",
+      "keepSpamOff": "Skip spam checks",
+      "keepSpamOn": "Keep spam checks",
+      "newTitle": "New forwarding host",
+      "sub": "Trusted upstream relays whose inbound mail bypasses spam and greylist filtering.",
+      "title": "Forwarding hosts"
+    },
+    "mailboxtemplates": {
+      "add": "Add template",
+      "col": {
+        "name": "Template",
+        "quota": "Quota",
+        "status": "Status"
+      },
+      "created": "Template created",
+      "deleteMsg": "Delete mailbox template \"{name}\"? This cannot be undone.",
+      "deleteTitle": "Delete template",
+      "deleted": "Template deleted",
+      "editTitle": "Edit mailbox template",
+      "empty": "No mailbox templates yet.",
+      "f": {
+        "forcePw": "Force password change on next login",
+        "imap": "IMAP access",
+        "name": "Template name",
+        "nameHint": "A unique name for this template.",
+        "pop3": "POP3 access",
+        "quarantineNotif": "Quarantine notifications",
+        "quota": "Quota (MB)",
+        "quotaHint": "Default mailbox quota in megabytes. 0 means unlimited.",
+        "sieve": "Sieve access",
+        "smtp": "SMTP access",
+        "sogo": "SOGo (webmail) access",
+        "tlsIn": "Enforce TLS inbound",
+        "tlsOut": "Enforce TLS outbound"
+      },
+      "failed": "Something went wrong",
+      "filter": "Filter by name",
+      "newTitle": "New mailbox template",
+      "opt": {
+        "daily": "Daily",
+        "hourly": "Hourly",
+        "never": "Never",
+        "weekly": "Weekly"
+      },
+      "sub": "Reusable default settings applied when provisioning new mailboxes",
+      "title": "Mailbox templates",
+      "updated": "Template updated"
+    },
+    "oauth2": {
+      "add": "Add client",
+      "col": {
+        "clientId": "Client ID",
+        "redirectUri": "Redirect URI",
+        "scope": "Scope"
+      },
+      "created": "OAuth2 client created",
+      "deleteMsg": "Delete OAuth2 client \"{{name}}\"? This cannot be undone.",
+      "deleteTitle": "Delete OAuth2 client",
+      "deleted": "OAuth2 client deleted",
+      "empty": "No OAuth2 clients yet.",
+      "f": {
+        "redirectUri": "Redirect URI",
+        "redirectUriHint": "The URI mailcow redirects to after authorization.",
+        "scope": "Scope",
+        "scopeHint": "Requested OAuth2 scope, e.g. profile."
+      },
+      "failed": "Something went wrong",
+      "filter": "Filter by client ID or redirect URI",
+      "newTitle": "New OAuth2 client",
+      "sub": "OAuth2 application clients registered in mailcow",
+      "title": "OAuth2 clients"
+    },
+    "recipientmaps": {
+      "add": "+ Add recipient map",
+      "col": {
+        "new": "Rewritten to",
+        "old": "Original recipient",
+        "status": "Status"
+      },
+      "created": "Recipient map created",
+      "deleteMsg": "Delete the recipient map for \"{name}\"? This cannot be undone.",
+      "deleteTitle": "Delete recipient map",
+      "deleted": "Recipient map deleted",
+      "empty": "No recipient maps configured yet.",
+      "f": {
+        "new": "Rewritten to",
+        "newHint": "The address the mail should be delivered to instead.",
+        "old": "Original recipient",
+        "oldHint": "The address that mail is currently sent to."
+      },
+      "failed": "Something went wrong",
+      "filter": "Filter by address",
+      "newTitle": "New recipient map",
+      "sub": "Rewrite the envelope recipient of inbound mail, redirecting messages from one address to another before delivery.",
+      "title": "Recipient maps"
+    },
+    "relayhosts": {
+      "add": "Add relay host",
+      "col": {
+        "hostname": "Hostname",
+        "status": "Status",
+        "username": "Username"
+      },
+      "created": "Relay host created",
+      "deleteMsg": "Delete relay host \"{name}\"? This cannot be undone.",
+      "deleteTitle": "Delete relay host",
+      "deleted": "Relay host deleted",
+      "editTitle": "Edit relay host",
+      "empty": "No relay hosts configured yet",
+      "f": {
+        "hostname": "Hostname",
+        "hostnameHint": "Host and port, e.g. smtp.example.com:587",
+        "password": "Password",
+        "username": "Username"
+      },
+      "failed": "Something went wrong",
+      "filter": "Filter by hostname or username",
+      "newTitle": "New relay host",
+      "sub": "Upstream smarthosts mailcow routes outbound mail through",
+      "title": "Relay hosts",
+      "updated": "Relay host updated"
+    },
+    "tlspolicies": {
+      "add": "Add TLS policy",
+      "col": {
+        "dest": "Destination",
+        "parameters": "Parameters",
+        "policy": "Policy",
+        "status": "Status"
+      },
+      "created": "TLS policy created",
+      "deleteMsg": "Delete the TLS policy for {name}?",
+      "deleteTitle": "Delete TLS policy",
+      "deleted": "TLS policy deleted",
+      "empty": "No TLS policies configured",
+      "f": {
+        "dest": "Destination",
+        "destHint": "Domain or next-hop this policy applies to",
+        "parameters": "Parameters",
+        "parametersHint": "Optional Postfix TLS policy parameters",
+        "policy": "Policy"
+      },
+      "failed": "Something went wrong",
+      "filter": "Filter by destination or policy",
+      "newTitle": "New TLS policy",
+      "policy": {
+        "dane": "DANE",
+        "daneOnly": "DANE only",
+        "encrypt": "Encrypt",
+        "fingerprint": "Fingerprint",
+        "may": "May",
+        "none": "None",
+        "secure": "Secure",
+        "verify": "Verify"
+      },
+      "sub": "Pin outbound SMTP encryption behaviour per destination",
+      "title": "TLS policies"
+    },
+    "transports": {
+      "add": "Add transport",
+      "col": {
+        "destination": "Destination",
+        "nexthop": "Next hop",
+        "status": "Status",
+        "username": "Username"
+      },
+      "created": "Transport created",
+      "deleteMsg": "Delete transport map \"{name}\"? This cannot be undone.",
+      "deleteTitle": "Delete transport",
+      "deleted": "Transport deleted",
+      "editTitle": "Edit transport",
+      "empty": "No transport maps configured yet.",
+      "f": {
+        "destination": "Destination",
+        "destinationHint": "Recipient domain or address this rule applies to.",
+        "nexthop": "Next hop",
+        "nexthopHint": "Relay target, e.g. [smtp.example.com]:587.",
+        "password": "Password",
+        "username": "Username"
+      },
+      "failed": "Operation failed",
+      "filter": "Filter by destination, next hop or username",
+      "newTitle": "New transport",
+      "sub": "Postfix transport maps that route mail for a destination through a specific next hop or smarthost.",
+      "title": "Transports",
+      "updated": "Transport updated"
     }
   }
 }

@@ -63,6 +63,7 @@ type Mailcow interface {
 
 	// Quarantine.
 	Quarantine(ctx context.Context) (json.RawMessage, error)
+	EditQuarantine(ctx context.Context, items []string, attr any) ([]mailcow.ActionResult, error)
 	DeleteQuarantine(ctx context.Context, items []string) ([]mailcow.ActionResult, error)
 
 	// Per-domain spam policy (allow/deny lists).

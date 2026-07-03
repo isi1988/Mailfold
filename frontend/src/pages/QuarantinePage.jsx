@@ -121,6 +121,24 @@ export function QuarantinePage() {
     }
   }
 
+  // Release delivers the selected held messages to their recipients via mailcow's
+  // qitem action endpoint (PUT /api/quarantine with {items, attr:{action:'release'}}).
+  async function doRelease() {
+    if (busy || selectedCount === 0) return;
+    setBusy(true);
+    const items = selected.slice();
+    try {
+      await api.put('/api/quarantine', { items, attr: { action: 'release' } });
+      toast(t('quarantine.released', { count: items.length }));
+      setSelected([]);
+      reload();
+    } catch (err) {
+      toast(t('quarantine.failed'), (err && err.body && err.body.message) || (err && err.message) || '');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <>
       <PageHeader
@@ -128,8 +146,9 @@ export function QuarantinePage() {
         sub={t('quarantine.count', { count: rows.length })}
         actions={
           <>
-            {/* mailcow exposes no release/whitelist endpoint — shown disabled to match the design. */}
-            <Button variant="secondary" disabled title={t('quarantine.releaseHint')}>{t('quarantine.release')}</Button>
+            <Button variant="secondary" disabled={selectedCount === 0 || busy} title={t('quarantine.releaseHint')} onClick={doRelease}>
+              {selectedCount > 0 ? t('quarantine.releaseN', { count: selectedCount }) : t('quarantine.release')}
+            </Button>
             <Button variant="danger" disabled={selectedCount === 0} onClick={() => setConfirmDelete(true)}>
               {selectedCount > 0 ? t('quarantine.deleteN', { count: selectedCount }) : t('quarantine.delete')}
             </Button>
