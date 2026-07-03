@@ -2,9 +2,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from '../ds/components/atoms/Button.jsx';
 import { Icon } from '../ds/components/atoms/Icon.jsx';
 import { IconButton } from '../ds/components/atoms/IconButton.jsx';
-import { Input } from '../ds/components/atoms/Input.jsx';
-import { Toggle } from '../ds/components/atoms/Toggle.jsx';
-import { FormField } from '../ds/components/molecules/FormField.jsx';
 import { wm } from '../api/webmail.js';
 import { useToast } from '../components/Toast.jsx';
 import { useT } from '../i18n/index.jsx';
@@ -16,6 +13,10 @@ const pad = n => String(n).padStart(2, '0');
 const ymd = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
 const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 const hhmm = iso => { const d = new Date(iso); return isNaN(d) ? '' : pad(d.getHours()) + ':' + pad(d.getMinutes()); };
+
+// Shared field styling matching the design's modal inputs.
+const FIELD = { width: '100%', padding: '10px 12px', border: '1px solid var(--hair)', borderRadius: 9, background: 'var(--surface-2)', color: 'var(--ink)', font: '400 13.5px system-ui', outline: 'none' };
+const FIELD_LABEL = { fontSize: 12, fontWeight: 600, color: 'var(--ink)', marginBottom: 7, display: 'block' };
 
 // monthGrid returns six Monday-started weeks of Date objects covering the month.
 function monthGrid(year, month) {
@@ -31,16 +32,14 @@ function monthGrid(year, month) {
   return weeks;
 }
 
-// EventModal: create a calendar event, centred to match the design.
+// EventModal: create a calendar event, centred and laid out 1:1 with the design.
 function EventModal({ date, onClose, onSaved }) {
   const t = useT();
   const { toast } = useToast();
   const [summary, setSummary] = useState('');
   const [dateStr, setDateStr] = useState(ymd(date));
-  const [startTime, setStartTime] = useState('09:00');
-  const [endTime, setEndTime] = useState('10:00');
-  const [allDay, setAllDay] = useState(false);
-  const [location, setLocation] = useState('');
+  const [time, setTime] = useState('09:30');
+  const [calendar, setCalendar] = useState('Work');
   const [busy, setBusy] = useState(false);
 
   async function save() {
@@ -48,9 +47,9 @@ function EventModal({ date, onClose, onSaved }) {
     if (!summary.trim()) { toast(t('calendar.needTitle')); return; }
     setBusy(true);
     try {
-      const start = new Date(dateStr + 'T' + (allDay ? '00:00' : startTime));
-      const end = new Date(dateStr + 'T' + (allDay ? '23:59' : endTime));
-      await wm.calendar.create({ summary: summary.trim(), start: start.toISOString(), end: end.toISOString(), all_day: allDay, location: location.trim() });
+      const start = new Date(dateStr + 'T' + time);
+      const end = new Date(start.getTime() + 60 * 60 * 1000); // default 1-hour event
+      await wm.calendar.create({ summary: summary.trim(), start: start.toISOString(), end: end.toISOString() });
       toast(t('calendar.created'));
       onSaved();
       onClose();
@@ -63,37 +62,46 @@ function EventModal({ date, onClose, onSaved }) {
 
   return (
     <div className="mf-overlay mf-overlay--center" onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ width: 'min(460px, 94vw)', background: 'var(--surface)', border: '1px solid var(--hair)', borderRadius: 16, boxShadow: 'var(--shadow-modal)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-        <div className="mf-drawer__head">
-          <div className="mf-drawer__title">{t('calendar.newEvent')}</div>
-          <div className="mf-modal-close mf-spacer" onClick={onClose}><Icon name="close" size={18} /></div>
-        </div>
-        <div style={{ padding: '16px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <Input size="lg" placeholder={t('calendar.titlePlaceholder')} value={summary} onChange={e => setSummary(e.target.value)} />
-          <FormField label={t('calendar.date')}>
-            <input type="date" className="mf-input" value={dateStr} onChange={e => setDateStr(e.target.value)} />
-          </FormField>
-          <div className="mf-row mf-row--between">
-            <span className="mf-u-muted" style={{ fontSize: 13 }}>{t('calendar.allDay')}</span>
-            <Toggle on={allDay} onClick={() => setAllDay(a => !a)} style={{ cursor: 'pointer' }} />
+      <div onClick={e => e.stopPropagation()} style={{ width: 'min(460px, 94vw)', background: 'var(--surface)', border: '1px solid var(--hair)', borderRadius: 16, boxShadow: '0 34px 90px rgba(0,0,0,.34)', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '17px 20px', borderBottom: '1px solid var(--hair-soft)' }}>
+          <div style={{ width: 30, height: 30, borderRadius: 8, background: 'var(--accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><rect x="3" y="4.5" width="14" height="12" rx="2" stroke="var(--accent-ink)" strokeWidth="1.4" /><path d="M3 8.2h14M7 3v3M13 3v3" stroke="var(--accent-ink)" strokeWidth="1.4" strokeLinecap="round" /></svg>
           </div>
-          {!allDay && (
-            <div className="mf-row" style={{ gap: 10 }}>
-              <FormField label={t('calendar.starts')} style={{ flex: 1 }}>
-                <input type="time" className="mf-input" value={startTime} onChange={e => setStartTime(e.target.value)} />
-              </FormField>
-              <FormField label={t('calendar.ends')} style={{ flex: 1 }}>
-                <input type="time" className="mf-input" value={endTime} onChange={e => setEndTime(e.target.value)} />
-              </FormField>
-            </div>
-          )}
-          <FormField label={t('calendar.location')}>
-            <Input placeholder={t('calendar.locationPlaceholder')} value={location} onChange={e => setLocation(e.target.value)} />
-          </FormField>
+          <div style={{ fontFamily: 'var(--font-serif)', fontSize: 19, fontWeight: 600, color: 'var(--ink-strong)' }}>{t('calendar.newEvent')}</div>
+          <div onClick={onClose} style={{ marginLeft: 'auto', cursor: 'pointer', color: 'var(--faint)', display: 'flex' }}>
+            <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
+          </div>
         </div>
-        <div className="mf-drawer__foot">
-          <Button variant="primary" onClick={save} disabled={busy}>{busy ? t('common.saving') : t('calendar.save')}</Button>
-          <Button variant="link" className="mf-spacer" onClick={onClose}>{t('common.cancel')}</Button>
+
+        <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 15 }}>
+          <div>
+            <label style={FIELD_LABEL}>{t('calendar.title')}</label>
+            <input placeholder={t('calendar.titlePlaceholder')} value={summary} onChange={e => setSummary(e.target.value)} style={FIELD} autoFocus />
+          </div>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <div style={{ flex: 1 }}>
+              <label style={FIELD_LABEL}>{t('calendar.date')}</label>
+              <input type="date" value={dateStr} onChange={e => setDateStr(e.target.value)} style={FIELD} />
+            </div>
+            <div style={{ width: 118 }}>
+              <label style={FIELD_LABEL}>{t('calendar.time')}</label>
+              <input type="time" value={time} onChange={e => setTime(e.target.value)} style={{ ...FIELD, fontFamily: 'var(--font-mono)' }} />
+            </div>
+          </div>
+          <div>
+            <label style={FIELD_LABEL}>{t('calendar.calendar')}</label>
+            <select className="mf-input" value={calendar} onChange={e => setCalendar(e.target.value)}>
+              <option value="Work">Work</option>
+              <option value="Personal">Personal</option>
+              <option value="Team">Team</option>
+              <option value="Holidays">Holidays</option>
+            </select>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '14px 20px', borderTop: '1px solid var(--hair-soft)' }}>
+          <Button variant="secondary" onClick={onClose}>{t('common.cancel')}</Button>
+          <Button variant="primary" onClick={save} disabled={busy}>{busy ? t('common.saving') : t('calendar.createEvent')}</Button>
         </div>
       </div>
     </div>
@@ -135,7 +143,7 @@ export function CalendarView() {
   }
 
   return (
-    <div className="mf-webmail" style={{ height: 'calc(100vh - 150px)', minHeight: 460, border: '1px solid var(--hair)', borderRadius: 12, overflow: 'hidden', background: 'var(--surface)', display: 'flex', flexDirection: 'column' }}>
+    <div className="mf-webmail" style={{ height: 'calc(100vh - 190px)', minHeight: 460, border: '1px solid var(--hair)', borderRadius: 12, overflow: 'hidden', background: 'var(--surface)', display: 'flex', flexDirection: 'column' }}>
       <div className="mf-webmail__toolbar" style={{ gap: 10 }}>
         <div style={{ fontFamily: 'var(--font-serif)', fontSize: 20, fontWeight: 600, color: 'var(--ink-strong)' }}>{MONTHS[month]} {year}</div>
         <Button variant="secondary" size="sm" onClick={() => setCursor(new Date())}>{t('calendar.today')}</Button>

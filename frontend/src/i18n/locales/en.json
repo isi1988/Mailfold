@@ -1025,6 +1025,10 @@
     "created": "Event created.",
     "deleted": "Event deleted.",
     "saveFailed": "Could not save the event.",
-    "deleteConfirm": "Delete “{{title}}”?"
+    "deleteConfirm": "Delete “{{title}}”?",
+    "title": "Title",
+    "time": "Time",
+    "calendar": "Calendar",
+    "createEvent": "Create event"
   }
 }
