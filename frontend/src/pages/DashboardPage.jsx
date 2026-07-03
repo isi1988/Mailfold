@@ -3,11 +3,13 @@ import { Link } from 'react-router-dom';
 import { PageHeader } from '../ds/components/molecules/PageHeader.jsx';
 import { StatCard } from '../ds/components/molecules/StatCard.jsx';
 import { Card } from '../ds/components/molecules/Card.jsx';
+import { Button } from '../ds/components/atoms/Button.jsx';
+import { Pill } from '../ds/components/atoms/Pill.jsx';
 import { StatusDot } from '../ds/components/atoms/StatusDot.jsx';
-import { ProgressBar } from '../ds/components/atoms/ProgressBar.jsx';
 import { useApi } from '../lib/useApi.js';
 import { AsyncView } from '../components/States.jsx';
 import { asList } from '../lib/format.js';
+import { tone } from '../ds/data/sample.js';
 import { useT } from '../i18n/index.jsx';
 
 // mailcow reports used_percent either as a number (45) or a string ("45" / "45%").
@@ -40,6 +42,24 @@ function containerList(data) {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+// mailcow's mailq payload shape varies between versions, so fields are read
+// defensively (mirrors QueuePage.jsx's own helpers).
+function pick(row, keys) {
+  for (const k of keys) {
+    const v = row[k];
+    if (v !== undefined && v !== null && v !== '') return v;
+  }
+  return undefined;
+}
+function fmtRecipients(row) {
+  const v = pick(row, ['recipients', 'rcpt', 'recipient', 'recipient_address']);
+  if (v === undefined) return '-';
+  return Array.isArray(v) ? (v.length ? v.join(', ') : '-') : String(v);
+}
+function statusOf(row) {
+  return String(pick(row, ['queue_name', 'status', 'queue']) || '');
+}
+
 export function DashboardPage() {
   const t = useT();
   const version = useApi('/api/status/version', []);
@@ -66,13 +86,19 @@ export function DashboardPage() {
 
   const mailboxCount = asList(mailboxes.data).length;
   const domainCount = asList(domains.data).length;
-  const queueCount = asList(queue.data).length;
+  const queueRows = asList(queue.data);
+  const queuePreview = queueRows.slice(0, 4);
 
   return (
     <>
       <PageHeader
         title={t('dashboard.title')}
         sub={ver ? t('dashboard.subVersion', { version: ver }) : t('dashboard.sub')}
+        actions={
+          <Link to="/mailboxes" state={{ openCreate: true }} style={{ textDecoration: 'none' }}>
+            <Button variant="primary">{t('dashboard.newMailbox')}</Button>
+          </Link>
+        }
       />
 
       <AsyncView loading={loading} error={error} reload={reload}>
@@ -95,63 +121,74 @@ export function DashboardPage() {
             <StatCard
               size="lg"
               label={t('dashboard.kpi.queue')}
-              value={queueCount}
-              delta={queueCount > 0 ? t('dashboard.kpi.queueBacklog') : t('dashboard.kpi.queueClear')}
-              deltaTone={queueCount > 0 ? 'amber' : 'green'}
+              value={queueRows.length}
+              delta={queueRows.length > 0 ? t('dashboard.kpi.queueBacklog') : t('dashboard.kpi.queueClear')}
+              deltaTone={queueRows.length > 0 ? 'amber' : 'green'}
               dot
             />
           </Link>
         </div>
 
-        {/* Service health + storage */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 16 }}>
-          <Card pad>
-            <div className="mf-row" style={{ marginBottom: 6 }}>
-              <span className="mf-card__title">{t('dashboard.health.title')}</span>
-              <span className="mf-spacer mf-row mf-u-muted" style={{ gap: 7, fontSize: 12 }}>
-                <StatusDot tone={services.length && running === services.length ? 'green' : 'amber'} />
-                {t('dashboard.health.summary', { running, total: services.length })}
-              </span>
+        {/* Service health */}
+        <Card pad style={{ marginBottom: 16 }}>
+          <div className="mf-row" style={{ marginBottom: 6 }}>
+            <span className="mf-card__title">{t('dashboard.health.title')}</span>
+            <span className="mf-spacer mf-row mf-u-muted" style={{ gap: 7, fontSize: 12 }}>
+              <StatusDot tone={services.length && running === services.length ? 'green' : 'amber'} />
+              {t('dashboard.health.summary', { running, total: services.length })}
+            </span>
+          </div>
+          {services.length === 0 ? (
+            <div className="mf-u-muted" style={{ fontSize: 13, padding: '10px 0' }}>{t('dashboard.health.empty')}</div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: '0 24px' }}>
+              {services.map(s => {
+                const up = s.state === 'running';
+                return (
+                  <div key={s.name} className="mf-row" style={{ gap: 9, padding: '7px 0', borderTop: '1px solid var(--hair-soft)' }}>
+                    <StatusDot tone={up ? 'green' : 'red'} />
+                    <span className="mf-u-mono" style={{ fontSize: 12.5, color: 'var(--ink)' }}>{s.name}</span>
+                    <span className="mf-spacer mf-u-mono" style={{ fontSize: 11.5, color: up ? 'var(--faint)' : 'var(--red)' }}>
+                      {up ? t('dashboard.health.running') : (s.state || t('dashboard.health.down'))}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
-            {services.length === 0 ? (
-              <div className="mf-u-muted" style={{ fontSize: 13, padding: '10px 0' }}>{t('dashboard.health.empty')}</div>
-            ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 24px' }}>
-                {services.map(s => {
-                  const up = s.state === 'running';
-                  return (
-                    <div key={s.name} className="mf-row" style={{ gap: 9, padding: '7px 0', borderTop: '1px solid var(--hair-soft)' }}>
-                      <StatusDot tone={up ? 'green' : 'red'} />
-                      <span className="mf-u-mono" style={{ fontSize: 12.5, color: 'var(--ink)' }}>{s.name}</span>
-                      <span className="mf-spacer mf-u-mono" style={{ fontSize: 11.5, color: up ? 'var(--faint)' : 'var(--red)' }}>
-                        {up ? t('dashboard.health.running') : (s.state || t('dashboard.health.down'))}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </Card>
+          )}
+        </Card>
 
-          <Card pad style={{ display: 'flex', flexDirection: 'column' }}>
-            <div className="mf-row">
-              <span className="mf-card__title">{t('dashboard.storage.title')}</span>
-              <span className="mf-spacer mf-u-faint" style={{ fontSize: 11.5 }}>{t('dashboard.storage.vmail')}</span>
-            </div>
-            <div style={{ fontFamily: 'var(--font-serif)', fontSize: 24, color: 'var(--ink-strong)', margin: '10px 0 4px' }}>
-              {store.used}
-              {store.total ? (
-                <span style={{ fontSize: 12, fontFamily: 'var(--font-sans)', color: 'var(--muted)' }}> / {store.total}</span>
-              ) : null}
-            </div>
-            <div className="mf-u-muted" style={{ fontSize: 12, marginBottom: 12 }}>
-              {t('dashboard.storage.usedPct', { pct: store.pct })}
-            </div>
-            <div style={{ marginTop: 'auto' }}>
-              <ProgressBar pct={store.pct} auto lg />
-            </div>
-          </Card>
-        </div>
+        {/* Mail queue preview */}
+        <Card pad>
+          <div className="mf-row" style={{ marginBottom: 12 }}>
+            <span className="mf-card__title">{t('dashboard.queue.title')}</span>
+            <span className="mf-u-faint" style={{ fontSize: 11.5, marginLeft: 8 }}>{queueRows.length}</span>
+            <Link to="/queue" className="mf-spacer" style={{ textDecoration: 'none', textAlign: 'right', fontSize: 12.5, color: 'var(--accent-ink)', fontWeight: 500 }}>
+              {t('dashboard.queue.manage')}
+            </Link>
+          </div>
+          {queuePreview.length === 0 ? (
+            <div className="mf-u-muted" style={{ fontSize: 13, padding: '10px 0' }}>{t('dashboard.queue.empty')}</div>
+          ) : (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1.7fr .9fr', gap: 14, padding: '0 0 8px', fontSize: 10.5, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--faint)', fontWeight: 600 }}>
+                <span>{t('queue.col.sender')}</span>
+                <span>{t('queue.col.recipient')}</span>
+                <span>{t('queue.col.status')}</span>
+              </div>
+              {queuePreview.map((r, i) => {
+                const status = statusOf(r);
+                return (
+                  <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.5fr 1.7fr .9fr', gap: 14, alignItems: 'center', padding: '9px 0', borderTop: '1px solid var(--hair-soft)' }}>
+                    <span className="mf-truncate" style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{pick(r, ['sender', 'from']) || '-'}</span>
+                    <span className="mf-u-muted mf-truncate" style={{ fontSize: 13 }}>{fmtRecipients(r)}</span>
+                    <span>{status ? <Pill tone={tone(status)}>{status}</Pill> : <span className="mf-u-faint">-</span>}</span>
+                  </div>
+                );
+              })}
+            </>
+          )}
+        </Card>
       </AsyncView>
     </>
   );

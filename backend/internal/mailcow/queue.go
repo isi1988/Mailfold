@@ -28,3 +28,11 @@ func (c *Client) MailQueue(ctx context.Context) (json.RawMessage, error) {
 func (c *Client) FlushQueue(ctx context.Context) ([]ActionResult, error) {
 	return c.action(ctx, "/api/v1/edit/mailq", map[string]string{"action": "flush"})
 }
+
+// DeleteAllQueue permanently removes every message currently held in the
+// Postfix queue. mailcow models this as the "super_delete" edit action —
+// unlike "flush" (retry delivery), this discards the messages outright, so
+// callers should confirm with the operator before calling it.
+func (c *Client) DeleteAllQueue(ctx context.Context) ([]ActionResult, error) {
+	return c.action(ctx, "/api/v1/edit/mailq", map[string]string{"action": "super_delete"})
+}

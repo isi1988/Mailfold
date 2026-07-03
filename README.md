@@ -23,10 +23,13 @@ dashboard (container health, storage, mail queue), mailboxes (quotas, a usage
 bar, last login, and per-mailbox app passwords, Sieve filters, rate limits and
 temporary aliases in a slide-over drawer), domains (a detail page per domain
 with DKIM key management, rate limits, and a live DNS check that verifies MX,
-the mail host's A record, SPF, DKIM and DMARC against the live zone), aliases,
-the mail queue, quarantine (release or delete held
-messages), the spam policy (per-domain allow / block lists), IMAP/POP sync jobs,
-per-service logs, a fail2ban panel and settings (theme, accent, language). An
+the mail host's A record, SPF, DKIM and DMARC against the live zone), aliases
+(with a mailbox-picker for recipients and a catch-all-for-domain toggle),
+the mail queue (flush for redelivery, or discard everything outright),
+quarantine (release or delete held messages), the spam policy (per-domain
+allow / block lists), IMAP/POP sync jobs (with a move-instead-of-copy option),
+per-service logs (an "All services" merged view and a live-tail toggle),
+a fail2ban panel and settings (theme, accent, language). An
 "Advanced" section exposes the niche routing/config resources (relay hosts,
 transports, TLS policies, forwarding hosts, BCC/recipient maps, templates), and
 an "Administration" section manages delegated admins and OAuth2 clients.

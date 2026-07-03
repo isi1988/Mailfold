@@ -193,6 +193,7 @@ function SyncJobDrawer({ mode, job, mailboxes = [], onClose, onSaved, onDelete }
   const [user2, setUser2] = useState(editing ? (job.user2 || '') : (mailboxes[0] ? mailboxes[0].username : ''));
   const [minsInterval, setMinsInterval] = useState(editing ? String(job.mins_interval || '20') : '20');
   const [active, setActive] = useState(editing ? isActive(job.active) : true);
+  const [deleteSource, setDeleteSource] = useState(editing ? isActive(job.delete1) : false);
   const [busy, setBusy] = useState(false);
 
   async function submit() {
@@ -212,6 +213,7 @@ function SyncJobDrawer({ mode, job, mailboxes = [], onClose, onSaved, onDelete }
           user2,
           mins_interval: Number(minsInterval) || 20,
           active: active ? '1' : '0',
+          delete1: deleteSource ? '1' : '0',
         };
         if (password1) attr.password1 = password1;
         await api.put('/api/syncjobs', { items: [job.id], attr });
@@ -226,6 +228,7 @@ function SyncJobDrawer({ mode, job, mailboxes = [], onClose, onSaved, onDelete }
           mins_interval: Number(minsInterval) || 20,
           user2,
           active: active ? '1' : '0',
+          delete1: deleteSource ? '1' : '0',
         });
         toast(t('syncjobs.form.created', { job: user1.trim() }));
       }
@@ -305,6 +308,14 @@ function SyncJobDrawer({ mode, job, mailboxes = [], onClose, onSaved, onDelete }
       </FormField>
 
       <div className="mf-row mf-row--between" style={{ marginTop: 6 }}>
+        <span>
+          <span className="mf-u-muted" style={{ fontSize: 13 }}>{t('syncjobs.form.deleteSource')}</span>
+          <div className="mf-u-faint" style={{ fontSize: 11.5, marginTop: 2 }}>{t('syncjobs.form.deleteSourceHint')}</div>
+        </span>
+        <Toggle on={deleteSource} onClick={() => setDeleteSource(v => !v)} style={{ cursor: 'pointer', flex: 'none' }} />
+      </div>
+
+      <div className="mf-row mf-row--between" style={{ marginTop: 14 }}>
         <span className="mf-u-muted" style={{ fontSize: 13 }}>{t('syncjobs.form.active')}</span>
         <Toggle on={active} onClick={() => setActive(a => !a)} style={{ cursor: 'pointer' }} />
       </div>

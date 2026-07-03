@@ -163,6 +163,7 @@ func TestResourceEndpoints(t *testing.T) {
 		{http.MethodDelete, "/api/dkim", del, 200},
 		{http.MethodGet, "/api/queue", "", 200},
 		{http.MethodPost, "/api/queue/flush", "", 200},
+		{http.MethodPost, "/api/queue/delete-all", "", 200},
 		{http.MethodGet, "/api/logs/postfix", "", 200},
 		{http.MethodGet, "/api/logs/postfix?count=5", "", 200},
 		{http.MethodGet, "/api/logs/postfix?count=0", "", 200},
@@ -271,6 +272,7 @@ func TestBadRequestAndUpstreamErrors(t *testing.T) {
 		{http.MethodGet, "/api/dkim/example.com", ""},
 		{http.MethodGet, "/api/status/containers", ""},
 		{http.MethodPost, "/api/queue/flush", ""},
+		{http.MethodPost, "/api/queue/delete-all", ""},
 	}
 	for _, u := range upstream {
 		if rec := do(h2, u.method, u.path, t2, u.body); rec.Code != http.StatusBadGateway {

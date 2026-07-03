@@ -28,4 +28,9 @@ func (s *Server) registerQueueRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/queue/flush", s.requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		s.runAction(w, r, s.mc.FlushQueue)
 	}))
+	// "POST /api/queue/delete-all" discards every queued message outright
+	// (mailcow's "super_delete"), unlike flush which only retries delivery.
+	mux.HandleFunc("POST /api/queue/delete-all", s.requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		s.runAction(w, r, s.mc.DeleteAllQueue)
+	}))
 }

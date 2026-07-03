@@ -68,13 +68,31 @@ export function ApiKeyDrawer({ onClose, onSaved }) {
   // ---- one-time token reveal ----
   if (created) {
     const footer = <Button variant="primary" className="mf-spacer" onClick={onClose}>{t('apikeys.form.done')}</Button>;
+    const scopeLabels = (created.scopes || []).map(s => t('apikeys.scope.' + s.replace('mail:', ''))).join(' · ');
     return (
       <Drawer title={t('apikeys.form.createdTitle')} subtitle={created.mailbox} footer={footer} onClose={onClose}>
-        <div className="mf-u-danger" style={{ fontSize: 13, marginBottom: 12 }}>{t('apikeys.form.onceWarning')}</div>
-        <FormField label={t('apikeys.form.token')}>
-          <Input type="text" mono readonly value={created.token} onFocus={e => e.target.select()} />
-        </FormField>
-        <Button variant="secondary" size="sm" onClick={copyToken}>{t('apikeys.form.copy')}</Button>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', background: 'var(--amber-soft)', border: '1px solid var(--amber-soft)', borderRadius: 10, padding: '12px 14px', marginBottom: 16 }}>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flex: 'none', marginTop: 1 }}>
+            <path d="M8 2l6.5 11.5H1.5L8 2z" stroke="var(--amber)" strokeWidth="1.5" strokeLinejoin="round" />
+            <path d="M8 6.5v3M8 11.6h.01" stroke="var(--amber)" strokeWidth="1.7" strokeLinecap="round" />
+          </svg>
+          <span style={{ fontSize: 12.5, color: 'var(--amber)', fontWeight: 500, lineHeight: 1.5 }}>{t('apikeys.form.onceWarning')}</span>
+        </div>
+        <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', marginBottom: 7, display: 'block' }}>{t('apikeys.form.token')}</label>
+        <div style={{ position: 'relative', background: '#26221D', border: '1px solid #322C25', borderRadius: 10, padding: '14px 88px 14px 16px', font: '500 12.5px var(--font-mono)', color: '#E9E2D4', wordBreak: 'break-all', lineHeight: 1.7 }}>
+          {created.token}
+          <Button variant="primary" size="sm" onClick={copyToken} style={{ position: 'absolute', top: 10, right: 10 }}>{t('apikeys.form.copy')}</Button>
+        </div>
+        {scopeLabels && (
+          <div className="mf-row mf-row--between" style={{ padding: '10px 0', fontSize: 13, borderTop: '1px solid var(--hair-soft)', marginTop: 14 }}>
+            <span className="mf-u-faint">{t('apikeys.col.scopes')}</span>
+            <span style={{ color: 'var(--ink)', fontWeight: 500 }}>{scopeLabels}</span>
+          </div>
+        )}
+        <div className="mf-row mf-row--between" style={{ padding: '10px 0', fontSize: 13, borderTop: '1px solid var(--hair-soft)' }}>
+          <span className="mf-u-faint">{t('apikeys.form.expiry')}</span>
+          <span style={{ color: 'var(--ink)', fontWeight: 500 }}>{created.expires_at ? new Date(created.expires_at).toLocaleDateString() : t('apikeys.neverExpires')}</span>
+        </div>
         <div className="mf-u-faint" style={{ fontSize: 12, marginTop: 16 }}>{t('apikeys.form.usageHint')}</div>
       </Drawer>
     );

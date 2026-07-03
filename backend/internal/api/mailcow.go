@@ -53,6 +53,7 @@ type Mailcow interface {
 	// Postfix mail queue.
 	MailQueue(ctx context.Context) (json.RawMessage, error)
 	FlushQueue(ctx context.Context) ([]mailcow.ActionResult, error)
+	DeleteAllQueue(ctx context.Context) ([]mailcow.ActionResult, error)
 
 	// Logs.
 	Logs(ctx context.Context, service string, count int) (json.RawMessage, error)

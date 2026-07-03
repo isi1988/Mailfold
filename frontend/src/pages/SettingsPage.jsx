@@ -175,6 +175,7 @@ export function SettingsPage() {
   const me = useApi('/api/auth/me', []);
   const version = useApi('/api/status/version', []);
   const vmail = useApi('/api/status/vmail', []);
+  const server = useApi('/api/status/server', []);
 
   const [theme, setTheme] = useState(readTheme);
   const [accent, setAccent] = useState(readAccent);
@@ -288,6 +289,12 @@ export function SettingsPage() {
         {/* Server — read-only info from /api/status/version and /api/status/vmail. */}
         <Card style={{ padding: '6px 20px 14px' }}>
           <div style={{ padding: '14px 0 12px' }} className="mf-card__title">{t('settings.server.title')}</div>
+          {server.data && server.data.name && (
+            <ToggleRow
+              title={t('settings.server.hostname')}
+              control={<span className="mf-u-mono mf-u-muted" style={{ fontSize: 13 }}>{server.data.name}</span>}
+            />
+          )}
           <AsyncView loading={version.loading} error={version.error} reload={version.reload}>
             <ToggleRow
               title={t('settings.server.version')}

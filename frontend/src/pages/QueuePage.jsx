@@ -72,6 +72,7 @@ export function QueuePage() {
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
   const [confirmFlush, setConfirmFlush] = useState(false);
+  const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
   const [busy, setBusy] = useState(false);
 
   async function doFlush() {
@@ -84,6 +85,21 @@ export function QueuePage() {
       reload();
     } catch (err) {
       toast(t('queue.flush.failed'), (err && err.body && err.body.message) || (err && err.message) || '');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function doDeleteAll() {
+    setConfirmDeleteAll(false);
+    if (busy) return;
+    setBusy(true);
+    try {
+      await api.post('/api/queue/delete-all', {});
+      toast(t('queue.deleteAll.done'));
+      reload();
+    } catch (err) {
+      toast(t('queue.deleteAll.failed'), (err && err.body && err.body.message) || (err && err.message) || '');
     } finally {
       setBusy(false);
     }
@@ -122,9 +138,14 @@ export function QueuePage() {
         title={t('queue.title')}
         sub={t('queue.count', { count: rows.length })}
         actions={
-          <Button variant="primary" onClick={() => setConfirmFlush(true)} disabled={busy || rows.length === 0}>
-            {busy ? t('queue.flush.busy') : t('queue.flush.cta')}
-          </Button>
+          <>
+            <Button variant="danger" onClick={() => setConfirmDeleteAll(true)} disabled={busy || rows.length === 0}>
+              {busy ? t('queue.deleteAll.busy') : t('queue.deleteAll.cta')}
+            </Button>
+            <Button variant="primary" onClick={() => setConfirmFlush(true)} disabled={busy || rows.length === 0}>
+              {busy ? t('queue.flush.busy') : t('queue.flush.cta')}
+            </Button>
+          </>
         }
       />
       <div className="mf-row" style={{ marginBottom: 14 }}>
@@ -167,6 +188,16 @@ export function QueuePage() {
           danger
           onCancel={() => setConfirmFlush(false)}
           onConfirm={doFlush}
+        />
+      )}
+      {confirmDeleteAll && (
+        <ConfirmModal
+          title={t('queue.deleteAll.confirmTitle')}
+          msg={t('queue.deleteAll.confirmMsg')}
+          cta={t('queue.deleteAll.cta')}
+          danger
+          onCancel={() => setConfirmDeleteAll(false)}
+          onConfirm={doDeleteAll}
         />
       )}
     </>

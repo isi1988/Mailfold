@@ -23,6 +23,7 @@ export function AliasesPage() {
   const { toast } = useToast();
   const { data, loading, error, reload } = useApi('/api/aliases', []);
   const domainsApi = useApi('/api/domains', []);
+  const mailboxesApi = useApi('/api/mailboxes', []);
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
   const [drawer, setDrawer] = useState(null);
@@ -101,6 +102,7 @@ export function AliasesPage() {
           mode={drawer.mode}
           alias={drawer.alias}
           domains={asList(domainsApi.data)}
+          mailboxes={asList(mailboxesApi.data).map(m => m.username).filter(Boolean)}
           onClose={() => setDrawer(null)}
           onSaved={reload}
           onDelete={a => { setDrawer(null); setConfirmAlias(a); }}

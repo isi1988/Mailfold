@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { PageHeader } from '../ds/components/molecules/PageHeader.jsx';
 import { FilterTabs } from '../ds/components/molecules/FilterTabs.jsx';
 import { SearchInput } from '../ds/components/molecules/SearchInput.jsx';
@@ -8,6 +9,7 @@ import { Avatar } from '../ds/components/atoms/Avatar.jsx';
 import { Pill } from '../ds/components/atoms/Pill.jsx';
 import { Icon } from '../ds/components/atoms/Icon.jsx';
 import { Button } from '../ds/components/atoms/Button.jsx';
+import { ProgressBar } from '../ds/components/atoms/ProgressBar.jsx';
 import { ConfirmModal } from '../ds/components/organisms/ConfirmModal.jsx';
 import { initials, tone } from '../ds/data/sample.js';
 import { useApi } from '../lib/useApi.js';
@@ -87,7 +89,10 @@ export function MailboxesPage() {
   const [tab, setTab] = useState('All');
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
-  const [drawer, setDrawer] = useState(null); // { mode:'create' } | { mode:'edit', mailbox }
+  // A Link from the Dashboard's "+ New mailbox" action can pass state to open
+  // the create drawer immediately, without a second click on this page.
+  const location = useLocation();
+  const [drawer, setDrawer] = useState(location.state && location.state.openCreate ? { mode: 'create' } : null); // { mode:'create' } | { mode:'edit', mailbox }
   const [confirmMb, setConfirmMb] = useState(null);
 
   async function doDelete() {
@@ -180,11 +185,8 @@ export function MailboxesPage() {
                       {!unlimited && <span className="mf-u-faint mf-u-mono" style={{ fontSize: 12.5 }}>{Math.round(pct)}%</span>}
                     </div>
                     {!unlimited && (
-                      <div
-                        aria-label={t('mailboxes.usage.label', { percent: Math.round(pct) })}
-                        style={{ height: 6, borderRadius: 999, background: 'var(--accent-soft)', overflow: 'hidden' }}
-                      >
-                        <div style={{ width: pct + '%', height: '100%', borderRadius: 999, background: pct >= 85 ? 'var(--red)' : 'var(--accent)' }} />
+                      <div aria-label={t('mailboxes.usage.label', { percent: Math.round(pct) })}>
+                        <ProgressBar pct={pct} auto />
                       </div>
                     )}
                   </div>

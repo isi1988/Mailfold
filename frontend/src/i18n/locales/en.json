@@ -394,8 +394,10 @@
       "editTitle": "Edit alias",
       "localPart": "Local part",
       "domain": "Domain",
+      "catchAll": "Catch-all for domain",
+      "catchAllHint": "Receive mail sent to any unknown address at this domain.",
       "goto": "Forwards to",
-      "gotoHint": "One recipient per line (or comma-separated).",
+      "gotoHint": "Pick an existing mailbox or type an address and press Enter.",
       "active": "Active",
       "create": "Create alias",
       "saving": "Saving…",
@@ -412,6 +414,12 @@
     "title": "Overview",
     "sub": "Live status of your mailcow deployment",
     "subVersion": "mailcow {{version}} · live deployment status",
+    "newMailbox": "+ New mailbox",
+    "queue": {
+      "title": "Mail queue",
+      "manage": "Manage queue →",
+      "empty": "Queue is empty."
+    },
     "kpi": {
       "mailboxes": "Mailboxes",
       "domains": "Domains",
@@ -459,6 +467,14 @@
       "confirmMsg": "This asks Postfix to attempt immediate redelivery of every message currently in the queue.",
       "done": "Queue flush requested",
       "failed": "Could not flush the queue"
+    },
+    "deleteAll": {
+      "cta": "Delete all",
+      "busy": "Deleting…",
+      "confirmTitle": "Delete every queued message?",
+      "confirmMsg": "This permanently discards every message currently in the queue instead of retrying delivery. This cannot be undone.",
+      "done": "Queue cleared",
+      "failed": "Could not clear the queue"
     }
   },
   "quarantine": {
@@ -560,6 +576,8 @@
       "target": "Target mailbox",
       "selectTarget": "Select a mailbox…",
       "interval": "Interval (minutes)",
+      "deleteSource": "Delete from source after import",
+      "deleteSourceHint": "Move mail out of the source mailbox instead of copying it.",
       "active": "Active",
       "create": "Create sync job",
       "saving": "Saving…",
@@ -575,7 +593,10 @@
   "logs": {
     "title": "Logs",
     "sub": "Recent {{service}} log entries",
+    "allServices": "All",
     "refresh": "Refresh",
+    "liveOn": "Live",
+    "liveOff": "Live tail",
     "download": "Download",
     "filter": "Filter log lines…",
     "downloaded": "Downloaded {{service}} logs",
@@ -613,6 +634,7 @@
     },
     "server": {
       "title": "Server",
+      "hostname": "Hostname",
       "version": "mailcow version",
       "storage": "Mail storage",
       "storageUsed": "{{pct}} used",
@@ -664,7 +686,8 @@
     "revoked": "Key “{label}” revoked.",
     "failed": "Could not revoke the key.",
     "revokeTitle": "Revoke API key",
-    "revokeMsg": "Revoke “{label}”? Apps using this key will immediately lose access, and its mail app-password is deleted.",
+    "revokeMsg": "Revoke “{label}”? Apps using this key will immediately lose access, and its mail app-password is deleted. This cannot be undone.",
+    "neverExpires": "Never",
     "col": {
       "key": "Key",
       "mailbox": "Mailbox",
