@@ -215,6 +215,14 @@
     },
     "usage": {
       "label": "{percent}% used"
+    },
+    "time": {
+      "now": "just now",
+      "min": "{{n}}m ago",
+      "hour": "{{n}}h ago",
+      "day": "{{n}}d ago",
+      "month": "{{n}}mo ago",
+      "year": "{{n}}y ago"
     }
   },
   "domains": {

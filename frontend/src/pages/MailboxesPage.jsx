@@ -43,6 +43,42 @@ function clampPct(v) {
   return Math.max(0, Math.min(100, n));
 }
 
+// humanParts scales a byte count to the largest fitting unit, returning the
+// numeric value and the unit so used/total can share one unit label.
+function humanParts(bytes) {
+  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+  let n = Number(bytes) || 0;
+  let i = 0;
+  while (n >= 1024 && i < units.length - 1) { n /= 1024; i += 1; }
+  return { value: n, unit: units[i], i };
+}
+
+// num trims a scaled value to one decimal (or an integer when whole/large).
+function num(v) {
+  return v >= 10 || Number.isInteger(v) ? Math.round(v) : Math.round(v * 10) / 10;
+}
+
+// quotaLabel formats "used / total UNIT" with both sides in the total's unit and
+// the unit shown once, e.g. "3.2 / 10 GB".
+function quotaLabel(used, total) {
+  const t = humanParts(total);
+  const scale = Math.pow(1024, t.i);
+  return num((Number(used) || 0) / scale) + ' / ' + num(t.value) + ' ' + t.unit;
+}
+
+// timeAgo renders a unix-second timestamp as a compact relative time, or an
+// em-dash when the mailbox has never been used.
+function timeAgo(ts, t) {
+  if (!ts) return '—';
+  const diff = Math.max(0, Math.floor(Date.now() / 1000) - ts);
+  if (diff < 45) return t('mailboxes.time.now');
+  if (diff < 3600) return t('mailboxes.time.min', { n: Math.floor(diff / 60) });
+  if (diff < 86400) return t('mailboxes.time.hour', { n: Math.floor(diff / 3600) });
+  if (diff < 2592000) return t('mailboxes.time.day', { n: Math.floor(diff / 86400) });
+  if (diff < 31536000) return t('mailboxes.time.month', { n: Math.floor(diff / 2592000) });
+  return t('mailboxes.time.year', { n: Math.floor(diff / 31536000) });
+}
+
 export function MailboxesPage() {
   const t = useT();
   const { toast } = useToast();
@@ -67,10 +103,9 @@ export function MailboxesPage() {
   }
 
   const cols = [
-    { label: t('mailboxes.col.mailbox'), w: '2.3fr' },
+    { label: t('mailboxes.col.mailbox'), w: '2.2fr' },
     { label: t('mailboxes.col.domain'), w: '1fr' },
-    { label: t('mailboxes.col.quota'), w: '1.6fr' },
-    { label: t('mailboxes.col.messages'), w: '.8fr' },
+    { label: t('mailboxes.col.quota'), w: '2fr' },
     { label: t('mailboxes.col.lastLogin'), w: '1fr' },
     { label: t('mailboxes.col.status'), w: '.9fr' },
     { label: '', w: '18px' },
@@ -137,30 +172,25 @@ export function MailboxesPage() {
                 const pct = clampPct(m.percent_in_use);
                 const unlimited = (Number(m.quota) || 0) <= 0;
                 return (
-                  <div style={{ minWidth: 0 }}>
-                    <div className="mf-u-faint mf-u-mono mf-truncate" style={{ fontSize: 12.5 }}>
-                      {human(m.quota_used)} / {unlimited ? '∞' : human(m.quota)}
+                  <div style={{ minWidth: 0, paddingRight: 20 }}>
+                    <div className="mf-row mf-row--between" style={{ marginBottom: 6, gap: 10 }}>
+                      <span className="mf-u-faint mf-u-mono mf-truncate" style={{ fontSize: 12.5 }}>
+                        {unlimited ? human(m.quota_used) + ' / ∞' : quotaLabel(m.quota_used, m.quota)}
+                      </span>
+                      {!unlimited && <span className="mf-u-faint mf-u-mono" style={{ fontSize: 12.5 }}>{Math.round(pct)}%</span>}
                     </div>
                     {!unlimited && (
                       <div
                         aria-label={t('mailboxes.usage.label', { percent: Math.round(pct) })}
-                        style={{ marginTop: 5, height: 4, borderRadius: 3, background: 'var(--track, rgba(127,127,127,.18))', overflow: 'hidden' }}
+                        style={{ height: 6, borderRadius: 999, background: 'var(--accent-soft)', overflow: 'hidden' }}
                       >
-                        <div style={{ width: pct + '%', height: '100%', borderRadius: 3, background: pct > 90 ? 'var(--warn, #d97706)' : 'var(--accent, #4f46e5)' }} />
+                        <div style={{ width: pct + '%', height: '100%', borderRadius: 999, background: pct >= 85 ? 'var(--red)' : 'var(--accent)' }} />
                       </div>
                     )}
                   </div>
                 );
               })()}
-              <span className="mf-u-faint mf-u-mono" style={{ fontSize: 12.5 }}>{m.messages ?? 0}</span>
-              {(() => {
-                const ts = lastLogin(m);
-                return (
-                  <span className="mf-u-muted" style={{ fontSize: 12.5 }}>
-                    {ts > 0 ? new Date(ts * 1000).toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' }) : t('mailboxes.neverLoggedIn')}
-                  </span>
-                );
-              })()}
+              <span className="mf-u-muted" style={{ fontSize: 12.5 }}>{timeAgo(lastLogin(m), t)}</span>
               <span><Pill tone={isActive(m.active) ? tone('active') : 'neutral'}>{isActive(m.active) ? t('common.active') : t('common.disabled')}</Pill></span>
               <Icon name="chevron-right" size={14} style={{ color: 'var(--faint)' }} />
             </TableRow>
