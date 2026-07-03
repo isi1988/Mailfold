@@ -19,10 +19,15 @@ All code and documentation are written in English.
 ## Features
 
 **Admin panel** — run the whole mailcow server from one calm UI: a live
-dashboard (container health, storage, mail queue), mailboxes (create / edit /
-delete with quotas and passwords via a slide-over drawer), domains, aliases, the
-mail queue, quarantine, the spam policy (per-domain allow / block lists),
-IMAP/POP sync jobs, per-service logs and settings (theme, accent, language).
+dashboard (container health, storage, mail queue), mailboxes (quotas, a usage
+bar, last login, and per-mailbox app passwords, Sieve filters, rate limits and
+temporary aliases in a slide-over drawer), domains (with DKIM key management and
+rate limits), aliases, the mail queue, quarantine (release or delete held
+messages), the spam policy (per-domain allow / block lists), IMAP/POP sync jobs,
+per-service logs, a fail2ban panel and settings (theme, accent, language). An
+"Advanced" section exposes the niche routing/config resources (relay hosts,
+transports, TLS policies, forwarding hosts, BCC/recipient maps, templates), and
+an "Administration" section manages delegated admins and OAuth2 clients.
 
 **Webmail** — a built-in three-pane webmail client (folders · message list ·
 reader) with compose, reply, star, archive, delete and attachment download, so
