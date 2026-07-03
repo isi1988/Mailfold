@@ -103,13 +103,14 @@ func TestWebmailCalendarRichEvent(t *testing.T) {
 	wt := webmailToken(t, h)
 
 	payload := createEventRequest{
-		Summary:  "Roadmap review",
-		Start:    time.Date(2026, 7, 12, 9, 0, 0, 0, time.UTC),
-		End:      time.Date(2026, 7, 12, 10, 0, 0, 0, time.UTC),
-		Calendar: "Work",
-		Guests:   []string{"a@acme.io", "b@acme.io"},
-		Repeat:   "WEEKLY",
-		Reminder: 30,
+		Summary:     "Roadmap review, Q3",
+		Description: "line one\nline two; and, more",
+		Start:       time.Date(2026, 7, 12, 9, 0, 0, 0, time.UTC),
+		End:         time.Date(2026, 7, 12, 10, 0, 0, 0, time.UTC),
+		Calendar:    "Work",
+		Guests:      []string{"a@acme.io", "b@acme.io"},
+		Repeat:      "WEEKLY",
+		Reminder:    30,
 		Attachments: []eventAttachment{{
 			Filename: "agenda.txt",
 			Mime:     "text/plain",
@@ -134,6 +135,12 @@ func TestWebmailCalendarRichEvent(t *testing.T) {
 		t.Fatalf("want 1 event, got %d", len(events))
 	}
 	ev := events[0]
+	if ev.Summary != "Roadmap review, Q3" {
+		t.Errorf("summary not decoded: %q", ev.Summary)
+	}
+	if ev.Description != "line one\nline two; and, more" {
+		t.Errorf("description not decoded: %q", ev.Description)
+	}
 	if ev.Calendar != "Work" {
 		t.Errorf("calendar = %q", ev.Calendar)
 	}

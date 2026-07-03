@@ -197,10 +197,10 @@ func parseEvent(data string) (calendarEvent, bool) {
 	}
 	ev := calendarEvent{
 		UID:         propText(e.Props, ical.PropUID),
-		Summary:     propText(e.Props, ical.PropSummary),
-		Location:    propText(e.Props, ical.PropLocation),
-		Description: propText(e.Props, ical.PropDescription),
-		Calendar:    propText(e.Props, ical.PropCategories),
+		Summary:     propTextDecoded(e.Props, ical.PropSummary),
+		Location:    propTextDecoded(e.Props, ical.PropLocation),
+		Description: propTextDecoded(e.Props, ical.PropDescription),
+		Calendar:    propTextDecoded(e.Props, ical.PropCategories),
 		AllDay:      isAllDay(e),
 		Guests:      eventGuests(e),
 		Repeat:      rruleFreq(propText(e.Props, ical.PropRecurrenceRule)),
@@ -222,6 +222,13 @@ func propText(props ical.Props, name string) string {
 		return p.Value
 	}
 	return ""
+}
+
+// propTextDecoded returns a TEXT property with iCalendar escaping (\n \, \; \\)
+// unfolded, or "" when it is absent or malformed.
+func propTextDecoded(props ical.Props, name string) string {
+	s, _ := props.Text(name)
+	return s
 }
 
 // isAllDay reports whether the event's DTSTART is a date-only value.
