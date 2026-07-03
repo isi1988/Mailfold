@@ -71,6 +71,12 @@ func (s *Server) handleWebmailLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.webmail.Verify(req.Email, req.Password); err != nil {
+		// The client always sees a uniform 401 (no user-enumeration or
+		// password-vs-connection oracle), but log the underlying cause — an
+		// actual auth failure looks very different from an IMAP/TLS/connection
+		// error, and swallowing it silently makes webmail outages hard to
+		// diagnose. The password is never logged.
+		s.logger.Warn("webmail login verification failed", "email", req.Email, "error", err)
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
 		return
 	}
