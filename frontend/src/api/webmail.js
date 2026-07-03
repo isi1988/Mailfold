@@ -133,6 +133,11 @@ export const wm = {
   move: (folder, uid, target) => req('POST', '/api/webmail/move', { folder, uid, target }),
   createFolder: name => req('POST', '/api/webmail/folders', { name }),
   connectExternal: payload => req('POST', '/api/webmail/external', payload),
+  calendar: {
+    list: () => req('GET', '/api/webmail/calendar/events'),
+    create: ev => req('POST', '/api/webmail/calendar/events', ev),
+    del: uid => req('DELETE', '/api/webmail/calendar/events/' + encodeURIComponent(uid)),
+  },
 };
 
 // subscribeMail opens a Server-Sent Events stream that fires onMail(data) when

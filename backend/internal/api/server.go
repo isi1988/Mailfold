@@ -142,6 +142,7 @@ func (s *Server) Handler() http.Handler {
 
 	// End-user webmail (IMAP/SMTP-backed).
 	s.registerWebmailRoutes(mux)
+	s.registerWebmailCalendar(mux)
 
 	// Self-hosted CardDAV/CalDAV (contacts/calendar), when configured.
 	s.registerDAV(mux)

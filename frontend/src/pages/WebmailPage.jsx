@@ -18,6 +18,7 @@ import { useT } from '../i18n/index.jsx';
 import { wm, downloadAttachment, subscribeMail } from '../api/webmail.js';
 import { ComposeModal } from './ComposeModal.jsx';
 import { AddAccountModal } from './AddAccountModal.jsx';
+import { CalendarView } from './CalendarView.jsx';
 import { Loading, ErrorState, Empty } from '../components/States.jsx';
 
 const SYS_ICON = { inbox: 'inbox', sent: 'send', drafts: 'drafts', archive: 'archive', junk: 'shield', spam: 'shield', trash: 'trash' };
@@ -126,6 +127,7 @@ function WebmailClient() {
   const [loadingList, setLoadingList] = useState(true);
   const [error, setError] = useState(null);
   const [composing, setComposing] = useState(false);
+  const [view, setView] = useState('mail'); // 'mail' | 'calendar'
   const [filterMode, setFilterMode] = useState(null); // null | 'starred' | 'label:<name>'
   const [labels, setLabels] = useState(() => loadLabels(email));
 
@@ -287,8 +289,21 @@ function WebmailClient() {
     ? t('webmail.starred')
     : filterMode && filterMode.startsWith('label:') ? filterMode.slice(6) : folderLeaf(folder);
 
+  const viewTab = (key, label) => (
+    <button onClick={() => setView(key)}
+      style={{ padding: '7px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', font: '600 13px system-ui', background: view === key ? 'var(--accent-soft)' : 'transparent', color: view === key ? 'var(--accent-ink)' : 'var(--muted)' }}>
+      {label}
+    </button>
+  );
+
   return (
-    <div className="mf-webmail" style={{ height: 'calc(100vh - 150px)', minHeight: 460, border: '1px solid var(--hair)', borderRadius: 12, overflow: 'hidden', background: 'var(--surface)' }}>
+    <>
+      <div className="mf-row" style={{ gap: 4, marginBottom: 12 }}>
+        {viewTab('mail', t('webmail.view.mail'))}
+        {viewTab('calendar', t('webmail.view.calendar'))}
+      </div>
+      {view === 'calendar' ? <CalendarView /> : (
+    <div className="mf-webmail" style={{ height: 'calc(100vh - 190px)', minHeight: 460, border: '1px solid var(--hair)', borderRadius: 12, overflow: 'hidden', background: 'var(--surface)' }}>
       {/* Folder rail */}
       <div className="mf-webmail__folders">
         <Button variant="primary" block onClick={() => setComposing(true)} style={{ margin: '2px 0 12px' }}>{t('webmail.compose')}</Button>
@@ -439,6 +454,8 @@ function WebmailClient() {
       )}
       {addingAccount && <AddAccountModal onClose={() => setAddingAccount(false)} />}
     </div>
+      )}
+    </>
   );
 }
 

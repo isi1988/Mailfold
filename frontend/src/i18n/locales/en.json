@@ -166,6 +166,10 @@
       "hour1": "1 hour",
       "extHint": "Mailfold imports this mailbox into your account on the schedule above; its mail then appears in your folders.",
       "accounts": "Accounts"
+    },
+    "view": {
+      "mail": "Mail",
+      "calendar": "Calendar"
     }
   },
   "login": {
@@ -1005,5 +1009,22 @@
       "title": "Transports",
       "updated": "Transport updated"
     }
+  },
+  "calendar": {
+    "today": "Today",
+    "newEvent": "New event",
+    "titlePlaceholder": "Event title",
+    "date": "Date",
+    "allDay": "All day",
+    "starts": "Starts",
+    "ends": "Ends",
+    "location": "Location",
+    "locationPlaceholder": "Add a place",
+    "save": "Save event",
+    "needTitle": "Enter an event title.",
+    "created": "Event created.",
+    "deleted": "Event deleted.",
+    "saveFailed": "Could not save the event.",
+    "deleteConfirm": "Delete “{{title}}”?"
   }
 }
