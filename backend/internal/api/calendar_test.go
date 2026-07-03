@@ -422,6 +422,50 @@ func TestEditEventPreservesRichProps(t *testing.T) {
 	}
 }
 
+// TestWebmailCalendarEditAttachments checks keep_attachments reconciliation:
+// an edit can drop an existing file and add a new one.
+func TestWebmailCalendarEditAttachments(t *testing.T) {
+	h := newAPIWithDAV(t, mockMailcow(t, 0, "").URL, startMemIMAP(t))
+	wt := webmailToken(t, h)
+
+	b64 := func(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) }
+	create := createEventRequest{
+		Summary: "Doc", Start: time.Date(2026, 7, 12, 9, 0, 0, 0, time.UTC), End: time.Date(2026, 7, 12, 10, 0, 0, 0, time.UTC),
+		Attachments: []eventAttachment{{Filename: "a.txt", Mime: "text/plain", Data: b64("AAA")}, {Filename: "b.txt", Mime: "text/plain", Data: b64("BBB")}},
+	}
+	raw, _ := json.Marshal(create)
+	rec := do(h, http.MethodPost, "/api/webmail/calendar/events", wt, string(raw))
+	var created struct {
+		UID string `json:"uid"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &created)
+
+	keep := []int{1} // drop a.txt (0), keep b.txt (1)
+	upd := createEventRequest{
+		Summary: "Doc", Start: create.Start, End: create.End,
+		KeepAttachments: &keep,
+		Attachments:     []eventAttachment{{Filename: "c.txt", Mime: "text/plain", Data: b64("CCC")}},
+	}
+	uraw, _ := json.Marshal(upd)
+	if r := do(h, http.MethodPut, "/api/webmail/calendar/events/"+created.UID, wt, string(uraw)); r.Code != http.StatusOK {
+		t.Fatalf("update: %d %s", r.Code, r.Body.String())
+	}
+
+	rec = do(h, http.MethodGet, "/api/webmail/calendar/events", wt, "")
+	var evs []calendarEvent
+	_ = json.Unmarshal(rec.Body.Bytes(), &evs)
+	names := []string{}
+	for _, a := range evs[0].Attachments {
+		names = append(names, a.Filename)
+	}
+	if strings.Join(names, ",") != "b.txt,c.txt" {
+		t.Fatalf("attachments after edit = %v, want [b.txt c.txt]", names)
+	}
+	if dl := do(h, http.MethodGet, "/api/webmail/calendar/events/"+created.UID+"/attachments/1", wt, ""); dl.Body.String() != "CCC" {
+		t.Errorf("new attachment content = %q", dl.Body.String())
+	}
+}
+
 func TestRsvpPartstatMapping(t *testing.T) {
 	cases := []struct{ rsvp, partstat string }{
 		{"yes", "ACCEPTED"}, {"maybe", "TENTATIVE"}, {"no", "DECLINED"}, {"none", "NEEDS-ACTION"}, {"bogus", "NEEDS-ACTION"},

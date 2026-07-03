@@ -41,6 +41,15 @@ const calColors = cal => CAL_COLORS[calKey(cal)] || CAL_COLORS.work;
 const calName = cal => ({ work: 'Work', personal: 'Personal', team: 'Team', holiday: 'Holidays', holidays: 'Holidays' }[calKey(cal)] || cal || 'Work');
 const RSVP_OPTS = [['yes', 'rsvpGoing'], ['maybe', 'rsvpMaybe'], ['no', 'rsvpCant']];
 
+// videoLink finds a joinable meeting URL in an event's location or description.
+const VIDEO_RE = /(https?:\/\/[^\s]*(?:zoom\.us|meet\.google\.com|teams\.microsoft\.com|meet\.jit\.si|whereby\.com|webex\.com|around\.co)[^\s]*)/i;
+function videoLink(ev) {
+  const m = ((ev.location || '') + ' ' + (ev.description || '')).match(VIDEO_RE);
+  if (m) return m[1];
+  const loc = (ev.location || '').trim();
+  return /^https?:\/\/\S+$/i.test(loc) ? loc : null;
+}
+
 // eventToReq turns a listed event into a create/update request body.
 const eventToReq = ev => ({
   summary: ev.summary, all_day: !!ev.all_day, calendar: ev.calendar || '', location: ev.location || '',
@@ -90,7 +99,96 @@ function weekRangeLabel(d) {
 const allDayToLocal = iso => { const d = new Date(iso); return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()); };
 const eventStartDate = ev => (ev && ev.all_day ? allDayToLocal(ev.start) : new Date(ev.start));
 const eventEndDate = ev => (ev && ev.all_day ? allDayToLocal(ev.end) : new Date(ev.end));
-const eventsOn = (events, day) => events.filter(e => sameDay(eventStartDate(e), day)).sort((a, b) => eventStartDate(a) - eventStartDate(b));
+const dayOf = d => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+
+// ---- recurrence + multi-day --------------------------------------------------
+
+const WEEKDAY_CODE = { SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6 };
+
+function parseICalDate(v) {
+  const m = (v || '').match(/^(\d{4})(\d{2})(\d{2})/);
+  return m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], 23, 59, 59)) : null;
+}
+function parseRRule(rrule) {
+  const p = { interval: 1, byday: [] };
+  for (const part of (rrule || '').split(';')) {
+    const [k, v] = part.split('=');
+    const key = (k || '').toUpperCase();
+    if (key === 'FREQ') p.freq = (v || '').toUpperCase();
+    else if (key === 'INTERVAL') p.interval = Math.max(1, parseInt(v, 10) || 1);
+    else if (key === 'COUNT') p.count = parseInt(v, 10) || 0;
+    else if (key === 'UNTIL') p.until = parseICalDate(v);
+    else if (key === 'BYDAY') p.byday = (v || '').split(',').map(x => WEEKDAY_CODE[x.trim().slice(-2).toUpperCase()]).filter(n => n != null);
+  }
+  return p;
+}
+const stepFreq = (d, freq, n) => {
+  const x = new Date(d);
+  if (freq === 'DAILY') x.setDate(x.getDate() + n);
+  else if (freq === 'WEEKLY') x.setDate(x.getDate() + 7 * n);
+  else if (freq === 'MONTHLY') x.setMonth(x.getMonth() + n);
+  else if (freq === 'YEARLY') x.setFullYear(x.getFullYear() + n);
+  return x;
+};
+
+// occurrenceStarts returns the start Dates of an event's occurrences that could
+// be visible in [rangeStart, rangeEnd]. Bounded so a malformed rule can't loop.
+function occurrenceStarts(ev, rangeStart, rangeEnd) {
+  const base = new Date(ev.start);
+  const r = ev.rrule && /FREQ=/i.test(ev.rrule) ? parseRRule(ev.rrule) : null;
+  if (!r || !r.freq) return [base];
+  const out = [];
+  let n = 0;
+  if (r.freq === 'WEEKLY' && r.byday.length) {
+    const week0 = startOfWeek(base);
+    for (let i = 0; i < 1500; i++) {
+      const wk = stepFreq(week0, 'WEEKLY', i * r.interval);
+      if (wk > rangeEnd) break;
+      for (const wd of r.byday.slice().sort((a, b) => a - b)) {
+        const occ = addDays(wk, (wd + 6) % 7); // Monday-first column offset
+        occ.setHours(base.getHours(), base.getMinutes(), 0, 0);
+        if (occ < base) continue;
+        if (r.until && occ > r.until) return out;
+        if (r.count && n >= r.count) return out;
+        n++;
+        if (occ >= rangeStart && occ <= rangeEnd) out.push(occ);
+      }
+    }
+    return out;
+  }
+  for (let i = 0; i < 1500; i++) {
+    const occ = stepFreq(base, r.freq, i * r.interval);
+    if (occ > rangeEnd) break;
+    if (r.until && occ > r.until) break;
+    if (r.count && n >= r.count) break;
+    n++;
+    if (occ >= rangeStart) out.push(occ);
+  }
+  return out;
+}
+
+// expandInstances turns stored events into display instances: one per recurrence
+// occurrence, carrying the original event as `_orig`.
+function expandInstances(events, rangeStart, rangeEnd) {
+  const out = [];
+  for (const ev of events) {
+    const durMs = Math.max(0, new Date(ev.end) - new Date(ev.start));
+    for (const s of occurrenceStarts(ev, rangeStart, rangeEnd)) {
+      const end = new Date(s.getTime() + durMs);
+      out.push({ ...ev, start: s.toISOString(), end: end.toISOString(), _orig: ev, _series: !!(ev.rrule && /FREQ=/i.test(ev.rrule)), _key: ev.uid + '@' + s.getTime() });
+    }
+  }
+  return out;
+}
+
+// instLastDay is the last calendar day an instance covers (all-day DTEND is exclusive).
+function instLastDay(inst) {
+  if (inst.all_day) { const e = addDays(allDayToLocal(inst.end), -1); const f = dayOf(eventStartDate(inst)); return e < f ? f : e; }
+  return dayOf(new Date(inst.end));
+}
+const coversDay = (inst, day) => { const d = dayOf(day); return d >= dayOf(eventStartDate(inst)) && d <= instLastDay(inst); };
+const eventsOn = (instances, day) => instances.filter(i => coversDay(i, day)).sort((a, b) => eventStartDate(a) - eventStartDate(b));
 
 // ---- event pill --------------------------------------------------------------
 
@@ -171,6 +269,7 @@ function EventModal({ date, event, onClose, onSaved }) {
   const [guests, setGuests] = useState(event ? event.guests || [] : []);
   const [description, setDescription] = useState(event ? event.description || '' : '');
   const [attachments, setAttachments] = useState([]);
+  const [keptExisting, setKeptExisting] = useState(() => (event && event.attachments ? event.attachments.map((_, i) => i) : []));
   const [repeat, setRepeat] = useState(event ? event.repeat || '' : '');
   const [reminder, setReminder] = useState(event ? event.reminder || 0 : 10);
   const [busy, setBusy] = useState(false);
@@ -209,8 +308,9 @@ function EventModal({ date, event, onClose, onSaved }) {
         summary: summary.trim(), start: start.toISOString(), end: end.toISOString(),
         all_day: allDay, calendar, location: location.trim(), guests, description, repeat, reminder,
       };
-      if (editing) await wm.calendar.update(event.uid, payload);
-      else await wm.calendar.create({ ...payload, attachments: attachments.map(a => ({ filename: a.filename, mime: a.mime, data: a.data })) });
+      const files = attachments.map(a => ({ filename: a.filename, mime: a.mime, data: a.data }));
+      if (editing) await wm.calendar.update(event.uid, { ...payload, keep_attachments: keptExisting, attachments: files });
+      else await wm.calendar.create({ ...payload, attachments: files });
       toast(editing ? t('calendar.saved') : t('calendar.created'));
       onSaved();
       onClose();
@@ -261,9 +361,16 @@ function EventModal({ date, event, onClose, onSaved }) {
           <div><label style={FIELD_LABEL}>{t('calendar.guests')}</label><GuestsInput value={guests} onChange={setGuests} placeholder={t('calendar.guestsPlaceholder')} /></div>
           <div><label style={FIELD_LABEL}>{t('calendar.description')}</label><textarea placeholder={t('calendar.descriptionPlaceholder')} value={description} onChange={e => setDescription(e.target.value)} style={{ ...FIELD, minHeight: 90, lineHeight: 1.6, resize: 'vertical' }} /></div>
 
-          {!editing && (
-            <div>
+          <div>
               <label style={FIELD_LABEL}>{t('calendar.attachments')}</label>
+              {editing && (event.attachments || []).map((a, i) => keptExisting.includes(i) && (
+                <div key={'e' + i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 11px', border: '1px solid var(--hair)', borderRadius: 9, background: 'var(--surface-2)', marginBottom: 6 }}>
+                  <svg width="15" height="15" viewBox="0 0 20 20" fill="none" style={{ flex: 'none', color: 'var(--faint)' }}><path d="M8 3.5v9a3 3 0 006 0V5a2 2 0 10-4 0v7.5a1 1 0 002 0V6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13, color: 'var(--ink)' }}>{a.filename}</span>
+                  <span className="mf-u-mono" style={{ fontSize: 11.5, color: 'var(--faint)' }}>{humanSize(a.size || 0)}</span>
+                  <span onClick={() => setKeptExisting(k => k.filter(x => x !== i))} style={{ cursor: 'pointer', color: 'var(--faint)', fontWeight: 700, lineHeight: 1 }}>×</span>
+                </div>
+              ))}
               {attachments.length > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
                   {attachments.map((a, i) => (
@@ -280,8 +387,7 @@ function EventModal({ date, event, onClose, onSaved }) {
                 <svg width="15" height="15" viewBox="0 0 20 20" fill="none"><path d="M10 4v12M4 10h12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
                 {t('calendar.attachFiles')}<input type="file" multiple onChange={pickFiles} style={{ display: 'none' }} />
               </label>
-            </div>
-          )}
+          </div>
 
           <div style={{ display: 'flex', gap: 12 }}>
             <div style={{ flex: 1 }}><label style={FIELD_LABEL}>{t('calendar.repeat')}</label>
@@ -337,6 +443,7 @@ function EventDetail({ ev, onClose, onChanged, onDeleted, onEdit }) {
     catch (e) { toast(t('calendar.saveFailed'), (e && e.message) || ''); setBusy(false); }
   }
 
+  const call = videoLink(ev);
   const dateLabel = new Date(ev.start).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', ...(ev.all_day ? { timeZone: 'UTC' } : {}) });
   const timeLabel = ev.all_day ? t('calendar.allDay') : hhmm(ev.start) + (ev.end ? ' – ' + hhmm(ev.end) : '');
   const repeatKey = ev.repeat && 'repeat' + ev.repeat.charAt(0) + ev.repeat.slice(1).toLowerCase();
@@ -377,6 +484,7 @@ function EventDetail({ ev, onClose, onChanged, onDeleted, onEdit }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 24px', borderTop: '1px solid var(--hair-soft)', background: 'var(--surface-2)', flex: 'none' }}>
           <Button variant="danger" onClick={del} disabled={busy}>{t('common.delete')}</Button>
           <div style={{ flex: 1 }} />
+          {call && <Button variant="primary" onClick={() => window.open(call, '_blank', 'noopener,noreferrer')}>{t('calendar.join')}</Button>}
           <Button variant="secondary" onClick={onEdit}>{t('calendar.edit')}</Button>
           <Button variant="secondary" onClick={onClose}>{t('common.close')}</Button>
         </div>
@@ -408,7 +516,7 @@ function MonthView({ cursor, events, onOpen, onNew, drag }) {
               className={cx('mf-month__cell', !inMonth && 'mf-month__cell--out', weekend && inMonth && 'mf-month__cell--wknd')}
               style={{ cursor: 'pointer', boxShadow: over ? 'inset 0 0 0 2px var(--accent)' : 'none' }}>
               <div className={cx('mf-month__num', sameDay(day, now) && 'mf-month__num--today', !inMonth && 'mf-month__num--muted')}>{day.getDate()}</div>
-              {dayEvents.slice(0, 3).map(ev => <EventPill key={ev.uid} ev={ev} size="sm" onOpen={onOpen} drag={drag} />)}
+              {dayEvents.slice(0, 3).map(ev => <EventPill key={ev._key || ev.uid} ev={ev} size="sm" onOpen={onOpen} drag={ev._series ? null : drag} />)}
               {dayEvents.length > 3 && <div className="mf-month__more">{t('calendar.moreCount', { n: dayEvents.length - 3 })}</div>}
             </div>
           );
@@ -449,7 +557,7 @@ function WeekView({ cursor, events, onOpen, drag }) {
             onDragOver={e => drag.over(e, ymd(d))}
             onDrop={e => drag.dropDay(e, d)}
             style={{ boxShadow: drag.overKey === ymd(d) ? 'inset 0 0 0 2px var(--accent)' : 'none' }}>
-            {eventsOn(events, d).map(ev => <EventPill key={ev.uid} ev={ev} size="md" onOpen={onOpen} drag={drag} />)}
+            {eventsOn(events, d).map(ev => <EventPill key={ev._key || ev.uid} ev={ev} size="md" onOpen={onOpen} drag={ev._series ? null : drag} />)}
           </div>
         ))}
       </div>
@@ -478,7 +586,7 @@ function DayView({ cursor, events, onOpen, drag }) {
       </div>
       <div className="mf-day__body">
         <div className="mf-day__hint">{t('calendar.dragHint')}</div>
-        {otherEvents.map(ev => <div key={ev.uid} style={{ marginBottom: 6 }}><EventPill ev={ev} size="md" onOpen={onOpen} drag={drag} /></div>)}
+        {otherEvents.map(ev => <div key={ev._key || ev.uid} style={{ marginBottom: 6 }}><EventPill ev={ev} size="md" onOpen={onOpen} drag={ev._series ? null : drag} /></div>)}
         {rows.map(({ h, events: evs }) => (
           <div key={h} className="mf-day__row"
             onDragOver={e => drag.over(e, 'h' + h)}
@@ -491,7 +599,7 @@ function DayView({ cursor, events, onOpen, drag }) {
               </div>
             )}
             <div className="mf-day__gutter">{pad(h)}:00</div>
-            <div className="mf-day__lane">{evs.map(ev => <EventPill key={ev.uid} ev={ev} size="block" onOpen={onOpen} drag={drag} />)}</div>
+            <div className="mf-day__lane">{evs.map(ev => <EventPill key={ev._key || ev.uid} ev={ev} size="block" onOpen={onOpen} drag={ev._series ? null : drag} />)}</div>
           </div>
         ))}
       </div>
@@ -521,7 +629,9 @@ function MiniMonth({ cursor, onPick }) {
 function CalendarSidebar({ cursor, events, hidden, onToggleCal, onPick, onOpen, onRsvp }) {
   const t = useT();
   const startToday = new Date(); startToday.setHours(0, 0, 0, 0);
-  const upcoming = events.filter(e => new Date(e.start) >= startToday).sort((a, b) => new Date(a.start) - new Date(b.start)).slice(0, 7);
+  const seen = new Set();
+  const upcoming = events.filter(e => new Date(e.start) >= startToday).sort((a, b) => new Date(a.start) - new Date(b.start))
+    .filter(e => { if (seen.has(e.uid)) return false; seen.add(e.uid); return true; }).slice(0, 7); // one row per series
   return (
     <div className="mf-cal-side">
       <div className="mf-card mf-card--pad"><MiniMonth cursor={cursor} onPick={onPick} /></div>
@@ -656,8 +766,18 @@ export function CalendarView({ onAppView }) {
     },
   };
 
-  const openEdit = () => { setModal({ event: detail }); setDetail(null); };
-  const pickMini = d => { setCursor(d); if (view === 'day') { /* stay */ } };
+  const openEdit = () => { setModal({ event: detail._orig || detail }); setDetail(null); };
+  const pickMini = d => setCursor(d);
+
+  // Expand recurrences into visible occurrences for the current view's range,
+  // plus a forward window for the sidebar's upcoming list.
+  let rangeStart, rangeEnd;
+  if (view === 'month') { const w = monthGrid(cursor.getFullYear(), cursor.getMonth()); rangeStart = w[0][0]; rangeEnd = addDays(w[5][6], 1); }
+  else if (view === 'week') { const wd = weekDays(cursor); rangeStart = wd[0]; rangeEnd = addDays(wd[6], 1); }
+  else { rangeStart = dayOf(cursor); rangeEnd = addDays(cursor, 1); }
+  const instances = expandInstances(shown, rangeStart, rangeEnd);
+  const todayStart = dayOf(new Date());
+  const upcomingInstances = expandInstances(shown, todayStart, addDays(todayStart, 90));
 
   return (
     <div>
@@ -682,10 +802,10 @@ export function CalendarView({ onAppView }) {
       </div>
 
       <div className="mf-cal-layout">
-        {view === 'month' && <MonthView cursor={cursor} events={shown} onOpen={setDetail} onNew={d => setModal({ date: d })} drag={drag} />}
-        {view === 'week' && <WeekView cursor={cursor} events={shown} onOpen={setDetail} drag={drag} />}
-        {view === 'day' && <DayView cursor={cursor} events={shown} onOpen={setDetail} drag={drag} />}
-        <CalendarSidebar cursor={cursor} events={shown} hidden={hidden} onPick={pickMini} onOpen={setDetail} onRsvp={setEventRsvp}
+        {view === 'month' && <MonthView cursor={cursor} events={instances} onOpen={setDetail} onNew={d => setModal({ date: d })} drag={drag} />}
+        {view === 'week' && <WeekView cursor={cursor} events={instances} onOpen={setDetail} drag={drag} />}
+        {view === 'day' && <DayView cursor={cursor} events={instances} onOpen={setDetail} drag={drag} />}
+        <CalendarSidebar cursor={cursor} events={upcomingInstances} hidden={hidden} onPick={pickMini} onOpen={setDetail} onRsvp={setEventRsvp}
           onToggleCal={key => setHidden(h => { const n = new Set(h); n.has(key) ? n.delete(key) : n.add(key); return n; })} />
       </div>
 

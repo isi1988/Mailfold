@@ -60,7 +60,8 @@ type calendarEvent struct {
 	Description string            `json:"description,omitempty"`
 	Calendar    string            `json:"calendar,omitempty"`
 	Guests      []string          `json:"guests,omitempty"`
-	Repeat      string            `json:"repeat,omitempty"`   // DAILY|WEEKLY|MONTHLY|YEARLY
+	Repeat      string            `json:"repeat,omitempty"`   // DAILY|WEEKLY|MONTHLY|YEARLY (the form's frequency)
+	Rrule       string            `json:"rrule,omitempty"`    // the full RRULE, for occurrence expansion
 	Reminder    int               `json:"reminder,omitempty"` // minutes before start; 0 = none
 	Rsvp        string            `json:"rsvp,omitempty"`     // yes|maybe|no|none — the owner's response
 	Attachments []eventAttachment `json:"attachments,omitempty"`
@@ -114,6 +115,10 @@ type createEventRequest struct {
 	Reminder    int               `json:"reminder"`
 	Rsvp        string            `json:"rsvp"`
 	Attachments []eventAttachment `json:"attachments"`
+	// KeepAttachments, when non-nil (edit), lists which existing attachment
+	// indices to keep; the update then sets ATTACH to those plus Attachments.
+	// Nil (drag/move) leaves the attachments untouched.
+	KeepAttachments *[]int `json:"keep_attachments"`
 }
 
 func (s *Server) handleCalendarCreate(w http.ResponseWriter, r *http.Request) {
@@ -175,6 +180,14 @@ func (s *Server) handleCalendarUpdate(w http.ResponseWriter, r *http.Request) {
 	if !req.End.After(req.Start) {
 		req.End = req.Start.Add(time.Hour)
 	}
+	total := 0
+	for _, a := range req.Attachments {
+		total += base64.StdEncoding.DecodedLen(len(a.Data))
+	}
+	if total > maxCalAttachTotal {
+		writeJSON(w, http.StatusRequestEntityTooLarge, map[string]string{"error": "attachments are too large"})
+		return
+	}
 	existing, err := s.davStore.GetCalObject(user, webmailCalendarID, uid)
 	if err != nil || existing == nil {
 		s.writeError(w, http.StatusNotFound, errEventNotFound)
@@ -220,6 +233,7 @@ func editEvent(data string, req createEventRequest, owner string) (string, bool)
 	editRRule(ev, req.Repeat)
 	editReminder(ev, req)
 	editGuests(ev, req.Guests, owner)
+	editAttachments(ev, req)
 
 	var buf strings.Builder
 	if err := ical.NewEncoder(&buf).Encode(cal); err != nil {
@@ -288,6 +302,24 @@ func isSimpleReminder(ch *ical.Component) bool {
 	}
 	tp := ch.Props.Get(ical.PropTrigger)
 	return tp != nil && triggerMinutes(tp.Value) > 0
+}
+
+// editAttachments, when the request opts in (KeepAttachments non-nil), sets the
+// event's ATTACH set to the kept existing ones plus any newly-uploaded files.
+// Left untouched otherwise (e.g. a drag-to-reschedule).
+func editAttachments(ev *ical.Component, req createEventRequest) {
+	if req.KeepAttachments == nil {
+		return
+	}
+	old := ev.Props[ical.PropAttach]
+	ev.Props.Del(ical.PropAttach)
+	for _, idx := range *req.KeepAttachments {
+		if idx >= 0 && idx < len(old) {
+			p := old[idx]
+			ev.Props.Add(&p)
+		}
+	}
+	addAttachments(&ical.Event{Component: ev}, req.Attachments)
 }
 
 // editGuests reconciles the guest ATTENDEE set to req.Guests, keeping existing
@@ -421,6 +453,7 @@ func parseEvent(data, owner string) (calendarEvent, bool) {
 		AllDay:      isAllDay(e),
 		Guests:      eventGuests(e, owner),
 		Repeat:      rruleFreq(propText(e.Props, ical.PropRecurrenceRule)),
+		Rrule:       propText(e.Props, ical.PropRecurrenceRule),
 		Reminder:    alarmMinutes(e.Children),
 		Rsvp:        ownerRsvp(e, owner),
 		Attachments: eventAttachments(e),
