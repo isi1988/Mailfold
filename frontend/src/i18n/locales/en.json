@@ -337,7 +337,7 @@
       "generate": "Generate key",
       "generated": "DKIM key generated for {domain}",
       "generating": "Generating…",
-      "keyInfo": "{selector} · {length}-bit",
+      "keyInfo": "{{selector}} · {{length}}-bit",
       "keySize": "Key size",
       "none": "No DKIM key yet. Generate one and publish the DNS record to sign outgoing mail.",
       "rotate": "Delete / rotate key",
