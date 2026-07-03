@@ -257,6 +257,162 @@ function EventModal({ date, onClose, onSaved }) {
   );
 }
 
+// ---- category colours + RSVP -------------------------------------------------
+
+// CAL_COLORS keys a calendar category to [soft background, ink, dot] tokens.
+const CAL_COLORS = {
+  work: ['var(--accent-soft)', 'var(--accent-ink)', 'var(--accent)'],
+  personal: ['var(--green-soft)', 'var(--green)', 'var(--green)'],
+  team: ['var(--blue-soft)', 'var(--blue)', 'var(--blue)'],
+  holiday: ['var(--amber-soft)', 'var(--amber)', 'var(--amber)'],
+  holidays: ['var(--amber-soft)', 'var(--amber)', 'var(--amber)'],
+};
+const calColors = cal => CAL_COLORS[(cal || 'work').toLowerCase()] || CAL_COLORS.work;
+const calName = cal => ({ work: 'Work', personal: 'Personal', team: 'Team', holiday: 'Holidays', holidays: 'Holidays' }[(cal || 'work').toLowerCase()] || cal || 'Work');
+const RSVP_OPTS = [['yes', 'rsvpGoing'], ['maybe', 'rsvpMaybe'], ['no', 'rsvpCant']];
+
+// RsvpMark is the Outlook-style response glyph: ✓ going / ? maybe / ✕ not going.
+function RsvpMark({ rsvp, size = 13 }) {
+  const box = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: size, height: size, flex: 'none', borderRadius: '50%', lineHeight: 1 };
+  if (rsvp === 'yes') return <span title="Going" style={{ ...box, color: 'var(--green)' }}><svg width="8" height="8" viewBox="0 0 12 12" fill="none"><path d="M2.4 6.4l2.2 2.2 5-5.2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg></span>;
+  if (rsvp === 'no') return <span title="Not going" style={{ ...box, color: 'var(--red)' }}><svg width="8" height="8" viewBox="0 0 12 12" fill="none"><path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg></span>;
+  if (rsvp === 'maybe') return <span title="Maybe" style={{ ...box, width: size - 1, height: size - 1, border: '1.2px solid currentColor', opacity: 0.7, fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 8 }}>?</span>;
+  return null;
+}
+
+// EventChip is a coloured month-grid event pill: category colour, RSVP mark, and
+// hatched (maybe) / struck-through (declined) styling.
+function EventChip({ ev, onOpen }) {
+  const [bg, ink, dot] = calColors(ev.calendar);
+  const rsvp = ev.rsvp || 'none';
+  const style = { marginTop: 3, display: 'flex', alignItems: 'center', gap: 5, padding: '2px 7px', borderRadius: 6, fontSize: 11, fontWeight: 500, cursor: 'pointer', overflow: 'hidden', background: bg, color: ink };
+  if (rsvp === 'maybe') style.backgroundImage = 'repeating-linear-gradient(45deg, transparent 0 3px, color-mix(in srgb, currentColor 14%, transparent) 3px 6px)';
+  if (rsvp === 'no') style.opacity = 0.6;
+  return (
+    <div title={ev.summary} onClick={onOpen} style={style}>
+      {rsvp === 'none'
+        ? <span style={{ width: 5, height: 5, borderRadius: '50%', flex: 'none', background: dot }} />
+        : <RsvpMark rsvp={rsvp} size={12} />}
+      <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: rsvp === 'no' ? 'line-through' : 'none' }}>
+        {!ev.all_day && <span className="mf-u-mono">{hhmm(ev.start)}&nbsp;&nbsp;</span>}{ev.summary}
+      </span>
+    </div>
+  );
+}
+
+// RsvpButton is one of the Going / Maybe / Can't response buttons.
+function RsvpButton({ kind, active, label, onClick }) {
+  const on = { yes: ['var(--green-soft)', 'var(--green)'], maybe: ['var(--accent-soft)', 'var(--accent-ink)'], no: ['var(--red-soft)', 'var(--red)'] }[kind];
+  const skin = active ? { background: on[0], color: on[1], border: '1px solid transparent' } : { background: 'var(--surface)', color: 'var(--muted)', border: '1px solid var(--hair)' };
+  return <button onClick={onClick} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '6px 12px', borderRadius: 8, font: '600 12px system-ui', cursor: 'pointer', ...skin }}>{label}</button>;
+}
+
+// MetaRow is a label/value line in the event detail view.
+function MetaRow({ label, value }) {
+  return (
+    <div style={{ display: 'flex', gap: 12, fontSize: 13 }}>
+      <span style={{ flex: 'none', width: 74, color: 'var(--faint)', fontWeight: 600 }}>{label}</span>
+      <span style={{ flex: 1, minWidth: 0, color: 'var(--ink)', whiteSpace: 'pre-wrap' }}>{value}</span>
+    </div>
+  );
+}
+
+// EventDetail shows a single event with its metadata and the owner's RSVP row.
+function EventDetail({ ev, onClose, onChanged, onDeleted }) {
+  const t = useT();
+  const { toast } = useToast();
+  const [rsvp, setRsvp] = useState(ev.rsvp || 'none');
+  const [busy, setBusy] = useState(false);
+  const [bg, ink, dot] = calColors(ev.calendar);
+
+  async function choose(v) {
+    const prev = rsvp;
+    setRsvp(v);
+    try {
+      await wm.calendar.setRsvp(ev.uid, v);
+      toast(t('calendar.responseUpdated'));
+      if (onChanged) onChanged();
+    } catch (e) {
+      setRsvp(prev);
+      toast(t('calendar.saveFailed'), (e && e.message) || '');
+    }
+  }
+
+  async function del() {
+    if (busy) return;
+    if (!window.confirm(t('calendar.deleteConfirm', { title: ev.summary }))) return;
+    setBusy(true);
+    try {
+      await wm.calendar.del(ev.uid);
+      toast(t('calendar.deleted'));
+      if (onDeleted) onDeleted();
+      onClose();
+    } catch (e) {
+      toast(t('calendar.saveFailed'), (e && e.message) || '');
+      setBusy(false);
+    }
+  }
+
+  const dateLabel = new Date(ev.start).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+  const timeLabel = ev.all_day ? t('calendar.allDay') : hhmm(ev.start) + (ev.end ? ' – ' + hhmm(ev.end) : '');
+  const repeatKey = ev.repeat && 'repeat' + ev.repeat.charAt(0) + ev.repeat.slice(1).toLowerCase();
+
+  return (
+    <div className="mf-overlay mf-overlay--center" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 'min(520px, 94vw)', maxHeight: '92vh', display: 'flex', flexDirection: 'column', background: 'var(--surface)', border: '1px solid var(--hair)', borderRadius: 16, boxShadow: '0 34px 90px rgba(0,0,0,.34)', overflow: 'hidden' }}>
+        <div style={{ height: 6, background: dot, flex: 'none' }} />
+        <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, font: '600 12px system-ui', padding: '5px 12px', borderRadius: 999, background: bg, color: ink }}>
+              <span style={{ width: 9, height: 9, borderRadius: '50%', background: dot }} />{calName(ev.calendar)}
+            </span>
+            <div onClick={onClose} style={{ marginLeft: 'auto', cursor: 'pointer', color: 'var(--faint)', display: 'flex' }}>
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
+            </div>
+          </div>
+
+          <div style={{ fontFamily: 'var(--font-serif)', fontSize: 23, fontWeight: 600, color: 'var(--ink-strong)' }}>{ev.summary}</div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+            <MetaRow label={t('calendar.when')} value={dateLabel + ' · ' + timeLabel} />
+            {ev.location && <MetaRow label={t('calendar.location')} value={ev.location} />}
+            {ev.guests && ev.guests.length > 0 && <MetaRow label={t('calendar.guests')} value={ev.guests.join(', ')} />}
+            {repeatKey && <MetaRow label={t('calendar.repeat')} value={t('calendar.' + repeatKey)} />}
+          </div>
+
+          {ev.description && <div style={{ fontSize: 13.5, lineHeight: 1.6, color: 'var(--ink)', whiteSpace: 'pre-wrap' }}>{ev.description}</div>}
+
+          {ev.attachments && ev.attachments.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {ev.attachments.map((a, i) => (
+                <div key={i} onClick={() => wm.calendar.downloadAttachment(ev.uid, i, a.filename)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 11px', border: '1px solid var(--hair)', borderRadius: 9, background: 'var(--surface-2)', cursor: 'pointer' }}>
+                  <svg width="15" height="15" viewBox="0 0 20 20" fill="none" style={{ flex: 'none', color: 'var(--faint)' }}><path d="M8 3.5v9a3 3 0 006 0V5a2 2 0 10-4 0v7.5a1 1 0 002 0V6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13, color: 'var(--ink)' }}>{a.filename}</span>
+                  <span className="mf-u-mono" style={{ fontSize: 11.5, color: 'var(--faint)' }}>{humanSize(a.size || 0)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4, paddingTop: 16, borderTop: '1px solid var(--hair-soft)' }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{t('calendar.yourResponse')}</span>
+            <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+              {RSVP_OPTS.map(([v, k]) => <RsvpButton key={v} kind={v} active={rsvp === v} label={t('calendar.' + k)} onClick={() => choose(v)} />)}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 24px', borderTop: '1px solid var(--hair-soft)', background: 'var(--surface-2)', flex: 'none' }}>
+          <Button variant="danger" onClick={del} disabled={busy}>{t('common.delete')}</Button>
+          <div style={{ flex: 1 }} />
+          <Button variant="secondary" onClick={onClose}>{t('common.close')}</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Month-view calendar over the mailbox's CalDAV events. */
 export function CalendarView() {
   const t = useT();
@@ -264,6 +420,7 @@ export function CalendarView() {
   const [cursor, setCursor] = useState(() => new Date());
   const [events, setEvents] = useState([]);
   const [modal, setModal] = useState(null); // { date } for a new event
+  const [detail, setDetail] = useState(null); // the event being viewed
 
   const load = useCallback(async () => {
     try {
@@ -280,16 +437,14 @@ export function CalendarView() {
   const weeks = monthGrid(year, month);
   const now = new Date();
 
-  async function removeEvent(ev) {
-    if (!window.confirm(t('calendar.deleteConfirm', { title: ev.summary }))) return;
-    try {
-      await wm.calendar.del(ev.uid);
-      toast(t('calendar.deleted'));
-      load();
-    } catch (e) {
-      toast(t('calendar.saveFailed'), (e && e.message) || '');
+  // Keep the open detail card in sync after an RSVP change.
+  const syncDetail = useCallback(async () => {
+    const evs = await wm.calendar.list().catch(() => null);
+    if (Array.isArray(evs)) {
+      setEvents(evs);
+      setDetail(d => (d ? evs.find(e => e.uid === d.uid) || null : null));
     }
-  }
+  }, []);
 
   return (
     <div className="mf-webmail" style={{ height: 'calc(100vh - 190px)', minHeight: 460, border: '1px solid var(--hair)', borderRadius: 12, overflow: 'hidden', background: 'var(--surface)', display: 'flex', flexDirection: 'column' }}>
@@ -299,12 +454,15 @@ export function CalendarView() {
         <IconButton onClick={() => setCursor(new Date(year, month - 1, 1))}><Icon name="chevron-left" size={16} /></IconButton>
         <IconButton onClick={() => setCursor(new Date(year, month + 1, 1))}><Icon name="chevron-right" size={16} /></IconButton>
         <div className="mf-spacer" />
-        <Button variant="primary" size="sm" onClick={() => setModal({ date: new Date() })}>{t('calendar.newEvent')}</Button>
+        <Button variant="primary" size="sm" onClick={() => setModal({ date: new Date() })}>
+          <svg width="14" height="14" viewBox="0 0 20 20" fill="none" style={{ marginRight: 6, verticalAlign: '-2px' }}><path d="M10 4v12M4 10h12" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /></svg>
+          {t('calendar.newEvent')}
+        </Button>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', borderBottom: '1px solid var(--hair)' }}>
         {WEEKDAYS.map(d => (
-          <div key={d} style={{ padding: '8px 10px', fontSize: 11, fontWeight: 600, color: 'var(--faint)', textTransform: 'uppercase', letterSpacing: '.05em' }}>{d}</div>
+          <div key={d} style={{ padding: '11px 8px', textAlign: 'center', fontSize: 11, fontWeight: 600, color: 'var(--faint)', textTransform: 'uppercase', letterSpacing: '.06em' }}>{d}</div>
         ))}
       </div>
 
@@ -313,19 +471,18 @@ export function CalendarView() {
           <div key={wi} style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)' }}>
             {week.map((day, di) => {
               const inMonth = day.getMonth() === month;
+              const weekend = di >= 5;
               const isToday = sameDay(day, now);
               const dayEvents = events.filter(e => sameDay(new Date(e.start), day)).sort((a, b) => new Date(a.start) - new Date(b.start));
+              const cellBg = !inMonth ? 'var(--bg)' : (weekend ? 'var(--surface-2)' : 'transparent');
               return (
                 <div key={di} onClick={() => setModal({ date: day })}
-                  style={{ borderRight: '1px solid var(--hair-soft)', borderBottom: '1px solid var(--hair-soft)', padding: 6, minHeight: 78, cursor: 'pointer', background: inMonth ? 'transparent' : 'var(--surface-2)' }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', color: isToday ? '#fff' : (inMonth ? 'var(--ink)' : 'var(--faint)'), background: isToday ? 'var(--accent)' : 'transparent' }}>{day.getDate()}</div>
+                  style={{ borderRight: '1px solid var(--hair-soft)', borderBottom: '1px solid var(--hair-soft)', padding: '7px 8px', minHeight: 84, cursor: 'pointer', background: cellBg, overflow: 'hidden' }}>
+                  <div style={{ alignSelf: 'flex-start', minWidth: 22, height: 22, padding: '0 5px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 11, marginBottom: 1, fontSize: 12, fontWeight: 600, color: isToday ? '#fff' : (inMonth ? 'var(--ink)' : 'var(--faint)'), background: isToday ? 'var(--accent)' : 'transparent' }}>{day.getDate()}</div>
                   {dayEvents.slice(0, 3).map(ev => (
-                    <div key={ev.uid} title={ev.summary} onClick={e => { e.stopPropagation(); removeEvent(ev); }}
-                      style={{ marginTop: 3, fontSize: 11, padding: '2px 6px', borderRadius: 5, background: 'var(--accent-soft)', color: 'var(--accent-ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {!ev.all_day && <span className="mf-u-mono">{hhmm(ev.start)} </span>}{ev.summary}
-                    </div>
+                    <EventChip key={ev.uid} ev={ev} onOpen={e => { e.stopPropagation(); setDetail(ev); }} />
                   ))}
-                  {dayEvents.length > 3 && <div style={{ fontSize: 10, color: 'var(--faint)', marginTop: 2 }}>+{dayEvents.length - 3}</div>}
+                  {dayEvents.length > 3 && <div style={{ fontSize: 10.5, color: 'var(--faint)', marginTop: 2, paddingLeft: 3 }}>{t('calendar.moreCount', { n: dayEvents.length - 3 })}</div>}
                 </div>
               );
             })}
@@ -334,6 +491,7 @@ export function CalendarView() {
       </div>
 
       {modal && <EventModal date={modal.date} onClose={() => setModal(null)} onSaved={load} />}
+      {detail && <EventDetail ev={detail} onClose={() => setDetail(null)} onChanged={syncDetail} onDeleted={load} />}
     </div>
   );
 }

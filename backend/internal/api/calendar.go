@@ -25,6 +25,13 @@ const attachFilenameParam = "X-FILENAME"
 // a single VEVENT cannot bloat the SQLite store.
 const maxCalAttachTotal = 10 << 20 // 10 MiB
 
+// partstatParam is the iCalendar ATTENDEE participation-status parameter that
+// carries the mailbox owner's RSVP.
+const partstatParam = "PARTSTAT"
+
+// mailtoPrefix is the URI scheme prefixing an ATTENDEE's email address.
+const mailtoPrefix = "mailto:"
+
 // eventAttachment is a file attached to a calendar event. Data (base64) is only
 // carried inbound on create and outbound on a single-attachment fetch; the list
 // endpoint returns metadata only.
@@ -48,6 +55,7 @@ type calendarEvent struct {
 	Guests      []string          `json:"guests,omitempty"`
 	Repeat      string            `json:"repeat,omitempty"`   // DAILY|WEEKLY|MONTHLY|YEARLY
 	Reminder    int               `json:"reminder,omitempty"` // minutes before start; 0 = none
+	Rsvp        string            `json:"rsvp,omitempty"`     // yes|maybe|no|none — the owner's response
 	Attachments []eventAttachment `json:"attachments,omitempty"`
 }
 
@@ -61,6 +69,7 @@ func (s *Server) registerWebmailCalendar(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/webmail/calendar/events", s.requireWebmail(s.handleCalendarList))
 	mux.HandleFunc("POST /api/webmail/calendar/events", s.requireWebmail(s.handleCalendarCreate))
 	mux.HandleFunc("DELETE /api/webmail/calendar/events/{uid}", s.requireWebmail(s.handleCalendarDelete))
+	mux.HandleFunc("PATCH /api/webmail/calendar/events/{uid}/rsvp", s.requireWebmail(s.handleCalendarRsvp))
 	mux.HandleFunc("GET /api/webmail/calendar/events/{uid}/attachments/{index}", s.requireWebmail(s.handleCalendarAttachment))
 }
 
@@ -77,7 +86,7 @@ func (s *Server) handleCalendarList(w http.ResponseWriter, r *http.Request) {
 	}
 	events := make([]calendarEvent, 0, len(objs))
 	for _, o := range objs {
-		if ev, ok := parseEvent(o.Data); ok {
+		if ev, ok := parseEvent(o.Data, user); ok {
 			events = append(events, ev)
 		}
 	}
@@ -95,6 +104,7 @@ type createEventRequest struct {
 	Guests      []string          `json:"guests"`
 	Repeat      string            `json:"repeat"`
 	Reminder    int               `json:"reminder"`
+	Rsvp        string            `json:"rsvp"`
 	Attachments []eventAttachment `json:"attachments"`
 }
 
@@ -124,7 +134,7 @@ func (s *Server) handleCalendarCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	uid := newEventUID()
-	data := buildEvent(uid, req)
+	data := buildEvent(uid, req, user)
 	if err := s.davStore.EnsureCalendar(user, webmailCalendarID, "Calendar"); err != nil {
 		s.writeError(w, http.StatusInternalServerError, err)
 		return
@@ -144,6 +154,36 @@ func (s *Server) handleCalendarDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+// handleCalendarRsvp records the mailbox owner's response (yes/maybe/no/none) on
+// an event by setting their ATTENDEE PARTSTAT, in place.
+func (s *Server) handleCalendarRsvp(w http.ResponseWriter, r *http.Request) {
+	user := webmailCreds(r).Email
+	uid := r.PathValue("uid")
+	var req struct {
+		Rsvp string `json:"rsvp"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		s.writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	obj, err := s.davStore.GetCalObject(user, webmailCalendarID, uid)
+	if err != nil || obj == nil {
+		s.writeError(w, http.StatusNotFound, fmt.Errorf("event not found"))
+		return
+	}
+	partstat := rsvpToPartstat(req.Rsvp)
+	data, ok := setOwnerPartstat(obj.Data, user, partstat)
+	if !ok {
+		s.writeError(w, http.StatusInternalServerError, fmt.Errorf("could not update the event"))
+		return
+	}
+	if _, err := s.davStore.PutCalObject(user, webmailCalendarID, uid, data); err != nil {
+		s.writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"rsvp": partstatToRsvp(partstat)})
 }
 
 // handleCalendarAttachment streams a single event attachment by its position in
@@ -189,8 +229,9 @@ func firstEvent(data string) (ical.Event, bool) {
 }
 
 // parseEvent extracts the first VEVENT from an iCalendar object into the JSON
-// event shape. It returns ok=false for objects it cannot read (e.g. VTODOs).
-func parseEvent(data string) (calendarEvent, bool) {
+// event shape. owner is the logged-in mailbox, used to read back its RSVP and to
+// keep it out of the guest list. It returns ok=false for objects it cannot read.
+func parseEvent(data, owner string) (calendarEvent, bool) {
 	e, ok := firstEvent(data)
 	if !ok {
 		return calendarEvent{}, false
@@ -202,9 +243,10 @@ func parseEvent(data string) (calendarEvent, bool) {
 		Description: propTextDecoded(e.Props, ical.PropDescription),
 		Calendar:    propTextDecoded(e.Props, ical.PropCategories),
 		AllDay:      isAllDay(e),
-		Guests:      eventGuests(e),
+		Guests:      eventGuests(e, owner),
 		Repeat:      rruleFreq(propText(e.Props, ical.PropRecurrenceRule)),
 		Reminder:    alarmMinutes(e),
+		Rsvp:        ownerRsvp(e, owner),
 		Attachments: eventAttachments(e),
 	}
 	if start, err := e.DateTimeStart(time.UTC); err == nil {
@@ -237,15 +279,100 @@ func isAllDay(e ical.Event) bool {
 	return p != nil && strings.EqualFold(p.Params.Get(ical.ParamValue), "DATE")
 }
 
-// eventGuests reads the mailto: attendees off an event.
-func eventGuests(e ical.Event) []string {
+// eventGuests reads the mailto: attendees off an event, excluding the owner
+// (whose ATTENDEE carries their own RSVP, not a guest invitation).
+func eventGuests(e ical.Event, owner string) []string {
 	var out []string
 	for _, p := range e.Props.Values(ical.PropAttendee) {
-		if g := strings.TrimPrefix(p.Value, "mailto:"); g != "" {
-			out = append(out, g)
+		g := strings.TrimPrefix(p.Value, mailtoPrefix)
+		if g == "" || strings.EqualFold(g, owner) {
+			continue
 		}
+		out = append(out, g)
 	}
 	return out
+}
+
+// ownerRsvp reads the owner's ATTENDEE PARTSTAT as an RSVP token (yes/maybe/no),
+// or "none" when they have not responded.
+func ownerRsvp(e ical.Event, owner string) string {
+	if owner == "" {
+		return "none"
+	}
+	target := mailtoPrefix + owner
+	for _, p := range e.Props.Values(ical.PropAttendee) {
+		if strings.EqualFold(p.Value, target) {
+			return partstatToRsvp(p.Params.Get(partstatParam))
+		}
+	}
+	return "none"
+}
+
+// rsvpToPartstat maps an RSVP token to an iCalendar PARTSTAT.
+func rsvpToPartstat(rsvp string) string {
+	switch strings.ToLower(strings.TrimSpace(rsvp)) {
+	case "yes":
+		return "ACCEPTED"
+	case "maybe":
+		return "TENTATIVE"
+	case "no":
+		return "DECLINED"
+	default:
+		return "NEEDS-ACTION"
+	}
+}
+
+// partstatToRsvp maps an iCalendar PARTSTAT back to an RSVP token.
+func partstatToRsvp(ps string) string {
+	switch strings.ToUpper(strings.TrimSpace(ps)) {
+	case "ACCEPTED":
+		return "yes"
+	case "TENTATIVE":
+		return "maybe"
+	case "DECLINED":
+		return "no"
+	default:
+		return "none"
+	}
+}
+
+// setOwnerPartstat rewrites the stored iCalendar object with the owner's
+// ATTENDEE PARTSTAT set to partstat, adding the ATTENDEE if it is missing.
+func setOwnerPartstat(data, owner, partstat string) (string, bool) {
+	cal, err := ical.NewDecoder(strings.NewReader(data)).Decode()
+	if err != nil {
+		return "", false
+	}
+	var ev *ical.Component
+	for _, ch := range cal.Children {
+		if ch.Name == ical.CompEvent {
+			ev = ch
+			break
+		}
+	}
+	if ev == nil {
+		return "", false
+	}
+	target := mailtoPrefix + owner
+	found := false
+	for i := range ev.Props[ical.PropAttendee] {
+		if strings.EqualFold(ev.Props[ical.PropAttendee][i].Value, target) {
+			ev.Props[ical.PropAttendee][i].Params.Set(partstatParam, partstat)
+			found = true
+			break
+		}
+	}
+	if !found {
+		p := ical.NewProp(ical.PropAttendee)
+		p.Value = target
+		p.Params.Set(partstatParam, partstat)
+		ev.Props.Add(p)
+	}
+	var buf strings.Builder
+	if err := ical.NewEncoder(&buf).Encode(cal); err != nil {
+		return "", false
+	}
+	return buf.String(), true
 }
 
 // eventAttachments reads attachment metadata (no data) off an event.
@@ -286,8 +413,9 @@ func eventAttachmentAt(data string, idx int) (name, mime string, raw []byte, ok 
 	return name, p.Params.Get(ical.ParamFormatType), b, true
 }
 
-// buildEvent renders a create request into an iCalendar VEVENT object.
-func buildEvent(uid string, req createEventRequest) string {
+// buildEvent renders a create request into an iCalendar VEVENT object. owner is
+// the logged-in mailbox, recorded as an ATTENDEE carrying its RSVP.
+func buildEvent(uid string, req createEventRequest, owner string) string {
 	cal := ical.NewCalendar()
 	cal.Props.SetText(ical.PropVersion, "2.0")
 	cal.Props.SetText(ical.PropProductID, "-//Mailfold//Calendar//EN")
@@ -300,7 +428,8 @@ func buildEvent(uid string, req createEventRequest) string {
 	setEventText(e, ical.PropCategories, strings.TrimSpace(req.Calendar))
 	e.Props.SetDateTime(ical.PropDateTimeStamp, time.Now().UTC())
 	setEventTimes(e, req)
-	addGuests(e, req.Guests)
+	addGuests(e, req.Guests, owner)
+	addOwnerAttendee(e, owner, req.Rsvp)
 	if freq := normalizeFreq(req.Repeat); freq != "" {
 		p := ical.NewProp(ical.PropRecurrenceRule)
 		p.Value = "FREQ=" + freq
@@ -333,15 +462,28 @@ func setEventTimes(e *ical.Event, req createEventRequest) {
 	e.Props.SetDateTime(ical.PropDateTimeEnd, req.End.UTC())
 }
 
-// addGuests appends ATTENDEE properties for each invited email.
-func addGuests(e *ical.Event, guests []string) {
+// addGuests appends ATTENDEE properties for each invited email, skipping the
+// owner (added separately with their RSVP).
+func addGuests(e *ical.Event, guests []string, owner string) {
 	for _, g := range guests {
-		if g = strings.TrimSpace(g); g != "" {
+		if g = strings.TrimSpace(g); g != "" && !strings.EqualFold(g, owner) {
 			p := ical.NewProp(ical.PropAttendee)
-			p.Value = "mailto:" + g
+			p.Value = mailtoPrefix + g
 			e.Props.Add(p)
 		}
 	}
+}
+
+// addOwnerAttendee records the mailbox owner as an ATTENDEE carrying their RSVP
+// as PARTSTAT.
+func addOwnerAttendee(e *ical.Event, owner, rsvp string) {
+	if owner == "" {
+		return
+	}
+	p := ical.NewProp(ical.PropAttendee)
+	p.Value = mailtoPrefix + owner
+	p.Params.Set(partstatParam, rsvpToPartstat(rsvp))
+	e.Props.Add(p)
 }
 
 // addAttachments appends inline (base64) ATTACH properties.

@@ -245,3 +245,72 @@ func TestWebmailCalendarAllDayAndAttachment(t *testing.T) {
 		t.Errorf("unknown event: want 404, got %d", r.Code)
 	}
 }
+
+// TestWebmailCalendarRsvp covers the owner's RSVP: it round-trips on create,
+// keeps the owner out of the guest list, and can be patched in place.
+func TestWebmailCalendarRsvp(t *testing.T) {
+	h := newAPIWithDAV(t, mockMailcow(t, 0, "").URL, startMemIMAP(t))
+	wt := webmailToken(t, h)
+
+	body := `{"summary":"Roadmap","start":"2026-07-12T09:00:00Z","end":"2026-07-12T10:00:00Z","guests":["a@acme.io","b@acme.io"],"rsvp":"yes"}`
+	rec := do(h, http.MethodPost, "/api/webmail/calendar/events", wt, body)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body.String())
+	}
+	var created struct {
+		UID string `json:"uid"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &created)
+
+	get := func() calendarEvent {
+		r := do(h, http.MethodGet, "/api/webmail/calendar/events", wt, "")
+		var evs []calendarEvent
+		_ = json.Unmarshal(r.Body.Bytes(), &evs)
+		if len(evs) != 1 {
+			t.Fatalf("want 1 event, got %d", len(evs))
+		}
+		return evs[0]
+	}
+
+	ev := get()
+	if ev.Rsvp != "yes" {
+		t.Errorf("rsvp on create = %q, want yes", ev.Rsvp)
+	}
+	if len(ev.Guests) != 2 {
+		t.Errorf("owner leaked into guests: %v", ev.Guests)
+	}
+
+	// Patch the response.
+	pr := do(h, http.MethodPatch, "/api/webmail/calendar/events/"+created.UID+"/rsvp", wt, `{"rsvp":"maybe"}`)
+	if pr.Code != http.StatusOK {
+		t.Fatalf("rsvp patch: %d %s", pr.Code, pr.Body.String())
+	}
+	if got := get().Rsvp; got != "maybe" {
+		t.Errorf("rsvp after patch = %q, want maybe", got)
+	}
+	if do(h, http.MethodPatch, "/api/webmail/calendar/events/"+created.UID+"/rsvp", wt, `{"rsvp":"no"}`); get().Rsvp != "no" {
+		t.Errorf("rsvp declined round-trip failed")
+	}
+
+	// Unknown event -> 404.
+	if r := do(h, http.MethodPatch, "/api/webmail/calendar/events/missing/rsvp", wt, `{"rsvp":"yes"}`); r.Code != http.StatusNotFound {
+		t.Errorf("rsvp on missing event: want 404, got %d", r.Code)
+	}
+}
+
+func TestRsvpPartstatMapping(t *testing.T) {
+	cases := []struct{ rsvp, partstat string }{
+		{"yes", "ACCEPTED"}, {"maybe", "TENTATIVE"}, {"no", "DECLINED"}, {"none", "NEEDS-ACTION"}, {"bogus", "NEEDS-ACTION"},
+	}
+	for _, c := range cases {
+		if got := rsvpToPartstat(c.rsvp); got != c.partstat {
+			t.Errorf("rsvpToPartstat(%q) = %q, want %q", c.rsvp, got, c.partstat)
+		}
+	}
+	back := map[string]string{"ACCEPTED": "yes", "TENTATIVE": "maybe", "DECLINED": "no", "NEEDS-ACTION": "none", "X-WEIRD": "none"}
+	for ps, want := range back {
+		if got := partstatToRsvp(ps); got != want {
+			t.Errorf("partstatToRsvp(%q) = %q, want %q", ps, got, want)
+		}
+	}
+}

@@ -137,6 +137,7 @@ export const wm = {
     list: () => req('GET', '/api/webmail/calendar/events'),
     create: ev => req('POST', '/api/webmail/calendar/events', ev),
     del: uid => req('DELETE', '/api/webmail/calendar/events/' + encodeURIComponent(uid)),
+    setRsvp: (uid, rsvp) => req('PATCH', '/api/webmail/calendar/events/' + encodeURIComponent(uid) + '/rsvp', { rsvp }),
     // downloadAttachment streams a stored event attachment with the webmail
     // token (a plain link cannot send the Authorization header).
     downloadAttachment: async (uid, index, filename) => {
