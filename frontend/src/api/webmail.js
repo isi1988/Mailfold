@@ -2,23 +2,70 @@
 // distinct from the admin session), so it does not go through the admin api
 // client. The token is kept separately in localStorage.
 
+// A user can hold several mailbox sessions at once (multiple Mailfold mailboxes
+// and/or synced external accounts) and switch between them in one webmail UI. The
+// sessions live in WM_ACCOUNTS as [{email, token, external}]; WM_ACTIVE names the
+// selected one. The legacy single-session keys are migrated on first read.
+const WM_ACCOUNTS = 'mailfold.webmail.accounts';
+const WM_ACTIVE = 'mailfold.webmail.active';
 const WM_TOKEN = 'mailfold.webmail.token';
 const WM_EMAIL = 'mailfold.webmail.email';
 
+function writeAccounts(list) {
+  try { localStorage.setItem(WM_ACCOUNTS, JSON.stringify(list)); } catch { /* storage may be unavailable */ }
+}
+function readAccounts() {
+  let list = [];
+  try { list = JSON.parse(localStorage.getItem(WM_ACCOUNTS) || '[]'); } catch { list = []; }
+  if (!Array.isArray(list)) list = [];
+  if (list.length === 0) {
+    // Migrate a pre-multi-account single session into the accounts list.
+    const tok = localStorage.getItem(WM_TOKEN);
+    const em = localStorage.getItem(WM_EMAIL);
+    if (tok && em) {
+      list = [{ email: em, token: tok, external: false }];
+      writeAccounts(list);
+      localStorage.setItem(WM_ACTIVE, em);
+    }
+  }
+  return list;
+}
+
+export function getAccounts() { return readAccounts(); }
+export function getActiveEmail() {
+  const list = readAccounts();
+  const a = localStorage.getItem(WM_ACTIVE) || '';
+  if (a && list.some(x => x.email === a)) return a;
+  return list[0] ? list[0].email : '';
+}
+export function setActiveAccount(email) {
+  try { localStorage.setItem(WM_ACTIVE, email || ''); } catch { /* ignore */ }
+}
+export function addAccount(email, token, external = false) {
+  const list = readAccounts().filter(x => x.email !== email);
+  list.push({ email, token, external: !!external });
+  writeAccounts(list);
+  setActiveAccount(email);
+  return list;
+}
+export function removeAccount(email) {
+  const list = readAccounts().filter(x => x.email !== email);
+  writeAccounts(list);
+  if (getActiveEmail() === email || !list.some(x => x.email === getActiveEmail())) {
+    setActiveAccount(list[0] ? list[0].email : '');
+  }
+  return list;
+}
+// getWebmailToken returns the ACTIVE account's token — every /api/webmail/* call
+// is made as the selected mailbox.
 export function getWebmailToken() {
-  return localStorage.getItem(WM_TOKEN) || '';
+  const acc = readAccounts().find(x => x.email === getActiveEmail());
+  return acc ? acc.token : '';
 }
-export function setWebmailToken(token) {
-  if (token) localStorage.setItem(WM_TOKEN, token);
-  else localStorage.removeItem(WM_TOKEN);
-}
-export function getWebmailEmail() {
-  return localStorage.getItem(WM_EMAIL) || '';
-}
-export function setWebmailEmail(email) {
-  if (email) localStorage.setItem(WM_EMAIL, email);
-  else localStorage.removeItem(WM_EMAIL);
-}
+// Legacy shims kept so existing imports resolve.
+export function setWebmailToken(token) { if (!token) removeAccount(getActiveEmail()); }
+export function getWebmailEmail() { return getActiveEmail(); }
+export function setWebmailEmail() { /* the active email is derived from the accounts store */ }
 
 async function req(method, path, body) {
   const headers = { Accept: 'application/json' };
@@ -85,6 +132,7 @@ export const wm = {
   del: (folder, uid) => req('POST', '/api/webmail/delete', { folder, uid }),
   move: (folder, uid, target) => req('POST', '/api/webmail/move', { folder, uid, target }),
   createFolder: name => req('POST', '/api/webmail/folders', { name }),
+  connectExternal: payload => req('POST', '/api/webmail/external', payload),
 };
 
 // subscribeMail opens a Server-Sent Events stream that fires onMail(data) when

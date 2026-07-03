@@ -141,7 +141,32 @@
       "linkPrompt": "Link URL",
       "clearFormat": "Clear formatting"
     },
-    "compose": "Compose"
+    "compose": "Compose",
+    "account": {
+      "add": "Add account",
+      "addSub": "Add another mailbox to your fold, or connect one from elsewhere — all in one inbox.",
+      "tabMailfold": "Mailfold mailbox",
+      "tabExternal": "External account",
+      "addBtn": "Add mailbox",
+      "connectBtn": "Connect account",
+      "connecting": "Connecting…",
+      "added": "Signed in to {{email}}.",
+      "connected": "External account connected — syncing.",
+      "extInvalid": "Enter the IMAP host and username.",
+      "connectFailed": "Could not connect the account.",
+      "imapHost": "IMAP host",
+      "port": "Port",
+      "encryption": "Encryption",
+      "encNone": "None",
+      "username": "Username",
+      "syncEvery": "Sync every",
+      "min5": "5 minutes",
+      "min15": "15 minutes",
+      "min30": "30 minutes",
+      "hour1": "1 hour",
+      "extHint": "Mailfold imports this mailbox into your account on the schedule above; its mail then appears in your folders.",
+      "accounts": "Accounts"
+    }
   },
   "login": {
     "signIn": "Sign in",

@@ -117,3 +117,22 @@ func TestWebmailEventsStream(t *testing.T) {
 		t.Fatalf("stream missing keepalive ping (no tick fired): %q", body)
 	}
 }
+
+func TestWebmailExternal(t *testing.T) {
+	h := newAPIWithIMAP(t, mockMailcow(t, 0, "").URL, startMemIMAP(t))
+	wt := webmailToken(t, h)
+
+	// Missing host/user -> 400.
+	if rec := do(h, http.MethodPost, "/api/webmail/external", wt, `{"host":""}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("missing host: want 400, got %d", rec.Code)
+	}
+	// Valid request -> mailcow add/syncjob is called and succeeds via the mock.
+	body := `{"host":"imap.example.com","port":"993","user":"me@example.com","password":"pw","encryption":"SSL","interval":15}`
+	if rec := do(h, http.MethodPost, "/api/webmail/external", wt, body); rec.Code != http.StatusOK {
+		t.Fatalf("connect: want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	// Unauthenticated -> 401.
+	if rec := do(h, http.MethodPost, "/api/webmail/external", "", body); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("no token: want 401, got %d", rec.Code)
+	}
+}

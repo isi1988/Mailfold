@@ -17,6 +17,7 @@ import { useToast } from '../components/Toast.jsx';
 import { useT } from '../i18n/index.jsx';
 import { wm, downloadAttachment, subscribeMail } from '../api/webmail.js';
 import { ComposeModal } from './ComposeModal.jsx';
+import { AddAccountModal } from './AddAccountModal.jsx';
 import { Loading, ErrorState, Empty } from '../components/States.jsx';
 
 const SYS_ICON = { inbox: 'inbox', sent: 'send', drafts: 'drafts', archive: 'archive', junk: 'shield', spam: 'shield', trash: 'trash' };
@@ -112,8 +113,9 @@ function WebmailLogin() {
 
 function WebmailClient() {
   const t = useT();
-  const { email, expire, logout } = useWebmailAuth();
+  const { email, accounts, switchAccount, expire, logout } = useWebmailAuth();
   const { toast } = useToast();
+  const [addingAccount, setAddingAccount] = useState(false);
 
   const [folders, setFolders] = useState([]);
   const [folder, setFolder] = useState('INBOX');
@@ -299,9 +301,18 @@ function WebmailClient() {
         <FolderItem icon={<Icon name="clock" size={14} style={{ color: 'var(--faint)' }} />} label={t('webmail.snoozed')}
           onClick={() => toast(t('webmail.snoozeUnavailable'))} style={{ cursor: 'pointer' }} />
 
-        <div className="mf-row" style={{ gap: 7, padding: '13px 10px 5px' }}>
-          <Icon name="chevron-down" size={12} style={{ color: 'var(--faint)' }} />
-          <span className="mf-u-mono mf-u-muted mf-truncate" style={{ fontSize: 11, fontWeight: 600 }}>{email}</span>
+        <div className="mf-side-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Icon name="chevron-down" size={11} style={{ color: 'var(--faint)' }} />{t('webmail.account.accounts')}
+        </div>
+        {accounts.map(acc => (
+          <div key={acc.email} onClick={() => switchAccount(acc.email)}
+            className="mf-row" style={{ gap: 8, padding: '6px 10px', borderRadius: 8, cursor: 'pointer', background: acc.email === email ? 'var(--accent-soft)' : 'transparent' }}>
+            <Avatar size={22}>{initials(acc.email)}</Avatar>
+            <span className="mf-u-mono mf-truncate" style={{ flex: 1, fontSize: 11.5, fontWeight: 600, color: acc.email === email ? 'var(--accent-ink)' : 'var(--muted)' }}>{acc.email}</span>
+          </div>
+        ))}
+        <div onClick={() => setAddingAccount(true)} className="mf-row" style={{ gap: 9, padding: '6px 10px', color: 'var(--accent-ink)', font: '600 12.5px var(--font-sans)', cursor: 'pointer' }}>
+          <span style={{ width: 22, height: 22, borderRadius: 6, border: '1px dashed var(--hair)', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none', fontSize: 15, lineHeight: 1 }}>+</span>{t('webmail.account.add')}
         </div>
         {sysFolders.map(f => {
           const isActive = f.name === folder && !filterMode;
@@ -425,12 +436,15 @@ function WebmailClient() {
           onSent={() => loadMessages(folder)}
         />
       )}
+      {addingAccount && <AddAccountModal onClose={() => setAddingAccount(false)} />}
     </div>
   );
 }
 
 export function WebmailPage() {
-  const { status } = useWebmailAuth();
+  const { status, email } = useWebmailAuth();
   if (status !== 'authed') return <WebmailLogin />;
-  return <WebmailClient />;
+  // Key by the active account so switching mailboxes remounts the client with a
+  // clean folder/message state for the newly-selected session.
+  return <WebmailClient key={email} />;
 }

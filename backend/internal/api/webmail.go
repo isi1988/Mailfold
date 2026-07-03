@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/isi1988/Mailfold/backend/internal/mailcow"
 	"github.com/isi1988/Mailfold/backend/internal/webmail"
 )
 
@@ -36,9 +37,71 @@ func (s *Server) registerWebmailRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/webmail/folders", s.requireWebmail(s.handleWebmailCreateFolder))
 	mux.HandleFunc("GET /api/webmail/search", s.requireWebmail(s.handleWebmailSearch))
 	mux.HandleFunc("GET /api/webmail/attachment", s.requireWebmail(s.handleWebmailAttachment))
+	mux.HandleFunc("POST /api/webmail/external", s.requireWebmail(s.handleWebmailExternal))
 	// The events stream authenticates from a query parameter, not a bearer
 	// header, because the browser EventSource API cannot set request headers.
 	mux.HandleFunc("GET /api/webmail/events", s.handleWebmailEvents)
+}
+
+// externalSyncRequest describes an external IMAP account the user wants to pull
+// into their own mailbox.
+type externalSyncRequest struct {
+	Host       string `json:"host"`
+	Port       string `json:"port"`
+	User       string `json:"user"`
+	Password   string `json:"password"`
+	Encryption string `json:"encryption"` // SSL | TLS | PLAIN
+	Interval   int    `json:"interval"`   // minutes between syncs
+}
+
+// handleWebmailExternal connects an external mailbox by creating a mailcow sync
+// job that imports it into the *logged-in* mailbox — a webmail user can only
+// pull mail into their own account (the target is forced to their address), so
+// this endpoint cannot be used to write into someone else's mailbox.
+func (s *Server) handleWebmailExternal(w http.ResponseWriter, r *http.Request) {
+	cred := webmailCreds(r)
+	var req externalSyncRequest
+	if err := decodeJSON(r, &req); err != nil {
+		s.writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if req.Host == "" || req.User == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "host and user are required"})
+		return
+	}
+	port := req.Port
+	if port == "" {
+		port = "993"
+	}
+	enc := req.Encryption
+	if enc != "TLS" && enc != "PLAIN" {
+		enc = "SSL"
+	}
+	interval := req.Interval
+	if interval <= 0 {
+		interval = 15
+	}
+	attr := map[string]any{
+		"username":          cred.Email, // import INTO the logged-in mailbox only
+		"host1":             req.Host,
+		"port1":             port,
+		"user1":             req.User,
+		"password1":         req.Password,
+		"enc1":              enc,
+		"mins_interval":     interval,
+		"active":            "1",
+		"delete2duplicates": "1",
+	}
+	results, err := s.mc.AddSyncJob(r.Context(), attr)
+	if err != nil {
+		s.writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	if ok, _ := mailcow.ResultsOK(results); !ok {
+		s.writeError(w, http.StatusBadGateway, errors.New("mailcow rejected the sync job"))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "connected"})
 }
 
 // handleWebmailEvents is a Server-Sent Events stream that notifies the client
