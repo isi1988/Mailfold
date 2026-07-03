@@ -304,3 +304,22 @@ func TestSaveToSent(t *testing.T) {
 		t.Error("SaveToSent should fail when the server is unreachable")
 	}
 }
+
+func TestMessagesPreview(t *testing.T) {
+	c := NewClient(startIMAP(t), "", false, false)
+	msgs, err := c.Messages("username", "password", "INBOX", 10)
+	if err != nil {
+		t.Fatalf("Messages: %v", err)
+	}
+	if len(msgs) == 0 {
+		t.Fatal("expected at least one message")
+	}
+	// The sample INBOX message has a body, so a non-empty single-line preview
+	// should be derived.
+	if strings.TrimSpace(msgs[0].Preview) == "" {
+		t.Errorf("expected a body preview, got empty (subject=%q)", msgs[0].Subject)
+	}
+	if strings.Contains(msgs[0].Preview, "\n") {
+		t.Errorf("preview should be a single line, got %q", msgs[0].Preview)
+	}
+}

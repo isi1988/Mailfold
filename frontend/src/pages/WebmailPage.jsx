@@ -365,7 +365,7 @@ function WebmailClient() {
                 <MailListItem key={m.uid}
                   from={addrLabel(m.from) || t('webmail.noSubject')}
                   subject={m.subject || t('webmail.noSubject')}
-                  preview=""
+                  preview={m.preview || ''}
                   time={shortTime(m.date)}
                   unread={!hasFlag(m.flags, '\\Seen')}
                   starred={hasFlag(m.flags, '\\Flagged')}

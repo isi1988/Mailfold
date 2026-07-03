@@ -28,6 +28,9 @@ type MessageHeader struct {
 	Flags   []string  `json:"flags"`
 	Seen    bool      `json:"seen"`
 	Size    uint32    `json:"size"`
+	// Preview is a short plain-text snippet of the body, shown under the subject
+	// in the message list.
+	Preview string `json:"preview"`
 }
 
 // Attachment describes a non-inline message part.

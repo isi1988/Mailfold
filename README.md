@@ -30,8 +30,13 @@ transports, TLS policies, forwarding hosts, BCC/recipient maps, templates), and
 an "Administration" section manages delegated admins and OAuth2 clients.
 
 **Webmail** — a built-in three-pane webmail client (folders · message list ·
-reader) with compose, reply, star, archive, delete and attachment download, so
-end users read and send mail without a separate client.
+reader) with message previews, star, flag, archive, delete, attachment download
+and live new-mail notifications (over SSE). Compose is a rich-text editor
+(bold/italic/lists/links, sending HTML), sent mail is saved to Sent, and folders
+and labels can be created inline. A user can hold **several mailboxes in one
+place** — switch between linked Mailfold accounts, or connect an **external
+IMAP mailbox** that syncs into the inbox — so end users read and send mail
+without a separate client.
 
 **One unified login** — a single sign-in screen checks the credentials against
 *both* the admin login and a mailbox (webmail) login in parallel: whoever you

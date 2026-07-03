@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"sort"
+	"strings"
 
 	"github.com/emersion/go-imap"
 	"github.com/emersion/go-imap/client"
@@ -114,20 +115,63 @@ func (c *Client) Messages(email, password, folder string, limit int) ([]MessageH
 	seqset := new(imap.SeqSet)
 	seqset.AddRange(from, mbox.Messages)
 
-	items := []imap.FetchItem{imap.FetchEnvelope, imap.FetchFlags, imap.FetchUid, imap.FetchInternalDate, imap.FetchRFC822Size}
+	// Fetch a peeked prefix of each message body so the list can show a one-line
+	// text preview under the subject without a per-message round-trip.
+	section := &imap.BodySectionName{Peek: true, Partial: []int{0, 4096}}
+	items := []imap.FetchItem{imap.FetchEnvelope, imap.FetchFlags, imap.FetchUid, imap.FetchInternalDate, imap.FetchRFC822Size, section.FetchItem()}
 	ch := make(chan *imap.Message, limit)
 	done := make(chan error, 1)
 	go func() { done <- ic.Fetch(seqset, items, ch) }()
 
 	out := []MessageHeader{}
 	for m := range ch {
-		out = append(out, headerFrom(m))
+		h := headerFrom(m)
+		if body := m.GetBody(section); body != nil {
+			var tmp Message
+			_ = parseBody(body, &tmp) // best-effort; a truncated MIME prefix still yields the start of the text
+			h.Preview = snippet(tmp.Text, tmp.HTML)
+		}
+		out = append(out, h)
 	}
 	if err := <-done; err != nil {
 		return nil, err
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].UID > out[j].UID })
 	return out, nil
+}
+
+// snippet builds a short, single-line plain-text preview from a message's text
+// (or HTML, tags stripped) body.
+func snippet(text, html string) string {
+	s := text
+	if strings.TrimSpace(s) == "" {
+		s = stripTags(html)
+	}
+	s = strings.Join(strings.Fields(s), " ") // collapse all whitespace runs to single spaces
+	r := []rune(s)
+	if len(r) > 140 {
+		return string(r[:140]) + "…"
+	}
+	return s
+}
+
+// stripTags removes HTML tags for the preview, replacing each with a space so
+// words do not run together.
+func stripTags(h string) string {
+	var b strings.Builder
+	inTag := false
+	for _, r := range h {
+		switch {
+		case r == '<':
+			inTag = true
+		case r == '>':
+			inTag = false
+			b.WriteByte(' ')
+		case !inTag:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // CheckSince returns INBOX messages whose UID is strictly greater than sinceUID,
