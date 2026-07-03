@@ -85,3 +85,17 @@ export const wm = {
   del: (folder, uid) => req('POST', '/api/webmail/delete', { folder, uid }),
   move: (folder, uid, target) => req('POST', '/api/webmail/move', { folder, uid, target }),
 };
+
+// subscribeMail opens a Server-Sent Events stream that fires onMail(data) when
+// new INBOX mail arrives ({ count, messages }). The token goes in the query
+// because EventSource cannot set an Authorization header. Returns an unsubscribe
+// function; a no-op when there is no session or SSE is unavailable.
+export function subscribeMail(onMail) {
+  const token = getWebmailToken();
+  if (!token || typeof EventSource === 'undefined') return () => {};
+  const es = new EventSource('/api/webmail/events?token=' + encodeURIComponent(token));
+  es.addEventListener('mail', e => {
+    try { onMail(JSON.parse(e.data)); } catch { /* ignore a malformed event */ }
+  });
+  return () => es.close();
+}

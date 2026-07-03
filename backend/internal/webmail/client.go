@@ -130,6 +130,53 @@ func (c *Client) Messages(email, password, folder string, limit int) ([]MessageH
 	return out, nil
 }
 
+// CheckSince returns INBOX messages whose UID is strictly greater than sinceUID,
+// along with the current highest UID. On the first call (sinceUID == 0) it only
+// establishes the baseline: it reports no messages and returns the current
+// highest UID, so a poller can then watch for anything above it. It is the basis
+// of the new-mail notification stream.
+func (c *Client) CheckSince(email, password string, sinceUID uint32) ([]MessageHeader, uint32, error) {
+	ic, err := c.dial(email, password)
+	if err != nil {
+		return nil, sinceUID, err
+	}
+	defer func() { _ = ic.Logout() }()
+
+	mbox, err := ic.Select("INBOX", true)
+	if err != nil {
+		return nil, sinceUID, err
+	}
+	// The highest existing UID is UidNext-1 (0 when the mailbox is empty).
+	highest := uint32(0)
+	if mbox.UidNext > 1 {
+		highest = mbox.UidNext - 1
+	}
+	if sinceUID == 0 || highest <= sinceUID {
+		// Baseline call, or nothing newer than what the caller has already seen.
+		if highest < sinceUID {
+			highest = sinceUID
+		}
+		return nil, highest, nil
+	}
+
+	seqset := new(imap.SeqSet)
+	seqset.AddRange(sinceUID+1, 0) // 0 means '*' (through the last UID)
+	items := []imap.FetchItem{imap.FetchEnvelope, imap.FetchFlags, imap.FetchUid, imap.FetchInternalDate, imap.FetchRFC822Size}
+	ch := make(chan *imap.Message, 16)
+	done := make(chan error, 1)
+	go func() { done <- ic.UidFetch(seqset, items, ch) }()
+
+	var out []MessageHeader
+	for m := range ch {
+		out = append(out, headerFrom(m))
+	}
+	if err := <-done; err != nil {
+		return nil, sinceUID, err
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].UID > out[j].UID })
+	return out, highest, nil
+}
+
 // Message reads a single message by UID, decoding its text/HTML body and
 // listing its attachments.
 func (c *Client) Message(email, password, folder string, uid uint32) (*Message, error) {

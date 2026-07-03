@@ -146,6 +146,16 @@ func (r *statusRecorder) WriteHeader(code int) {
 	r.ResponseWriter.WriteHeader(code)
 }
 
+// Flush forwards to the underlying ResponseWriter when it supports flushing, so
+// streaming responses (Server-Sent Events) still work through this wrapper —
+// http.Flusher is not part of http.ResponseWriter and so is not promoted from
+// the embedded field automatically.
+func (r *statusRecorder) Flush() {
+	if f, ok := r.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 // requestID returns the incoming request id when the client supplied one via the
 // X-Request-Id header, otherwise it generates a fresh random hex id. Reusing a
 // caller-provided id lets a reverse proxy or the frontend correlate a request

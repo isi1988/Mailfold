@@ -241,3 +241,43 @@ func TestSessionExpiryAndGC(t *testing.T) {
 		t.Error("GC should have removed the expired session")
 	}
 }
+
+func TestCheckSince(t *testing.T) {
+	c := NewClient(startIMAP(t), "", false, false)
+
+	// Baseline: no new messages reported, but a positive high-water UID for the
+	// sample INBOX the memory backend ships with.
+	msgs, base, err := c.CheckSince("username", "password", 0)
+	if err != nil {
+		t.Fatalf("baseline: %v", err)
+	}
+	if len(msgs) != 0 {
+		t.Fatalf("baseline should report no new messages, got %d", len(msgs))
+	}
+	if base == 0 {
+		t.Fatal("baseline UID should be > 0 for the sample INBOX")
+	}
+
+	// Nothing new since the baseline.
+	if m, u, err := c.CheckSince("username", "password", base); err != nil || len(m) != 0 || u != base {
+		t.Fatalf("no-new: err=%v n=%d uid=%d (want 0 new, uid=%d)", err, len(m), u, base)
+	}
+
+	// Asking for anything above base-1 must surface the newest message.
+	fresh, u, err := c.CheckSince("username", "password", base-1)
+	if err != nil {
+		t.Fatalf("detect: %v", err)
+	}
+	if len(fresh) == 0 {
+		t.Fatal("expected to detect the newest message")
+	}
+	if u != base {
+		t.Fatalf("high-water UID = %d, want %d", u, base)
+	}
+
+	// A dial failure propagates.
+	bad := NewClient("127.0.0.1:1", "", false, false)
+	if _, _, err := bad.CheckSince("u", "p", 0); err == nil {
+		t.Error("CheckSince should fail when the server is unreachable")
+	}
+}

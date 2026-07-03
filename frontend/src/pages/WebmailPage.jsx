@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { FolderItem } from '../ds/components/molecules/FolderItem.jsx';
 import { MailListItem } from '../ds/components/molecules/MailListItem.jsx';
 import { SearchInput } from '../ds/components/molecules/SearchInput.jsx';
@@ -15,7 +15,7 @@ import { initials } from '../ds/data/sample.js';
 import { useWebmailAuth } from '../auth/WebmailAuthContext.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { useT } from '../i18n/index.jsx';
-import { wm, downloadAttachment } from '../api/webmail.js';
+import { wm, downloadAttachment, subscribeMail } from '../api/webmail.js';
 import { Loading, ErrorState, Empty } from '../components/States.jsx';
 
 const FOLDER_ICON = { inbox: 'inbox', sent: 'send', drafts: 'drafts', archive: 'archive', junk: 'shield', spam: 'shield', trash: 'trash' };
@@ -164,6 +164,31 @@ function WebmailClient() {
   }, [onErr]);
 
   useEffect(() => { loadMessages(folder); }, [folder, loadMessages]);
+
+  // Live new-mail notifications over SSE. The handler is kept in a ref so the
+  // stream is opened once (on mount) yet always runs the latest logic — it
+  // toasts an alert and, when the INBOX is open, prepends the new headers
+  // without disturbing an open message.
+  const notifyRef = useRef(null);
+  notifyRef.current = data => {
+    const incoming = Array.isArray(data.messages) ? data.messages : [];
+    const n = data.count || incoming.length;
+    if (!n) return;
+    const first = incoming[0];
+    const who = first && first.from && first.from[0] ? (first.from[0].name || first.from[0].email) : '';
+    toast(t('webmail.newMail', { count: n }), first ? [who, first.subject].filter(Boolean).join(' — ') : '');
+    if (folder === 'INBOX' && incoming.length) {
+      setMessages(list => {
+        const known = new Set(list.map(m => m.uid));
+        const fresh = incoming.filter(m => !known.has(m.uid));
+        return fresh.length ? [...fresh, ...list] : list;
+      });
+    }
+  };
+  useEffect(() => {
+    const unsub = subscribeMail(data => { if (notifyRef.current) notifyRef.current(data); });
+    return unsub;
+  }, []);
 
   async function openMessage(m) {
     setSelected(m);

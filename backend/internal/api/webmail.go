@@ -2,11 +2,20 @@ package api
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/isi1988/Mailfold/backend/internal/webmail"
 )
+
+// webmailEventInterval is how often the events stream polls the INBOX for new
+// mail. IMAP is polled per connected client, so this trades notification latency
+// against server load. It is a var so tests can shorten it.
+var webmailEventInterval = 20 * time.Second
 
 // webmailCtxKey is the context key holding the authenticated webmail credentials.
 const webmailCtxKey ctxKey = "webmail"
@@ -27,6 +36,69 @@ func (s *Server) registerWebmailRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/webmail/folders", s.requireWebmail(s.handleWebmailCreateFolder))
 	mux.HandleFunc("GET /api/webmail/search", s.requireWebmail(s.handleWebmailSearch))
 	mux.HandleFunc("GET /api/webmail/attachment", s.requireWebmail(s.handleWebmailAttachment))
+	// The events stream authenticates from a query parameter, not a bearer
+	// header, because the browser EventSource API cannot set request headers.
+	mux.HandleFunc("GET /api/webmail/events", s.handleWebmailEvents)
+}
+
+// handleWebmailEvents is a Server-Sent Events stream that notifies the client
+// when new mail arrives in the INBOX. It polls IMAP every webmailEventInterval
+// for messages above the highest UID seen at connect time and emits a "mail"
+// event with the new headers. Comment lines act as keepalives. The stream ends
+// when the client disconnects.
+func (s *Server) handleWebmailEvents(w http.ResponseWriter, r *http.Request) {
+	cred, ok := s.webmailSessions.Get(r.URL.Query().Get("token"))
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		s.writeError(w, http.StatusInternalServerError, errors.New("streaming unsupported"))
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no") // disable proxy buffering (nginx)
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.WriteString(w, ": connected\n\n")
+	flusher.Flush()
+
+	ctx := r.Context()
+	// Establish the baseline so only genuinely new mail is reported. A transient
+	// IMAP error here is non-fatal; the stream stays open and retries on the tick.
+	_, sinceUID, err := s.webmail.CheckSince(cred.Email, cred.Password, 0)
+	if err != nil {
+		s.logger.Warn("webmail events baseline failed", "email", cred.Email, "error", err)
+	}
+
+	ticker := time.NewTicker(webmailEventInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			msgs, newUID, err := s.webmail.CheckSince(cred.Email, cred.Password, sinceUID)
+			if err != nil {
+				_, _ = io.WriteString(w, ": ping\n\n") // keepalive; skip this tick
+				flusher.Flush()
+				continue
+			}
+			sinceUID = newUID
+			if len(msgs) == 0 {
+				_, _ = io.WriteString(w, ": ping\n\n")
+				flusher.Flush()
+				continue
+			}
+			payload, _ := json.Marshal(map[string]any{"count": len(msgs), "messages": msgs})
+			if _, err := io.WriteString(w, "event: mail\ndata: "+string(payload)+"\n\n"); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+	}
 }
 
 // requireWebmail authenticates a webmail request from its bearer token and

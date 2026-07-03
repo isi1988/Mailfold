@@ -99,7 +99,9 @@
     "send": "Send",
     "sending": "Sending…",
     "newMessage": "New message",
-    "noSubject": "(no subject)"
+    "noSubject": "(no subject)",
+    "newMail_one": "New message",
+    "newMail_other": "{{count}} new messages"
   },
   "login": {
     "signIn": "Sign in",
