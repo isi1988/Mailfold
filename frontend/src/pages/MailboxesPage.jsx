@@ -17,6 +17,7 @@ import { api } from '../api/client.js';
 import { AsyncView } from '../components/States.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { isActive, human, asList } from '../lib/format.js';
+import { decodeIdnAddress, decodeIdnDomain } from '../lib/idn.js';
 import { useT } from '../i18n/index.jsx';
 import { MailboxDrawer } from './MailboxDrawer.jsx';
 import { MailboxImportDrawer } from './MailboxImportDrawer.jsx';
@@ -102,7 +103,7 @@ export function MailboxesPage() {
     setConfirmMb(null);
     try {
       await api.del('/api/mailboxes', { items: [mb.username] });
-      toast(t('mailboxes.form.deleted', { mailbox: mb.username }));
+      toast(t('mailboxes.form.deleted', { mailbox: decodeIdnAddress(mb.username) }));
       reload();
     } catch (err) {
       toast(t('mailboxes.form.failed'), (err && err.body && err.body.message) || (err && err.message) || '');
@@ -175,11 +176,11 @@ export function MailboxesPage() {
               <div className="mf-cell-user">
                 <Avatar size={34}>{initials(m.name || m.username)}</Avatar>
                 <div className="mf-min0">
-                  <div className="mf-cell-name mf-truncate">{m.name || m.username}</div>
-                  <div className="mf-cell-sub mf-truncate">{m.username}</div>
+                  <div className="mf-cell-name mf-truncate">{m.name || decodeIdnAddress(m.username)}</div>
+                  <div className="mf-cell-sub mf-truncate">{decodeIdnAddress(m.username)}</div>
                 </div>
               </div>
-              <span className="mf-u-muted" style={{ fontSize: 13 }}>{m.domain}</span>
+              <span className="mf-u-muted" style={{ fontSize: 13 }}>{decodeIdnDomain(m.domain)}</span>
               {(() => {
                 const pct = clampPct(m.percent_in_use);
                 const unlimited = (Number(m.quota) || 0) <= 0;
@@ -231,7 +232,7 @@ export function MailboxesPage() {
       {confirmMb && (
         <ConfirmModal
           title={t('mailboxes.form.deleteTitle')}
-          msg={t('mailboxes.form.deleteMsg', { mailbox: confirmMb.username })}
+          msg={t('mailboxes.form.deleteMsg', { mailbox: decodeIdnAddress(confirmMb.username) })}
           cta={t('common.delete')}
           danger
           onCancel={() => setConfirmMb(null)}

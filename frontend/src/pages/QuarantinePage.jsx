@@ -12,6 +12,7 @@ import { AsyncView } from '../components/States.jsx';
 import { asList } from '../lib/format.js';
 import { useToast } from '../components/Toast.jsx';
 import { useT } from '../i18n/index.jsx';
+import { decodeIdnAddress } from '../lib/idn.js';
 
 const PAGE_SIZE = 20;
 
@@ -21,10 +22,10 @@ function rowId(q) {
   return q.id ?? q.qid ?? q.rspamd_hash ?? q.rspamd_qid ?? null;
 }
 function sender(q) {
-  return q.sender || q.from || q.header_from || q.env_from || '';
+  return decodeIdnAddress(q.sender || q.from || q.header_from || q.env_from || '');
 }
 function recipient(q) {
-  return q.rcpt || q.recipient || q.rcpts || q.env_rcpt || '';
+  return decodeIdnAddress(q.rcpt || q.recipient || q.rcpts || q.env_rcpt || '');
 }
 function subject(q) {
   return q.subject || '';

@@ -7,6 +7,7 @@ import { wm } from '../api/webmail.js';
 import { useWebmailAuth } from '../auth/WebmailAuthContext.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { useT } from '../i18n/index.jsx';
+import { decodeIdnAddress } from '../lib/idn.js';
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const MINI_HEAD = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
@@ -784,7 +785,7 @@ export function CalendarView({ onAppView }) {
       <div className="mf-cal-head">
         <div>
           <h1 className="mf-page-head__title" style={{ fontSize: 27 }}>{t('calendar.calendarTitle')}</h1>
-          <div className="mf-page-head__sub">{title} · {email}</div>
+          <div className="mf-page-head__sub">{title} · {decodeIdnAddress(email)}</div>
         </div>
         <Segmented className="mf-cal-appseg" options={[t('webmail.view.mail'), t('webmail.view.calendar')]} value={t('webmail.view.calendar')}
           onSelect={v => onAppView && onAppView(v === t('webmail.view.mail') ? 'mail' : 'calendar')} />

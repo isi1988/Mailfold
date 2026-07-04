@@ -1,5 +1,6 @@
 import React from 'react';
 import { ResourceManager } from '../components/ResourceManager.jsx';
+import { decodeIdnDomain } from '../lib/idn.js';
 import { useT } from '../i18n/index.jsx';
 
 export function RelayHostsPage() {
@@ -14,7 +15,8 @@ export function RelayHostsPage() {
       filterKeys={['hostname', 'username']}
       filterPlaceholder={t('advanced.relayhosts.filter')}
       columns={[
-        { key: 'hostname', label: t('advanced.relayhosts.col.hostname'), w: '2fr', mono: true },
+        { key: 'hostname', label: t('advanced.relayhosts.col.hostname'), w: '2fr', mono: true,
+          render: r => decodeIdnDomain(r.hostname) },
         { key: 'username', label: t('advanced.relayhosts.col.username'), w: '1.5fr' },
         {
           key: 'active', label: t('advanced.relayhosts.col.status'), w: '.8fr',
@@ -36,7 +38,7 @@ export function RelayHostsPage() {
         deleteTitle: t('advanced.relayhosts.deleteTitle'),
         deleteMsg: (name) => t('advanced.relayhosts.deleteMsg', { name }),
       }}
-      describe={r => r.hostname || String(r.id)}
+      describe={r => decodeIdnDomain(r.hostname || String(r.id))}
     />
   );
 }

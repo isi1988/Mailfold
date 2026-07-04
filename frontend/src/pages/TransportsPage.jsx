@@ -1,5 +1,6 @@
 import React from 'react';
 import { ResourceManager } from '../components/ResourceManager.jsx';
+import { decodeIdnDomain } from '../lib/idn.js';
 import { useT } from '../i18n/index.jsx';
 
 export function TransportsPage() {
@@ -14,7 +15,8 @@ export function TransportsPage() {
       filterKeys={['destination', 'nexthop', 'username']}
       filterPlaceholder={t('advanced.transports.filter')}
       columns={[
-        { key: 'destination', label: t('advanced.transports.col.destination'), w: '2fr', mono: true },
+        { key: 'destination', label: t('advanced.transports.col.destination'), w: '2fr', mono: true,
+          render: r => decodeIdnDomain(r.destination) },
         { key: 'nexthop', label: t('advanced.transports.col.nexthop'), w: '2fr', mono: true },
         { key: 'username', label: t('advanced.transports.col.username'), w: '1.5fr' },
         { key: 'active', label: t('advanced.transports.col.status'), w: '.8fr',
@@ -36,7 +38,7 @@ export function TransportsPage() {
         deleteTitle: t('advanced.transports.deleteTitle'),
         deleteMsg: (name) => t('advanced.transports.deleteMsg', { name }),
       }}
-      describe={r => r.destination || String(r.id)}
+      describe={r => decodeIdnDomain(r.destination || String(r.id))}
     />
   );
 }

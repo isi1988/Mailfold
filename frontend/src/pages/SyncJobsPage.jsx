@@ -17,6 +17,7 @@ import { api } from '../api/client.js';
 import { AsyncView } from '../components/States.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { isActive, asList } from '../lib/format.js';
+import { decodeIdnAddress } from '../lib/idn.js';
 import { useT } from '../i18n/index.jsx';
 
 const PAGE_SIZE = 20;
@@ -57,7 +58,7 @@ export function SyncJobsPage() {
     setConfirmJob(null);
     try {
       await api.del('/api/syncjobs', { items: [job.id] });
-      toast(t('syncjobs.form.deleted', { job: job.user1 || job.host1 || job.id }));
+      toast(t('syncjobs.form.deleted', { job: decodeIdnAddress(job.user1 || job.host1 || job.id) }));
       reload();
     } catch (err) {
       toast(t('syncjobs.form.failed'), errText(err, ''));
@@ -111,14 +112,14 @@ export function SyncJobsPage() {
         <Table columns={cols}>
           {paged.map(s => {
             const st = jobStatus(s);
-            const source = (s.host1 || '') + (s.user1 ? (s.host1 ? ' · ' : '') + s.user1 : '');
+            const source = decodeIdnAddress(s.host1 || '') + (s.user1 ? (s.host1 ? ' · ' : '') + decodeIdnAddress(s.user1) : '');
             return (
               <TableRow key={s.id} onClick={() => setDrawer({ mode: 'edit', job: s })} style={{ cursor: 'pointer' }}>
                 <div className="mf-min0">
-                  <div className="mf-truncate" style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>{s.user1 || s.host1 || t('syncjobs.unnamed')}</div>
+                  <div className="mf-truncate" style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>{decodeIdnAddress(s.user1 || s.host1 || t('syncjobs.unnamed'))}</div>
                   <div className="mf-u-faint mf-u-mono mf-truncate" style={{ fontSize: 11.5 }}>{source || '—'}</div>
                 </div>
-                <span className="mf-u-muted mf-u-mono mf-truncate" style={{ fontSize: 12.5 }}>{s.user2 || '—'}</span>
+                <span className="mf-u-muted mf-u-mono mf-truncate" style={{ fontSize: 12.5 }}>{decodeIdnAddress(s.user2) || '—'}</span>
                 <span className="mf-u-muted" style={{ fontSize: 12.5 }}>{t('syncjobs.everyMin', { count: Number(s.mins_interval) || 0 })}</span>
                 <span className="mf-u-faint" style={{ fontSize: 12.5 }}>{lastRun(s, t('syncjobs.never'))}</span>
                 <span><Pill tone={tone(st)}>{statusLabel[st]}</Pill></span>
@@ -148,7 +149,7 @@ export function SyncJobsPage() {
       {confirmJob && (
         <ConfirmModal
           title={t('syncjobs.form.deleteTitle')}
-          msg={t('syncjobs.form.deleteMsg', { job: confirmJob.user1 || confirmJob.host1 || confirmJob.id })}
+          msg={t('syncjobs.form.deleteMsg', { job: decodeIdnAddress(confirmJob.user1 || confirmJob.host1 || confirmJob.id) })}
           cta={t('common.delete')}
           danger
           onCancel={() => setConfirmJob(null)}
@@ -217,7 +218,7 @@ function SyncJobDrawer({ mode, job, mailboxes = [], onClose, onSaved, onDelete }
         };
         if (password1) attr.password1 = password1;
         await api.put('/api/syncjobs', { items: [job.id], attr });
-        toast(t('syncjobs.form.updated', { job: user1.trim() || host1.trim() }));
+        toast(t('syncjobs.form.updated', { job: decodeIdnAddress(user1.trim() || host1.trim()) }));
       } else {
         await api.post('/api/syncjobs', {
           host1: host1.trim(),
@@ -230,7 +231,7 @@ function SyncJobDrawer({ mode, job, mailboxes = [], onClose, onSaved, onDelete }
           active: active ? '1' : '0',
           delete1: deleteSource ? '1' : '0',
         });
-        toast(t('syncjobs.form.created', { job: user1.trim() }));
+        toast(t('syncjobs.form.created', { job: decodeIdnAddress(user1.trim()) }));
       }
       onSaved();
       onClose();
@@ -256,7 +257,7 @@ function SyncJobDrawer({ mode, job, mailboxes = [], onClose, onSaved, onDelete }
   return (
     <Drawer
       title={editing ? t('syncjobs.form.editTitle') : t('syncjobs.form.newTitle')}
-      subtitle={user1 || host1 || t('syncjobs.form.newTitle')}
+      subtitle={decodeIdnAddress(user1 || host1) || t('syncjobs.form.newTitle')}
       footer={footer}
       onClose={onClose}
     >
@@ -293,9 +294,9 @@ function SyncJobDrawer({ mode, job, mailboxes = [], onClose, onSaved, onDelete }
         {mailboxes.length ? (
           <select className="mf-input" value={user2} onChange={e => setUser2(e.target.value)}>
             {!editing && !user2 && <option value="" disabled>{t('syncjobs.form.selectTarget')}</option>}
-            {mailboxes.map(m => <option key={m.username} value={m.username}>{m.username}</option>)}
+            {mailboxes.map(m => <option key={m.username} value={m.username}>{decodeIdnAddress(m.username)}</option>)}
             {editing && user2 && !mailboxes.some(m => m.username === user2) && (
-              <option value={user2}>{user2}</option>
+              <option value={user2}>{decodeIdnAddress(user2)}</option>
             )}
           </select>
         ) : (

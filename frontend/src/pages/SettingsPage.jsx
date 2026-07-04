@@ -15,6 +15,7 @@ import { AsyncView } from '../components/States.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { useT, useI18n } from '../i18n/index.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
+import { decodeIdnAddress } from '../lib/idn.js';
 import { PasswordChangeDrawer } from './PasswordChangeDrawer.jsx';
 import { TwoFactorEnrollModal } from './TwoFactorEnrollModal.jsx';
 import { TwoFactorConfirmDrawer } from './TwoFactorConfirmDrawer.jsx';
@@ -438,7 +439,7 @@ function NotifySection({ t }) {
           </div>
           <div className="mf-row mf-row--between" style={{ marginTop: 16 }}>
             <span className="mf-u-faint" style={{ fontSize: 12 }}>
-              {notify.data && notify.data.configured ? notify.data.mailbox : t('settings.notify.notConfigured')}
+              {notify.data && notify.data.configured ? decodeIdnAddress(notify.data.mailbox) : t('settings.notify.notConfigured')}
             </span>
             <div className="mf-row" style={{ gap: 8 }}>
               {notify.data && notify.data.configured && (

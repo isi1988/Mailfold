@@ -1,5 +1,6 @@
 import React from 'react';
 import { ResourceManager } from '../components/ResourceManager.jsx';
+import { decodeIdnDomain } from '../lib/idn.js';
 import { useT } from '../i18n/index.jsx';
 
 export function ForwardingHostsPage() {
@@ -14,8 +15,10 @@ export function ForwardingHostsPage() {
       filterKeys={['host', 'source']}
       filterPlaceholder={t('advanced.fwdhosts.filter')}
       columns={[
-        { key: 'host', label: t('advanced.fwdhosts.col.host'), w: '2fr', mono: true },
-        { key: 'source', label: t('advanced.fwdhosts.col.source'), w: '2fr', mono: true },
+        { key: 'host', label: t('advanced.fwdhosts.col.host'), w: '2fr', mono: true,
+          render: r => decodeIdnDomain(r.host) },
+        { key: 'source', label: t('advanced.fwdhosts.col.source'), w: '2fr', mono: true,
+          render: r => decodeIdnDomain(r.source) },
         { key: 'keep_spam', label: t('advanced.fwdhosts.col.keepSpam'), w: '1fr',
           render: r => (r.keep_spam === 'yes' || r.keep_spam === 1 || r.keep_spam === '1')
             ? t('advanced.fwdhosts.keepSpamOn')
@@ -42,7 +45,7 @@ export function ForwardingHostsPage() {
         deleteTitle: t('advanced.fwdhosts.deleteTitle'),
         deleteMsg: (name) => t('advanced.fwdhosts.deleteMsg', { name }),
       }}
-      describe={r => r.host || r.source || ''}
+      describe={r => decodeIdnDomain(r.host || r.source || '')}
     />
   );
 }

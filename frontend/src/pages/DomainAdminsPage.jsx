@@ -1,5 +1,6 @@
 import React from 'react';
 import { ResourceManager } from '../components/ResourceManager.jsx';
+import { decodeIdnAddress, decodeIdnDomain } from '../lib/idn.js';
 import { useT } from '../i18n/index.jsx';
 
 export function DomainAdminsPage() {
@@ -14,12 +15,13 @@ export function DomainAdminsPage() {
       filterKeys={['username', 'selected_domains']}
       filterPlaceholder={t('advanced.domainadmins.filter')}
       columns={[
-        { key: 'username', label: t('advanced.domainadmins.col.username'), w: '1.5fr', mono: true },
+        { key: 'username', label: t('advanced.domainadmins.col.username'), w: '1.5fr', mono: true,
+          render: r => decodeIdnAddress(r.username) },
         { key: 'selected_domains', label: t('advanced.domainadmins.col.domains'), w: '2fr',
           render: r => {
             const d = r.selected_domains;
-            if (Array.isArray(d)) return d.length ? d.join(', ') : '—';
-            return d || '—';
+            if (Array.isArray(d)) return d.length ? d.map(decodeIdnDomain).join(', ') : '—';
+            return d ? decodeIdnDomain(d) : '—';
           } },
         { key: 'active', label: t('advanced.domainadmins.col.status'), w: '.8fr',
           render: r => (r.active === 1 || r.active === '1') ? t('common.active') : t('common.disabled') },
@@ -40,7 +42,7 @@ export function DomainAdminsPage() {
         deleteTitle: t('advanced.domainadmins.deleteTitle'),
         deleteMsg: (name) => t('advanced.domainadmins.deleteMsg', { name }),
       }}
-      describe={r => r.username || ''}
+      describe={r => decodeIdnAddress(r.username || '')}
     />
   );
 }

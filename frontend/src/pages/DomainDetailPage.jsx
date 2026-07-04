@@ -9,6 +9,7 @@ import { Logo } from '../ds/components/atoms/Logo.jsx';
 import { api } from '../api/client.js';
 import { useToast } from '../components/Toast.jsx';
 import { human } from '../lib/format.js';
+import { decodeIdnDomain } from '../lib/idn.js';
 import { useT } from '../i18n/index.jsx';
 
 const DNS_COLS = [
@@ -26,7 +27,8 @@ const WARN_ICON = <svg width="16" height="16" viewBox="0 0 16 16" fill="none" st
 export function DomainDetailPage({ domain, onBack, onSettings }) {
   const t = useT();
   const { toast } = useToast();
-  const name = domain.domain_name;
+  const name = domain.domain_name; // raw/punycode — used for every API call below, never decode this one
+  const displayName = decodeIdnDomain(name); // decoded — for on-screen text only
   const [dkim, setDkim] = useState(null);
   const [dns, setDns] = useState(null);
   const [checking, setChecking] = useState(false);
@@ -56,12 +58,12 @@ export function DomainDetailPage({ domain, onBack, onSettings }) {
 
   async function rotate() {
     if (busy) return;
-    if (hasDkim && !window.confirm(t('domains.dkim.rotate') + ' — ' + name + '?')) return;
+    if (hasDkim && !window.confirm(t('domains.dkim.rotate') + ' — ' + displayName + '?')) return;
     setBusy(true);
     try {
       if (hasDkim) await api.del('/api/dkim', { items: [name] });
       await api.post('/api/dkim', { domains: name, dkim_selector: 'dkim', key_size: '2048' });
-      toast(t('domains.dkim.generated', { domain: name }));
+      toast(t('domains.dkim.generated', { domain: displayName }));
       await loadDkim();
       checkDns();
     } catch (e) {
@@ -82,7 +84,7 @@ export function DomainDetailPage({ domain, onBack, onSettings }) {
           <Logo wordmark={false} markSize={24} color="var(--accent-ink)" />
         </div>
         <div>
-          <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: 28, fontWeight: 600, color: 'var(--ink-strong)', margin: 0 }}>{name}</h1>
+          <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: 28, fontWeight: 600, color: 'var(--ink-strong)', margin: 0 }}>{displayName}</h1>
           <div className="mf-row" style={{ gap: 8, marginTop: 7 }}>
             <Pill tone={hasDkim ? 'green' : 'amber'}>{hasDkim ? t('domains.dns.dkimActive') : t('domains.dns.dkimMissing')}</Pill>
             <Pill tone={dnsOk ? 'green' : 'amber'}>{dnsOk ? t('domains.dns.verified') : t('domains.dns.pending')}</Pill>

@@ -13,6 +13,7 @@ import { api } from '../api/client.js';
 import { AsyncView } from '../components/States.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { asList } from '../lib/format.js';
+import { decodeIdnAddress } from '../lib/idn.js';
 import { useT } from '../i18n/index.jsx';
 import { ApiKeyDrawer } from './ApiKeyDrawer.jsx';
 
@@ -96,7 +97,7 @@ export function ApiKeysPage() {
                 <div className="mf-u-mono" style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{k.prefix}…</div>
                 {k.label ? <div className="mf-u-faint mf-truncate" style={{ fontSize: 11.5, marginTop: 2 }}>{k.label}</div> : null}
               </div>
-              <span className="mf-u-muted mf-u-mono mf-truncate" style={{ fontSize: 12.5 }}>{k.mailbox}</span>
+              <span className="mf-u-muted mf-u-mono mf-truncate" style={{ fontSize: 12.5 }}>{decodeIdnAddress(k.mailbox)}</span>
               <span className="mf-row" style={{ gap: 4, flexWrap: 'wrap' }}>
                 {asList(k.scopes).map(s => <Pill key={s} tone="neutral">{t('apikeys.scope.' + s.replace('mail:', '')) || s}</Pill>)}
               </span>

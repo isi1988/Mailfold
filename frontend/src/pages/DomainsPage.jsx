@@ -15,6 +15,7 @@ import { api } from '../api/client.js';
 import { AsyncView } from '../components/States.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { isActive, human, asList } from '../lib/format.js';
+import { decodeIdnDomain } from '../lib/idn.js';
 import { useT } from '../i18n/index.jsx';
 import { DomainDrawer } from './DomainDrawer.jsx';
 import { DomainDetailPage } from './DomainDetailPage.jsx';
@@ -41,7 +42,7 @@ export function DomainsPage() {
     setConfirmDom(null);
     try {
       await api.del('/api/domains', { items: [d.domain_name] });
-      toast(t('domains.form.deleted', { domain: d.domain_name }));
+      toast(t('domains.form.deleted', { domain: decodeIdnDomain(d.domain_name) }));
       reload();
     } catch (err) {
       toast(t('domains.form.failed'), (err && err.body && err.body.message) || (err && err.message) || '');
@@ -83,7 +84,7 @@ export function DomainsPage() {
             onDelete={d => { setDrawer(null); setDetailName(null); setConfirmDom(d); }} />
         )}
         {confirmDom && (
-          <ConfirmModal title={t('domains.form.deleteTitle')} msg={t('domains.form.deleteMsg', { domain: confirmDom.domain_name })}
+          <ConfirmModal title={t('domains.form.deleteTitle')} msg={t('domains.form.deleteMsg', { domain: decodeIdnDomain(confirmDom.domain_name) })}
             cta={t('common.delete')} danger onCancel={() => setConfirmDom(null)} onConfirm={doDelete} />
         )}
       </>
@@ -118,7 +119,7 @@ export function DomainsPage() {
                     <Logo wordmark={false} markSize={18} color="var(--accent-ink)" />
                   </div>
                   <div className="mf-min0">
-                    <div className="mf-u-mono" style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>{d.domain_name}</div>
+                    <div className="mf-u-mono" style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>{decodeIdnDomain(d.domain_name)}</div>
                     {d.description ? <div className="mf-u-faint mf-truncate" style={{ fontSize: 11.5, marginTop: 2 }}>{d.description}</div> : null}
                   </div>
                 </div>
@@ -155,7 +156,7 @@ export function DomainsPage() {
       {confirmDom && (
         <ConfirmModal
           title={t('domains.form.deleteTitle')}
-          msg={t('domains.form.deleteMsg', { domain: confirmDom.domain_name })}
+          msg={t('domains.form.deleteMsg', { domain: decodeIdnDomain(confirmDom.domain_name) })}
           cta={t('common.delete')}
           danger
           onCancel={() => setConfirmDom(null)}

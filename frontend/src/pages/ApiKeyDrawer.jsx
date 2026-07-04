@@ -6,6 +6,7 @@ import { Button } from '../ds/components/atoms/Button.jsx';
 import { api } from '../api/client.js';
 import { useToast } from '../components/Toast.jsx';
 import { useT } from '../i18n/index.jsx';
+import { decodeIdnAddress } from '../lib/idn.js';
 
 const SCOPES = [
   { id: 'mail:send', key: 'send' },
@@ -70,7 +71,7 @@ export function ApiKeyDrawer({ onClose, onSaved }) {
     const footer = <Button variant="primary" className="mf-spacer" onClick={onClose}>{t('apikeys.form.done')}</Button>;
     const scopeLabels = (created.scopes || []).map(s => t('apikeys.scope.' + s.replace('mail:', ''))).join(' · ');
     return (
-      <Drawer title={t('apikeys.form.createdTitle')} subtitle={created.mailbox} footer={footer} onClose={onClose}>
+      <Drawer title={t('apikeys.form.createdTitle')} subtitle={decodeIdnAddress(created.mailbox)} footer={footer} onClose={onClose}>
         <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', background: 'var(--amber-soft)', border: '1px solid var(--amber-soft)', borderRadius: 10, padding: '12px 14px', marginBottom: 16 }}>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flex: 'none', marginTop: 1 }}>
             <path d="M8 2l6.5 11.5H1.5L8 2z" stroke="var(--amber)" strokeWidth="1.5" strokeLinejoin="round" />

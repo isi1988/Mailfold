@@ -10,6 +10,7 @@ import { api } from '../api/client.js';
 import { useToast } from '../components/Toast.jsx';
 import { useT } from '../i18n/index.jsx';
 import { isActive } from '../lib/format.js';
+import { decodeIdnDomain } from '../lib/idn.js';
 
 // The list exposes the per-mailbox max quota in bytes; the write API takes MB.
 const bytesToGB = b => Math.max(1, Math.round((Number(b) || 0) / 1024 / 1024 / 1024)) || 1;
@@ -59,7 +60,7 @@ function DkimSection({ domainName }) {
     setBusy(true);
     try {
       await api.post('/api/dkim', { domains: domainName, dkim_selector: 'dkim', key_size: keySize });
-      toast(t('domains.dkim.generated', { domain: domainName }));
+      toast(t('domains.dkim.generated', { domain: decodeIdnDomain(domainName) }));
       await load();
     } catch (err) {
       toast(t('domains.dkim.failed'), errText(err, ''));
@@ -73,7 +74,7 @@ function DkimSection({ domainName }) {
     setBusy(true);
     try {
       await api.del('/api/dkim', { items: [domainName] });
-      toast(t('domains.dkim.deleted', { domain: domainName }));
+      toast(t('domains.dkim.deleted', { domain: decodeIdnDomain(domainName) }));
       await load();
     } catch (err) {
       toast(t('domains.dkim.failed'), errText(err, ''));
@@ -179,7 +180,7 @@ function RateLimitSection({ domainName }) {
         items: [domainName],
         attr: { rl_value: value.trim(), rl_frame: frame },
       });
-      toast(t('domains.rl.saved', { domain: domainName }));
+      toast(t('domains.rl.saved', { domain: decodeIdnDomain(domainName) }));
       await load();
     } catch (err) {
       toast(t('domains.rl.failed'), errText(err, ''));
@@ -253,7 +254,7 @@ export function DomainDrawer({ mode, domain, onClose, onSaved, onDelete }) {
           items: [domain.domain_name],
           attr: { description, maxquota: String(quotaMB), quota: String(quotaMB), active: active ? '1' : '0' },
         });
-        toast(t('domains.form.updated', { domain: domain.domain_name }));
+        toast(t('domains.form.updated', { domain: decodeIdnDomain(domain.domain_name) }));
       } else {
         await api.post('/api/domains', {
           domain: name.trim(),
@@ -289,7 +290,7 @@ export function DomainDrawer({ mode, domain, onClose, onSaved, onDelete }) {
   return (
     <Drawer
       title={editing ? t('domains.form.editTitle') : t('domains.form.newTitle')}
-      subtitle={editing ? domain.domain_name : name}
+      subtitle={editing ? decodeIdnDomain(domain.domain_name) : name}
       icon={<div className="mf-avatar mf-avatar--square mf-avatar--34"><Logo wordmark={false} markSize={18} color="var(--accent-ink)" /></div>}
       footer={footer}
       onClose={onClose}

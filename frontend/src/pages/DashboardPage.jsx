@@ -11,6 +11,7 @@ import { AsyncView } from '../components/States.jsx';
 import { asList } from '../lib/format.js';
 import { tone } from '../ds/data/sample.js';
 import { useT } from '../i18n/index.jsx';
+import { decodeIdnAddress } from '../lib/idn.js';
 
 // mailcow reports used_percent either as a number (45) or a string ("45" / "45%").
 function pctOf(v) {
@@ -54,7 +55,7 @@ function pick(row, keys) {
 function fmtRecipients(row) {
   const v = pick(row, ['recipients', 'rcpt', 'recipient', 'recipient_address']);
   if (v === undefined) return '-';
-  return Array.isArray(v) ? (v.length ? v.join(', ') : '-') : String(v);
+  return Array.isArray(v) ? (v.length ? v.map(decodeIdnAddress).join(', ') : '-') : decodeIdnAddress(String(v));
 }
 function statusOf(row) {
   return String(pick(row, ['queue_name', 'status', 'queue']) || '');
@@ -180,7 +181,7 @@ export function DashboardPage() {
                 const status = statusOf(r);
                 return (
                   <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.5fr 1.7fr .9fr', gap: 14, alignItems: 'center', padding: '9px 0', borderTop: '1px solid var(--hair-soft)' }}>
-                    <span className="mf-truncate" style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{pick(r, ['sender', 'from']) || '-'}</span>
+                    <span className="mf-truncate" style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{decodeIdnAddress(pick(r, ['sender', 'from']) || '') || '-'}</span>
                     <span className="mf-u-muted mf-truncate" style={{ fontSize: 13 }}>{fmtRecipients(r)}</span>
                     <span>{status ? <Pill tone={tone(status)}>{status}</Pill> : <span className="mf-u-faint">-</span>}</span>
                   </div>

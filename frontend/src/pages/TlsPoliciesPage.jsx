@@ -1,5 +1,6 @@
 import React from 'react';
 import { ResourceManager } from '../components/ResourceManager.jsx';
+import { decodeIdnDomain } from '../lib/idn.js';
 import { useT } from '../i18n/index.jsx';
 
 export function TlsPoliciesPage() {
@@ -14,7 +15,8 @@ export function TlsPoliciesPage() {
       filterKeys={['dest', 'policy']}
       filterPlaceholder={t('advanced.tlspolicies.filter')}
       columns={[
-        { key: 'dest', label: t('advanced.tlspolicies.col.dest'), w: '2fr', mono: true },
+        { key: 'dest', label: t('advanced.tlspolicies.col.dest'), w: '2fr', mono: true,
+          render: r => decodeIdnDomain(r.dest) },
         { key: 'policy', label: t('advanced.tlspolicies.col.policy'), w: '1.2fr' },
         { key: 'parameters', label: t('advanced.tlspolicies.col.parameters'), w: '1.5fr', mono: true,
           render: r => r.parameters || '—' },
@@ -49,7 +51,7 @@ export function TlsPoliciesPage() {
         deleteTitle: t('advanced.tlspolicies.deleteTitle'),
         deleteMsg: (name) => t('advanced.tlspolicies.deleteMsg', { name }),
       }}
-      describe={r => r.dest || String(r.id)}
+      describe={r => decodeIdnDomain(r.dest || String(r.id))}
     />
   );
 }

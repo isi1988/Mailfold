@@ -21,6 +21,7 @@ import { ComposeModal } from './ComposeModal.jsx';
 import { AddAccountModal } from './AddAccountModal.jsx';
 import { CalendarView } from './CalendarView.jsx';
 import { Loading, ErrorState, Empty } from '../components/States.jsx';
+import { decodeIdnAddress } from '../lib/idn.js';
 
 const SYS_ICON = { inbox: 'inbox', sent: 'send', drafts: 'drafts', archive: 'archive', junk: 'shield', spam: 'shield', trash: 'trash' };
 const SYS_ORDER = ['inbox', 'sent', 'drafts', 'archive', 'junk', 'spam', 'trash'];
@@ -58,9 +59,12 @@ function saveLabels(email, labels) {
 }
 
 const hasFlag = (flags, f) => Array.isArray(flags) && flags.includes(f);
+// addrLabel is display-only (search filtering and JSX text) — never feed its
+// result into a compose "to" field or any other request; reply()/forward()
+// deliberately read m.from[0].email directly instead, for exactly that reason.
 const addrLabel = list => {
   const a = Array.isArray(list) && list[0];
-  return a ? (a.name || a.email || '') : '';
+  return a ? (a.name || decodeIdnAddress(a.email || '')) : '';
 };
 const shortTime = iso => {
   const d = new Date(iso);
@@ -170,7 +174,7 @@ function WebmailClient() {
     const n = data.count || incoming.length;
     if (!n) return;
     const first = incoming[0];
-    const who = first && first.from && first.from[0] ? (first.from[0].name || first.from[0].email) : '';
+    const who = first && first.from && first.from[0] ? (first.from[0].name || decodeIdnAddress(first.from[0].email || '')) : '';
     toast(t('webmail.newMail', { count: n }), first ? [who, first.subject].filter(Boolean).join(' — ') : '');
     if (folder === 'INBOX' && incoming.length) {
       setMessages(list => {
@@ -310,7 +314,7 @@ function WebmailClient() {
           <div key={acc.email} onClick={() => switchAccount(acc.email)}
             className="mf-row" style={{ gap: 8, padding: '6px 10px', borderRadius: 8, cursor: 'pointer', background: acc.email === email ? 'var(--accent-soft)' : 'transparent' }}>
             <Avatar size={22}>{initials(acc.email)}</Avatar>
-            <span className="mf-u-mono mf-truncate" style={{ flex: 1, fontSize: 11.5, fontWeight: 600, color: acc.email === email ? 'var(--accent-ink)' : 'var(--muted)' }}>{acc.email}</span>
+            <span className="mf-u-mono mf-truncate" style={{ flex: 1, fontSize: 11.5, fontWeight: 600, color: acc.email === email ? 'var(--accent-ink)' : 'var(--muted)' }}>{decodeIdnAddress(acc.email)}</span>
           </div>
         ))}
         <div onClick={() => setAddingAccount(true)} className="mf-row" style={{ gap: 9, padding: '6px 10px', color: 'var(--accent-ink)', font: '600 12.5px var(--font-sans)', cursor: 'pointer' }}>

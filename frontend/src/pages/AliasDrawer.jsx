@@ -11,6 +11,7 @@ import { api } from '../api/client.js';
 import { useToast } from '../components/Toast.jsx';
 import { useT } from '../i18n/index.jsx';
 import { isActive } from '../lib/format.js';
+import { decodeIdnAddress, decodeIdnDomain } from '../lib/idn.js';
 
 function errText(err, fallback) {
   return (err && err.body && err.body.message) || (err && err.message) || fallback;
@@ -45,7 +46,7 @@ function RecipientPicker({ values, onChange, options = [] }) {
   return (
     <div className={'mf-multiselect' + (open ? ' mf-multiselect--open' : '')} onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) setOpen(false); }}>
       <div className="mf-multiselect__box" onClick={() => setOpen(true)}>
-        {values.map(v => <Token key={v} label={v} onRemove={() => onChange(values.filter(x => x !== v))} />)}
+        {values.map(v => <Token key={v} label={decodeIdnAddress(v)} onRemove={() => onChange(values.filter(x => x !== v))} />)}
         <input
           className="mf-multiselect__input"
           placeholder={values.length ? '' : 'jamie@acme.io'}
@@ -63,7 +64,7 @@ function RecipientPicker({ values, onChange, options = [] }) {
           {remaining.slice(0, 8).map(o => (
             <div key={o} className="mf-select__opt" onMouseDown={e => { e.preventDefault(); pick(o); }}>
               <Avatar size={24}>{addrInitials(o)}</Avatar>
-              <span className="mf-truncate" style={{ flex: 1, fontFamily: 'var(--font-mono)' }}>{o}</span>
+              <span className="mf-truncate" style={{ flex: 1, fontFamily: 'var(--font-mono)' }}>{decodeIdnAddress(o)}</span>
             </div>
           ))}
         </div>
@@ -98,11 +99,11 @@ export function AliasDrawer({ mode, alias, domains = [], mailboxes = [], onClose
           items: [String(alias.id)],
           attr: { address: alias.address, goto: recipients.join(','), active: active ? '1' : '0' },
         });
-        toast(t('aliases.form.updated', { alias: alias.address }));
+        toast(t('aliases.form.updated', { alias: decodeIdnAddress(alias.address) }));
       } else {
         const address = catchAll ? '@' + domain : localPart.trim() + '@' + domain;
         await api.post('/api/aliases', { address, goto: recipients.join(','), active: active ? '1' : '0' });
-        toast(t('aliases.form.created', { alias: address }));
+        toast(t('aliases.form.created', { alias: decodeIdnAddress(address) }));
       }
       onSaved();
       onClose();
@@ -126,7 +127,7 @@ export function AliasDrawer({ mode, alias, domains = [], mailboxes = [], onClose
   return (
     <Drawer
       title={editing ? t('aliases.form.editTitle') : t('aliases.form.newTitle')}
-      subtitle={editing ? alias.address : (catchAll ? '@' + domain : (localPart ? localPart + '@' + domain : ''))}
+      subtitle={editing ? decodeIdnAddress(alias.address) : decodeIdnAddress(catchAll ? '@' + domain : (localPart ? localPart + '@' + domain : ''))}
       icon={<Icon name="arrow-right" size={20} style={{ color: 'var(--accent-ink)' }} />}
       footer={footer}
       onClose={onClose}
@@ -139,7 +140,7 @@ export function AliasDrawer({ mode, alias, domains = [], mailboxes = [], onClose
             </FormField>
             <FormField label={t('aliases.form.domain')} style={{ flex: 1 }}>
               <select className="mf-input" value={domain} onChange={e => setDomain(e.target.value)}>
-                {domains.map(d => <option key={d.domain_name} value={d.domain_name}>{d.domain_name}</option>)}
+                {domains.map(d => <option key={d.domain_name} value={d.domain_name}>{decodeIdnDomain(d.domain_name)}</option>)}
               </select>
             </FormField>
           </div>

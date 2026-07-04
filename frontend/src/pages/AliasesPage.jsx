@@ -13,6 +13,7 @@ import { api } from '../api/client.js';
 import { AsyncView } from '../components/States.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { isActive, asList } from '../lib/format.js';
+import { decodeIdnAddress } from '../lib/idn.js';
 import { useT } from '../i18n/index.jsx';
 import { AliasDrawer } from './AliasDrawer.jsx';
 
@@ -34,7 +35,7 @@ export function AliasesPage() {
     setConfirmAlias(null);
     try {
       await api.del('/api/aliases', { items: [String(a.id)] });
-      toast(t('aliases.form.deleted', { alias: a.address }));
+      toast(t('aliases.form.deleted', { alias: decodeIdnAddress(a.address) }));
       reload();
     } catch (err) {
       toast(t('aliases.form.failed'), (err && err.body && err.body.message) || (err && err.message) || '');
@@ -80,10 +81,10 @@ export function AliasesPage() {
         <Table columns={cols}>
           {paged.map(a => (
             <TableRow key={a.address} onClick={() => setDrawer({ mode: 'edit', alias: a })} style={{ cursor: 'pointer' }}>
-              <span className="mf-u-mono mf-truncate" style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{a.address}</span>
+              <span className="mf-u-mono mf-truncate" style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{decodeIdnAddress(a.address)}</span>
               <div className="mf-row mf-min0" style={{ gap: 8 }}>
                 <Icon name="arrow-right" size={14} style={{ color: 'var(--faint)', flex: 'none' }} />
-                <span className="mf-u-muted mf-truncate" style={{ fontSize: 13 }}>{(a.goto || '').split(',').join(', ')}</span>
+                <span className="mf-u-muted mf-truncate" style={{ fontSize: 13 }}>{(a.goto || '').split(',').map(decodeIdnAddress).join(', ')}</span>
               </div>
               <span><Pill tone={isActive(a.active) ? tone('active') : 'neutral'}>{isActive(a.active) ? t('common.active') : t('common.inactive')}</Pill></span>
               <Icon name="chevron-right" size={14} style={{ color: 'var(--faint)' }} />
@@ -111,7 +112,7 @@ export function AliasesPage() {
       {confirmAlias && (
         <ConfirmModal
           title={t('aliases.form.deleteTitle')}
-          msg={t('aliases.form.deleteMsg', { alias: confirmAlias.address })}
+          msg={t('aliases.form.deleteMsg', { alias: decodeIdnAddress(confirmAlias.address) })}
           cta={t('common.delete')}
           danger
           onCancel={() => setConfirmAlias(null)}

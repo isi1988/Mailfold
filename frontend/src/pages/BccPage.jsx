@@ -1,5 +1,6 @@
 import React from 'react';
 import { ResourceManager } from '../components/ResourceManager.jsx';
+import { decodeIdnAddress } from '../lib/idn.js';
 import { useT } from '../i18n/index.jsx';
 
 export function BccPage() {
@@ -14,8 +15,10 @@ export function BccPage() {
       filterKeys={['local_dest', 'bcc_dest']}
       filterPlaceholder={t('advanced.bcc.filter')}
       columns={[
-        { key: 'local_dest', label: t('advanced.bcc.col.localDest'), w: '2fr', mono: true },
-        { key: 'bcc_dest', label: t('advanced.bcc.col.bccDest'), w: '2fr', mono: true },
+        { key: 'local_dest', label: t('advanced.bcc.col.localDest'), w: '2fr', mono: true,
+          render: r => decodeIdnAddress(r.local_dest) },
+        { key: 'bcc_dest', label: t('advanced.bcc.col.bccDest'), w: '2fr', mono: true,
+          render: r => decodeIdnAddress(r.bcc_dest) },
         { key: 'type', label: t('advanced.bcc.col.type'), w: '1fr',
           render: r => r.type === 'sender' ? t('advanced.bcc.type.sender') : t('advanced.bcc.type.rcpt') },
         { key: 'active', label: t('advanced.bcc.col.status'), w: '.8fr',
@@ -43,7 +46,7 @@ export function BccPage() {
         deleteTitle: t('advanced.bcc.deleteTitle'),
         deleteMsg: (name) => t('advanced.bcc.deleteMsg', { name }),
       }}
-      describe={r => r.bcc_dest || r.local_dest || String(r.id)}
+      describe={r => decodeIdnAddress(r.bcc_dest || r.local_dest || String(r.id))}
     />
   );
 }

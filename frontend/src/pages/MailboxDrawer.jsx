@@ -11,6 +11,7 @@ import { useApi } from '../lib/useApi.js';
 import { useToast } from '../components/Toast.jsx';
 import { useT } from '../i18n/index.jsx';
 import { isActive, asList } from '../lib/format.js';
+import { decodeIdnAddress, decodeIdnDomain } from '../lib/idn.js';
 
 // mailcow's GET returns the mailbox quota in bytes; the write path takes
 // megabytes. Show whole gigabytes, at least 1.
@@ -378,7 +379,7 @@ export function MailboxDrawer({ mode, mailbox, domains = [], onClose, onSaved, o
           attr.password2 = password;
         }
         await api.put('/api/mailboxes', { items: [mailbox.username], attr });
-        toast(t('mailboxes.form.updated', { mailbox: mailbox.username }));
+        toast(t('mailboxes.form.updated', { mailbox: decodeIdnAddress(mailbox.username) }));
       } else {
         await api.post('/api/mailboxes', {
           local_part: localPart.trim(),
@@ -389,7 +390,7 @@ export function MailboxDrawer({ mode, mailbox, domains = [], onClose, onSaved, o
           password2: password,
           active: active ? '1' : '0',
         });
-        toast(t('mailboxes.form.created', { mailbox: localPart.trim() + '@' + domain }));
+        toast(t('mailboxes.form.created', { mailbox: decodeIdnAddress(localPart.trim() + '@' + domain) }));
       }
       onSaved();
       onClose();
@@ -400,7 +401,7 @@ export function MailboxDrawer({ mode, mailbox, domains = [], onClose, onSaved, o
     }
   }
 
-  const addr = editing ? mailbox.username : (localPart ? localPart + '@' + domain : '');
+  const addr = decodeIdnAddress(editing ? mailbox.username : (localPart ? localPart + '@' + domain : ''));
   const footer = (
     <>
       {editing && onDelete && (
@@ -428,7 +429,7 @@ export function MailboxDrawer({ mode, mailbox, domains = [], onClose, onSaved, o
           </FormField>
           <FormField label={t('mailboxes.form.domain')} style={{ flex: 1 }}>
             <select className="mf-input" value={domain} onChange={e => setDomain(e.target.value)}>
-              {domains.map(d => <option key={d.domain_name} value={d.domain_name}>{d.domain_name}</option>)}
+              {domains.map(d => <option key={d.domain_name} value={d.domain_name}>{decodeIdnDomain(d.domain_name)}</option>)}
             </select>
           </FormField>
         </div>
