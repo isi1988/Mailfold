@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { AppShell } from '../ds/components/organisms/AppShell.jsx';
+import { Logo } from '../ds/components/atoms/Logo.jsx';
+import { Button } from '../ds/components/atoms/Button.jsx';
 import { NAV } from './nav.js';
 import { useAuth } from '../auth/AuthContext.jsx';
+import { useWebmailAuth } from '../auth/WebmailAuthContext.jsx';
 import { getTheme, applyTheme } from './theme.js';
 import { initials } from '../ds/data/sample.js';
 import { useT } from '../i18n/index.jsx';
@@ -37,6 +40,7 @@ export function Shell() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuth();
+  const { cleanupTemporary } = useWebmailAuth();
   const t = useT();
   const [theme, setTheme] = useState(getTheme());
   const { data: serverStatus } = useApi('/api/status/server');
@@ -47,7 +51,7 @@ export function Shell() {
   }, [theme]);
 
   const current = location.pathname.split('/')[1] || 'dashboard';
-  const wide = current === 'webmail';
+  const inWebmail = current === 'webmail';
   const account = {
     name: user || 'Admin',
     role: t('shell.role'),
@@ -69,6 +73,24 @@ export function Shell() {
     { label: t('shell.theme.dark'), value: 'dark' },
   ];
 
+  // An admin opening Webmail from the admin panel gets the same chromeless
+  // layout a standalone mailbox-only user sees (no admin sidebar) — but,
+  // since they got here via the admin panel and the sidebar is now hidden,
+  // a small button takes them back to it.
+  if (inWebmail) {
+    return (
+      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg)' }}>
+        <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 22px', borderBottom: '1px solid var(--hair)', flex: 'none' }}>
+          <Logo size="sm" />
+          <Button variant="secondary" size="sm" onClick={() => { cleanupTemporary(); navigate('/dashboard'); }}>{t('shell.backToAdmin')}</Button>
+        </header>
+        <div style={{ flex: 1, minHeight: 0, padding: 16 }}>
+          <WebmailPage />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <AppShell
       nav={nav}
@@ -78,7 +100,6 @@ export function Shell() {
       server={serverName}
       serverStatusLabel={name => t('topbar.serverStatus', { server: name })}
       accountLabel={t('topbar.account')}
-      wide={wide}
       searchPlaceholder={t('shell.searchPlaceholder')}
       themeOptions={themeOptions}
       onNavigate={key => navigate('/' + key)}
@@ -97,7 +118,6 @@ export function Shell() {
         <Route path="/spam" element={<SpamPage />} />
         <Route path="/syncjobs" element={<SyncJobsPage />} />
         <Route path="/logs" element={<LogsPage />} />
-        <Route path="/webmail" element={<WebmailPage />} />
         <Route path="/apikeys" element={<ApiKeysPage />} />
         <Route path="/relayhosts" element={<RelayHostsPage />} />
         <Route path="/transports" element={<TransportsPage />} />

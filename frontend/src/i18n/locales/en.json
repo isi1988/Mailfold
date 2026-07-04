@@ -62,12 +62,19 @@
     "role": "Administrator",
     "searchPlaceholder": "Search or jump to…",
     "logout": "Sign out",
+    "backToAdmin": "Admin panel",
     "theme": {
       "light": "Light",
       "dark": "Dark"
     }
   },
   "webmail": {
+    "linkPrompt": {
+      "title": "Link this mailbox to your account?",
+      "sub": "Keep {{email}} in your linked accounts so it's here next time, or just view it this once.",
+      "link": "Link account",
+      "skip": "Just viewing"
+    },
     "signInTitle": "Sign in to webmail",
     "signInSub": "Enter your mailbox address and password.",
     "mailbox": "Mailbox",

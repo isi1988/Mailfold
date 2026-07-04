@@ -14,6 +14,7 @@ import { Icon } from '../ds/components/atoms/Icon.jsx';
 import { Avatar } from '../ds/components/atoms/Avatar.jsx';
 import { initials } from '../ds/data/sample.js';
 import { useWebmailAuth } from '../auth/WebmailAuthContext.jsx';
+import { useAuth } from '../auth/AuthContext.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { useT } from '../i18n/index.jsx';
 import { wm, downloadAttachment, subscribeMail } from '../api/webmail.js';
@@ -459,10 +460,41 @@ function WebmailClient() {
   );
 }
 
+// LinkAccountPrompt asks an admin, right after opening a mailbox's webmail
+// for the first time, whether to keep it as one of their linked accounts
+// (persists in the account switcher) or just view it this once (forgotten
+// again once they leave webmail — see cleanupTemporary).
+function LinkAccountPrompt({ email, onLink, onSkip }) {
+  const t = useT();
+  return (
+    <div className="mf-overlay mf-overlay--center">
+      <div className="mf-dialog" onClick={e => e.stopPropagation()}>
+        <div className="mf-dialog__body">
+          <div className="mf-dialog__title">{t('webmail.linkPrompt.title')}</div>
+          <div className="mf-dialog__msg">{t('webmail.linkPrompt.sub', { email })}</div>
+        </div>
+        <div className="mf-dialog__foot">
+          <Button variant="secondary" onClick={onSkip}>{t('webmail.linkPrompt.skip')}</Button>
+          <Button variant="primary" onClick={onLink}>{t('webmail.linkPrompt.link')}</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function WebmailPage() {
-  const { status, email } = useWebmailAuth();
+  const { status, email, justAdded, clearJustAdded, markTemporary } = useWebmailAuth();
+  const { status: adminStatus } = useAuth();
   if (status !== 'authed') return <WebmailLogin />;
-  // Key by the active account so switching mailboxes remounts the client with a
-  // clean folder/message state for the newly-selected session.
-  return <WebmailClient key={email} />;
+  const showLinkPrompt = adminStatus === 'authed' && justAdded === email;
+  return (
+    <>
+      {/* Key by the active account so switching mailboxes remounts the client
+          with a clean folder/message state for the newly-selected session. */}
+      <WebmailClient key={email} />
+      {showLinkPrompt && (
+        <LinkAccountPrompt email={email} onLink={clearJustAdded} onSkip={() => markTemporary(email)} />
+      )}
+    </>
+  );
 }
