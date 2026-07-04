@@ -27,7 +27,8 @@ the mail host's A record, SPF, DKIM and DMARC against the live zone), aliases
 (with a mailbox-picker for recipients and a catch-all-for-domain toggle),
 the mail queue (flush for redelivery, or discard everything outright),
 quarantine (release or delete held messages), the spam policy (per-domain
-allow / block lists), IMAP/POP sync jobs (with a move-instead-of-copy option),
+allow / block lists, plus custom Rspamd rule blocks for finer-grained scoring
+and whitelisting), IMAP/POP sync jobs (with a move-instead-of-copy option),
 per-service logs (an "All services" merged view and a live-tail toggle),
 a fail2ban panel and settings (theme, accent, language). An
 "Advanced" section exposes the niche routing/config resources (relay hosts,

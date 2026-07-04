@@ -570,6 +570,33 @@
       "removeTitle": "Remove policy entry",
       "removeMsg": "Remove \"{{value}}\" from this list? Senders matching it will no longer be affected.",
       "remove": "Remove"
+    },
+    "rules": {
+      "title": "Custom rules",
+      "sub": "Rspamd rule blocks that override spam scoring or whitelisting for matched messages.",
+      "new": "New rule",
+      "empty": "No custom rules yet.",
+      "untitled": "(untitled rule)",
+      "active": "Active",
+      "inactive": "Inactive",
+      "delete": "Delete",
+      "deleteTitle": "Delete rule",
+      "deleteMsg": "Delete \"{{desc}}\"? This cannot be undone.",
+      "deleted": "Rule deleted",
+      "deleteFailed": "Could not delete the rule",
+      "form": {
+        "newTitle": "New Rspamd rule",
+        "desc": "Description",
+        "descPlaceholder": "e.g. Whitelist invoices from our bank",
+        "content": "Rule content",
+        "contentHint": "Raw Rspamd settings-map syntax (priority/rcpt/from/apply, …).",
+        "active": "Active",
+        "invalid": "Enter the rule content.",
+        "create": "Create rule",
+        "creating": "Creating…",
+        "created": "Rule created",
+        "failed": "Could not create the rule"
+      }
     }
   },
   "syncjobs": {

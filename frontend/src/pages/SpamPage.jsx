@@ -6,14 +6,16 @@ import { Input } from '../ds/components/atoms/Input.jsx';
 import { Button } from '../ds/components/atoms/Button.jsx';
 import { IconButton } from '../ds/components/atoms/IconButton.jsx';
 import { Icon } from '../ds/components/atoms/Icon.jsx';
+import { Pill } from '../ds/components/atoms/Pill.jsx';
 import { FormField } from '../ds/components/molecules/FormField.jsx';
 import { ConfirmModal } from '../ds/components/organisms/ConfirmModal.jsx';
 import { useApi } from '../lib/useApi.js';
 import { api } from '../api/client.js';
 import { AsyncView } from '../components/States.jsx';
 import { useToast } from '../components/Toast.jsx';
-import { asList } from '../lib/format.js';
+import { asList, isActive } from '../lib/format.js';
 import { useT } from '../i18n/index.jsx';
+import { RspamdRuleDrawer } from './RspamdRuleDrawer.jsx';
 
 // mailcow policy rows carry a numeric prefid plus the matched sender/pattern.
 // The display value can live under `object`, `value`, or `object_from` depending
@@ -94,6 +96,89 @@ function PolicyList({ kind, tone, domain, data, loading, error, reload, onAdd, o
           {busy ? t('spam.adding') : t('spam.add')}
         </Button>
       </form>
+    </Card>
+  );
+}
+
+// RspamdRulesSection lists custom Rspamd settings (raw rule blocks that
+// override spam scoring/whitelisting for matched messages) and lets the
+// operator create or delete them. mailcow has no edit verb for these, so
+// editing in place isn't offered — only create and delete.
+function RspamdRulesSection({ t }) {
+  const { toast } = useToast();
+  const rules = useApi('/api/rspamd-settings', []);
+  const list = asList(rules.data);
+  const [creating, setCreating] = useState(false);
+  const [toDelete, setToDelete] = useState(null);
+
+  async function doDelete() {
+    const rule = toDelete;
+    setToDelete(null);
+    if (!rule) return;
+    try {
+      await api.del('/api/rspamd-settings', { items: [String(rule.id)] });
+      toast(t('spam.rules.deleted'));
+      rules.reload();
+    } catch (err) {
+      toast(t('spam.rules.deleteFailed'), (err && err.message) || '');
+    }
+  }
+
+  return (
+    <Card pad style={{ marginTop: 16 }}>
+      <div className="mf-row" style={{ marginBottom: 4 }}>
+        <span className="mf-card__title">{t('spam.rules.title')}</span>
+        <Button variant="secondary" size="sm" className="mf-spacer" onClick={() => setCreating(true)}>
+          {t('spam.rules.new')}
+        </Button>
+      </div>
+      <div className="mf-u-muted" style={{ fontSize: 12.5, marginBottom: 14 }}>{t('spam.rules.sub')}</div>
+
+      <AsyncView
+        loading={rules.loading}
+        error={rules.error}
+        reload={rules.reload}
+        empty={list.length === 0 ? t('spam.rules.empty') : null}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {list.map(r => (
+            <div
+              key={r.id}
+              className="mf-row mf-row--start"
+              style={{ gap: 12, padding: '10px 12px', borderRadius: 9, background: 'var(--surface-2)', border: '1px solid var(--hair-soft)' }}
+            >
+              <div className="mf-min0" style={{ flex: 1 }}>
+                <div className="mf-row" style={{ gap: 8, marginBottom: 4 }}>
+                  <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>
+                    {r.desc || t('spam.rules.untitled')}
+                  </span>
+                  <Pill tone={isActive(r.active) ? 'green' : 'neutral'}>
+                    {isActive(r.active) ? t('spam.rules.active') : t('spam.rules.inactive')}
+                  </Pill>
+                </div>
+                <div className="mf-u-mono mf-u-faint mf-truncate" style={{ fontSize: 12 }}>{r.content}</div>
+              </div>
+              <IconButton aria-label={t('spam.rules.delete')} title={t('spam.rules.delete')} onClick={() => setToDelete(r)}>
+                <Icon name="trash" size={15} />
+              </IconButton>
+            </div>
+          ))}
+        </div>
+      </AsyncView>
+
+      {creating && (
+        <RspamdRuleDrawer onClose={() => setCreating(false)} onSaved={() => rules.reload()} />
+      )}
+      {toDelete && (
+        <ConfirmModal
+          title={t('spam.rules.deleteTitle')}
+          msg={t('spam.rules.deleteMsg', { desc: toDelete.desc || t('spam.rules.untitled') })}
+          cta={t('spam.rules.delete')}
+          danger
+          onCancel={() => setToDelete(null)}
+          onConfirm={doDelete}
+        />
+      )}
     </Card>
   );
 }
@@ -192,6 +277,8 @@ export function SpamPage() {
           />
         </div>
       </AsyncView>
+
+      <RspamdRulesSection t={t} />
 
       {confirm && (
         <ConfirmModal
