@@ -182,18 +182,90 @@ Enable it with `MAILFOLD_APIKEY_ENABLED=true` and a
     on a new device, in place of the mailbox password.
 
 Requests are rate-limited per source IP (before authentication) and per
-key, and all token verification is constant-time.
+key (defaults: 120 requests/minute per key, 50 recipients per send, 1MB
+combined text+HTML body — all tunable via `MAILFOLD_APIKEY_RATE_MAX`,
+`MAILFOLD_APIKEY_RATE_WINDOW`, `MAILFOLD_APIKEY_MAX_RECIPIENTS`), and all
+token verification is constant-time.
+
+### Why an API instead of talking SMTP/IMAP directly?
+
+You *can* always drop down to raw SMTP and IMAP — Mailfold doesn't hide or
+disable them. The API exists because, for the integrations most people
+actually build (a service that sends notifications and occasionally reads
+a reply), it removes work SMTP/IMAP push onto every caller:
+
+- **One credential, one endpoint, both directions.** SMTP alone can only
+  send. Reading needs a second protocol, a second library, and a second
+  credential — the API key does both over the same HTTPS endpoint.
+- **Never touches the real mailbox password.** A key fronts a scoped
+  mailcow app-password. Leak one key and you revoke *that one key* —
+  nothing else breaks, and the mailbox password never changes.
+- **Scoped and individually revocable per integration.** Mint a
+  `mail:send`-only key for a contact-form mailer, a `mail:read`-only key
+  for a ticket importer, and so on — instead of every integration sharing
+  one all-or-nothing mailbox password.
+- **Guardrails you'd otherwise build yourself.** Recipient caps, a
+  body-size cap, per-IP and per-key rate limiting, and CRLF/header-injection
+  rejection on every field are enforced server-side, not left as an
+  exercise for each client.
+- **Plain HTTPS gets through firewalls that block mail ports.** SMTP
+  (587/465) and IMAP (993) are routinely blocked by corporate egress rules,
+  CI runners, and some cloud providers — including, at one point, the very
+  server Mailfold's own reference deployment runs on. Port 443 almost
+  always works.
+- **No protocol/session state to manage.** No STARTTLS handshake, no IMAP
+  `SELECT`/`IDLE` state machine, no connection pooling — every call is one
+  stateless, safely-retryable HTTP request.
+- **Structured JSON, not raw MIME.** Messages, folders, and attachments
+  come back already decoded into typed fields, instead of something your
+  code has to parse out of the wire format yourself.
+- **Official, maintained SDKs in three languages** — see below — instead of
+  hunting for (or hand-rolling) a decent SMTP+IMAP library pair per
+  language.
+
+### What an API key can and can't do
+
+The key-authenticated surface is a thin, safe layer over the operations
+most integrations need — **send and collect**, not a full IMAP/SMTP
+replacement. Concretely, with an API key you can:
+
+- Send a message (plain text and/or HTML) and list, search, read, flag, or
+  permanently delete messages in any folder of the one mailbox it's bound to.
+
+You **cannot**, with an API key alone:
+
+- **Attach files when sending** — `POST /api/v1/mail/send` takes a subject
+  and text/HTML body only, no attachments. (Downloading an attachment from
+  a *received* message is supported.)
+- **Move a message between folders, or create a new folder** — those are
+  webmail-session-only operations.
+- **Read or write calendars/contacts** — CardDAV/CalDAV authenticate with
+  the mailbox's real IMAP password over HTTP Basic, not an API key.
+- **Get pushed new-mail notifications in real time** — the SSE stream
+  needs a webmail session token; with an API key, poll `messages`/`search`
+  instead.
+- **Touch any mailbox other than the one the key is bound to**, or perform
+  admin operations (creating mailboxes, configuring domains) — those need
+  the separate admin session, a different authentication tier entirely.
+- **Read or change the mailbox's signature/rules** — those are also
+  webmail-session-only settings.
+
+If an integration outgrows the API-key surface, it doesn't need a second
+credential: the same key can be
+[exchanged once for a full webmail session](#authentication--access) via
+device sign-in, which unlocks everything above.
 
 ### Official client SDKs
 
 Official, minimal client libraries wrap this API for you — mint a key in
-the admin panel and start sending/collecting mail in a few lines:
+the admin panel and start sending/collecting mail in a few lines. All three
+are published and installable right now:
 
 | Language | Repository | Package |
 | --- | --- | --- |
-| Python | [isi1988/mailfold-python](https://github.com/isi1988/mailfold-python) | `pip install mailfold-client` (zero third-party dependencies) |
-| Go | [isi1988/mailfold-go](https://github.com/isi1988/mailfold-go) | `go get github.com/isi1988/mailfold-go` (zero third-party dependencies) |
-| Rust | [isi1988/mailfold-rust](https://github.com/isi1988/mailfold-rust) | `cargo add mailfold` |
+| Python | [isi1988/mailfold-python](https://github.com/isi1988/mailfold-python) | `pip install mailfold-client` — [PyPI](https://pypi.org/project/mailfold-client/) (zero third-party dependencies) |
+| Go | [isi1988/mailfold-go](https://github.com/isi1988/mailfold-go) | `go get github.com/isi1988/mailfold-go` — [pkg.go.dev](https://pkg.go.dev/github.com/isi1988/mailfold-go) (zero third-party dependencies) |
+| Rust | [isi1988/mailfold-rust](https://github.com/isi1988/mailfold-rust) | `cargo add mailfold` — [crates.io](https://crates.io/crates/mailfold) |
 
 Each repository has its own README with a full quickstart. For any other
 language, the REST surface is small enough to call directly — see below.
