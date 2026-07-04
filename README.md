@@ -58,6 +58,14 @@ are, it takes you to the right place, and if you have access to both it simply
 asks which one to open. A mailbox-only user gets a clean standalone webmail; an
 admin gets the full panel.
 
+**Account security** — the admin can change their own password, edit their
+profile, and enroll optional TOTP two-factor auth (with a QR code and one-time
+recovery codes) right from Settings; login gains a second-factor step once it's
+on. Active sessions are listed by device/IP and can be revoked individually or
+all at once. A "forgot password?" link on the sign-in screen emails a reset link
+— from a mailbox the admin configures themselves in Settings (see
+[`MAILFOLD_ADMIN_ENC_KEY`](.env.example)), not a fixed environment variable.
+
 **API keys — drive your mailbox from other apps.** Issue durable, individually
 revocable API keys so any third-party service can **send and collect mail** for a
 mailbox over a simple REST API — without ever handling the mailbox password. It
