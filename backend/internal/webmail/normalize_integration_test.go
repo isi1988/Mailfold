@@ -85,6 +85,7 @@ func TestDialNormalizesCyrillicDomainBeforeLogin(t *testing.T) {
 type capturingSMTPBackend struct {
 	authUser string
 	mailFrom string
+	rcptTo   []string
 }
 
 func (b *capturingSMTPBackend) NewSession(_ *smtp.Conn) (smtp.Session, error) {
@@ -104,7 +105,10 @@ func (s *capturingSMTPSession2) Mail(from string, _ *smtp.MailOptions) error {
 	s.b.mailFrom = from
 	return nil
 }
-func (s *capturingSMTPSession2) Rcpt(string, *smtp.RcptOptions) error { return nil }
+func (s *capturingSMTPSession2) Rcpt(to string, _ *smtp.RcptOptions) error {
+	s.b.rcptTo = append(s.b.rcptTo, to)
+	return nil
+}
 func (s *capturingSMTPSession2) Data(r io.Reader) error {
 	_, _ = io.Copy(io.Discard, r)
 	return nil
@@ -144,6 +148,32 @@ func TestSendNormalizesCyrillicDomainInAuthAndEnvelope(t *testing.T) {
 	}
 	if be.mailFrom != wantASCII {
 		t.Errorf("MAIL FROM = %q, want %q", be.mailFrom, wantASCII)
+	}
+}
+
+func TestSendNormalizesCyrillicDomainInRecipients(t *testing.T) {
+	addr, be := startCapturingSMTP(t)
+	c := NewClient("", addr, false, false)
+
+	msg := &OutgoingMessage{
+		To:      []string{"noreply@родоскоп.рф"},
+		Cc:      []string{"other@родоскоп.рф"},
+		Subject: "Hi",
+		Text:    "hello",
+	}
+	if err := c.Send("from@example.com", "pw", msg); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	wantTo := "noreply@xn--d1amkbbgbl.xn--p1ai"
+	wantCc := "other@xn--d1amkbbgbl.xn--p1ai"
+	if len(be.rcptTo) != 2 || be.rcptTo[0] != wantTo || be.rcptTo[1] != wantCc {
+		t.Errorf("RCPT TO = %v, want [%q %q]", be.rcptTo, wantTo, wantCc)
+	}
+	// The message struct itself is normalized in place so a subsequent
+	// SaveToSent call (which reuses the same *OutgoingMessage) stores a Sent
+	// copy whose To/Cc headers match what was actually sent on the wire.
+	if msg.To[0] != wantTo || msg.Cc[0] != wantCc {
+		t.Errorf("msg.To/Cc not normalized in place: To=%v Cc=%v", msg.To, msg.Cc)
 	}
 }
 

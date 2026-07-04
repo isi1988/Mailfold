@@ -56,6 +56,20 @@ func (m *OutgoingMessage) recipients() []string {
 	return out
 }
 
+// normalizeRecipients punycode-encodes every recipient's domain in place. A
+// punycode domain is always a valid, equivalent ASCII form of the same
+// address, so this never changes where mail is delivered — it only avoids
+// handing a receiving MTA (in particular mailcow's own postfix, which only
+// recognizes its local mailboxes by their punycode form) a Unicode domain it
+// may not resolve to the same mailbox as its ASCII form.
+func (m *OutgoingMessage) normalizeRecipients() {
+	for _, list := range [][]string{m.To, m.Cc, m.Bcc} {
+		for i, addr := range list {
+			list[i] = normalizeAddress(addr)
+		}
+	}
+}
+
 // Send composes msg and submits it via SMTP authenticated as the given user.
 //
 // Submission uses opportunistic STARTTLS: it connects in plaintext and upgrades
@@ -71,6 +85,7 @@ func (c *Client) Send(email, password string, msg *OutgoingMessage) error {
 	// Normalized once and reused everywhere below (From header, SMTP AUTH,
 	// MAIL FROM envelope) so all three agree — see normalizeAddress.
 	email = normalizeAddress(email)
+	msg.normalizeRecipients()
 	raw, err := renderMessage(email, msg)
 	if err != nil {
 		return err
