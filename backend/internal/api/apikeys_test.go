@@ -227,20 +227,21 @@ func TestAPIKeyMintValidation(t *testing.T) {
 	}
 }
 
-// insertKey stores a key directly with a known app-password so the collect/send
-// handlers can be exercised against the in-memory IMAP server.
-func insertKey(t *testing.T, srv *Server, mailbox, appPw string, scopes []string) string {
+// insertKey stores a key directly, bound to "username"/"password" (the one
+// credential pair the in-memory IMAP backend actually authenticates), so the
+// collect/send handlers can be exercised against it.
+func insertKey(t *testing.T, srv *Server, scopes []string) string {
 	t.Helper()
 	token, kid, sha, prefix, err := apikey.NewToken()
 	if err != nil {
 		t.Fatal(err)
 	}
-	enc, nonce, err := srv.apikeyCipher.Seal([]byte(appPw))
+	enc, nonce, err := srv.apikeyCipher.Seal([]byte("password"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	err = srv.apikeyStore.Create(apikey.Record{
-		ID: kid, TokenSHA256: sha, Prefix: prefix, Mailbox: mailbox,
+		ID: kid, TokenSHA256: sha, Prefix: prefix, Mailbox: "username",
 		Scopes: apikey.JoinScopes(scopes), SecretEnc: enc, SecretNonce: nonce,
 		Created: time.Now().UTC(),
 	})
@@ -254,7 +255,7 @@ func TestAPIKeyMailAndCaps(t *testing.T) {
 	srv, h := newAPIKeyServer(t, 120)
 	srv.GCAPIKeys() // exercises the limiter sweep (no-op on empty maps)
 	// The in-memory IMAP backend authenticates username/password.
-	tok := insertKey(t, srv, "username", "password", apikey.DefaultScopes())
+	tok := insertKey(t, srv, apikey.DefaultScopes())
 
 	if rec := doKey(t, h, http.MethodGet, "/api/v1/mail/folders", tok, ""); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "INBOX") {
 		t.Fatalf("folders = %d, body=%s", rec.Code, rec.Body.String())
@@ -314,7 +315,7 @@ func TestAPIKeyMintIDRecoveryFails(t *testing.T) {
 
 func TestAPIKeyRateLimit(t *testing.T) {
 	srv, h := newAPIKeyServer(t, 1) // per-key budget of 1/window
-	tok := insertKey(t, srv, "username", "password", apikey.DefaultScopes())
+	tok := insertKey(t, srv, apikey.DefaultScopes())
 	if rec := doKey(t, h, http.MethodGet, "/api/v1/mail/folders", tok, ""); rec.Code != http.StatusOK {
 		t.Fatalf("first call = %d, want 200", rec.Code)
 	}

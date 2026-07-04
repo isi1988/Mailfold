@@ -69,32 +69,49 @@ func (s *Server) rateLimited(w http.ResponseWriter, lim *ratelimit.Limiter, key 
 	return true
 }
 
+// errAPIKeyInvalid is the uniform failure for an unknown, mismatched, revoked
+// or expired key, shared by every caller of resolveAPIKey so none of them can
+// distinguish those cases from each other (no oracle).
+var errAPIKeyInvalid = errors.New("unauthorized")
+
+// resolveAPIKey validates a raw token string (from a Bearer header or, for
+// device-login, a request body) and returns its record and decrypted
+// app-password. errAPIKeyInvalid means the key itself is bad; any other error
+// is an operational failure (store lookup or decryption).
+func (s *Server) resolveAPIKey(token string) (*apikey.Record, string, error) {
+	kid, err := apikey.ParseKID(token)
+	if err != nil {
+		return nil, "", errAPIKeyInvalid
+	}
+	rec, err := s.apikeyStore.GetByID(kid)
+	if err != nil {
+		return nil, "", errors.New("api key lookup failed")
+	}
+	if rec == nil || !apikey.TokenMatches(token, rec.TokenSHA256) || !rec.Active(time.Now().UTC()) {
+		return nil, "", errAPIKeyInvalid
+	}
+	appPw, err := s.apikeyCipher.Open(rec.SecretEnc, rec.SecretNonce)
+	if err != nil {
+		return nil, "", errors.New("credential decryption failed")
+	}
+	return rec, string(appPw), nil
+}
+
 // authenticateAPIKey resolves and validates the presented key, returning the
 // record and its decrypted app-password. On any failure it writes the response
 // (uniform 401 for unknown/mismatched/revoked/expired — no oracle — or 500) and
 // returns ok=false.
 func (s *Server) authenticateAPIKey(w http.ResponseWriter, r *http.Request) (*apikey.Record, string, bool) {
-	token := bearerToken(r)
-	kid, err := apikey.ParseKID(token)
+	rec, appPw, err := s.resolveAPIKey(bearerToken(r))
 	if err != nil {
-		apiKeyUnauthorized(w)
+		if errors.Is(err, errAPIKeyInvalid) {
+			apiKeyUnauthorized(w)
+		} else {
+			s.writeError(w, http.StatusInternalServerError, err)
+		}
 		return nil, "", false
 	}
-	rec, err := s.apikeyStore.GetByID(kid)
-	if err != nil {
-		s.writeError(w, http.StatusInternalServerError, errors.New("api key lookup failed"))
-		return nil, "", false
-	}
-	if rec == nil || !apikey.TokenMatches(token, rec.TokenSHA256) || !rec.Active(time.Now().UTC()) {
-		apiKeyUnauthorized(w)
-		return nil, "", false
-	}
-	appPw, err := s.apikeyCipher.Open(rec.SecretEnc, rec.SecretNonce)
-	if err != nil {
-		s.writeError(w, http.StatusInternalServerError, errors.New("credential decryption failed"))
-		return nil, "", false
-	}
-	return rec, string(appPw), true
+	return rec, appPw, true
 }
 
 // requireAPIKey authenticates a request by its API key, enforces rate limits

@@ -282,6 +282,7 @@ func (s *Server) Handler() http.Handler {
 
 	// Machine-to-machine API keys (send/collect mail), when configured.
 	s.registerAPIKeyRoutes(mux)
+	s.registerDeviceLoginRoutes(mux)
 
 	// Management resources (all require authentication).
 	s.registerStatusRoutes(mux)
