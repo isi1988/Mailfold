@@ -85,7 +85,11 @@ clients sync without SOGo.
 
 **Built for internationalisation** — every user-facing string goes through a
 translation layer; the UI ships in English today, and adding a language is a
-single drop-in locale file.
+single drop-in locale file. Domains in a non-Latin script (e.g. родоскоп.рф)
+are stored by mailcow in punycode (`xn--d1amkbbgbl.xn--p1ai`); Mailfold
+decodes them back to readable Unicode everywhere they're shown, and normalizes
+either form to punycode before IMAP/SMTP authentication, so a mailbox works
+the same whether you type its address in Cyrillic or in punycode.
 
 ## Architecture
 
