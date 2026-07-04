@@ -122,6 +122,10 @@ export async function downloadAttachment(folder, uid, index, filename) {
 export const wm = {
   // login/logout do not persist the token themselves — the auth context does.
   login: (email, password) => req('POST', '/api/webmail/login', { email, password }),
+  // deviceLogin exchanges a personal Mailfold API key for a webmail session —
+  // signing into a new device without typing (or even knowing) the mailbox
+  // password. Same {token, email} shape as login().
+  deviceLogin: key => req('POST', '/api/auth/device-login', { key }),
   logout: () => req('POST', '/api/webmail/logout'),
   folders: () => req('GET', '/api/webmail/folders'),
   messages: (folder, limit = 50) => req('GET', '/api/webmail/messages?' + q({ folder, limit })),

@@ -304,6 +304,15 @@
       "button": "Continue with SSO",
       "buttonNamed": "Continue with {{name}}",
       "failed": "Single sign-on failed. Try again, or sign in with your password."
+    },
+    "device": {
+      "link": "Sign in with a device key instead",
+      "title": "Sign in with a device key",
+      "sub": "Paste a personal Mailfold API key to sign into this mailbox's webmail, without its password.",
+      "keyLabel": "API key",
+      "signIn": "Sign in",
+      "back": "Back to sign in",
+      "failed": "That key isn't valid or has been revoked."
     }
   },
   "domainAdmin": {

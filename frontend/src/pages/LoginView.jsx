@@ -32,10 +32,12 @@ export function LoginView() {
   const [codeError, setCodeError] = useState('');
   const [webmailCode, setWebmailCode] = useState('');
   const [webmailCodeError, setWebmailCodeError] = useState('');
-  const [screen, setScreen] = useState('signIn'); // 'signIn' | 'forgot'
+  const [screen, setScreen] = useState('signIn'); // 'signIn' | 'forgot' | 'device'
   const [forgotSent, setForgotSent] = useState(false);
   const [ssoProviders, setSsoProviders] = useState([]); // [{id, name}] for the domain part of whatever's typed so far
   const [ssoError, setSsoError] = useState('');
+  const [deviceKey, setDeviceKey] = useState('');
+  const [deviceError, setDeviceError] = useState('');
 
   // Resolve SSO providers for whatever domain the user has typed so far
   // (debounced) — there is no fixed global "is SSO on" flag any more: each
@@ -174,6 +176,24 @@ export function LoginView() {
     setWebmailCodeError('');
     setScreen('signIn');
     setForgotSent(false);
+    setDeviceKey('');
+    setDeviceError('');
+  }
+
+  // submitDevice signs into webmail with a personal API key instead of the
+  // mailbox password — meant for a new device that only holds a key.
+  async function submitDevice(e) {
+    e.preventDefault();
+    if (busy || !deviceKey.trim()) return;
+    setBusy(true);
+    setDeviceError('');
+    try {
+      const res = await wm.deviceLogin(deviceKey.trim());
+      applyWebmail(res.token, res.email);
+    } catch {
+      setDeviceError(t('login.device.failed'));
+      setBusy(false);
+    }
   }
 
   async function submitForgot(e) {
@@ -294,6 +314,30 @@ export function LoginView() {
               {t('login.forgot.back')}
             </Button>
           </form>
+        ) : screen === 'device' ? (
+          <form className="mf-login__form" onSubmit={submitDevice}>
+            <div className="mf-login__title">{t('login.device.title')}</div>
+            <div className="mf-login__sub">{t('login.device.sub')}</div>
+            <div style={{ marginTop: 28 }}>
+              <Label strong style={{ marginBottom: 7 }}>{t('login.device.keyLabel')}</Label>
+              <Input
+                size="lg"
+                mono
+                autoFocus
+                placeholder="mf_live_..."
+                autoComplete="off"
+                value={deviceKey}
+                onChange={e => setDeviceKey(e.target.value)}
+              />
+            </div>
+            {deviceError && <div className="mf-form-error" style={{ marginTop: 14 }} role="alert">{deviceError}</div>}
+            <Button variant="primary" block size="lg" type="submit" disabled={busy} style={{ marginTop: 22 }}>
+              {busy ? t('login.signingIn') : t('login.device.signIn')}
+            </Button>
+            <Button variant="secondary" block size="lg" type="button" style={{ marginTop: 10 }} onClick={backToSignIn}>
+              {t('login.device.back')}
+            </Button>
+          </form>
         ) : (
           <form className="mf-login__form" onSubmit={submit}>
             <div className="mf-login__title">{t('login.signIn')}</div>
@@ -325,6 +369,16 @@ export function LoginView() {
                 {t('login.sso.buttonNamed', { name: p.name })}
               </Button>
             ))}
+            <div style={{ marginTop: 16, textAlign: 'center' }}>
+              <span
+                role="button"
+                className="mf-u-faint"
+                style={{ fontSize: 12.5, cursor: 'pointer' }}
+                onClick={() => setScreen('device')}
+              >
+                {t('login.device.link')}
+              </span>
+            </div>
           </form>
         )}
       </div>
