@@ -24,6 +24,7 @@ import { WebmailSettingsDrawer } from './WebmailSettingsDrawer.jsx';
 import { CalendarView } from './CalendarView.jsx';
 import { Loading, ErrorState, Empty } from '../components/States.jsx';
 import { decodeIdnAddress } from '../lib/idn.js';
+import { collapseQuotedHtml, collapseQuotedText } from '../lib/quotes.js';
 
 const SYS_ICON = { inbox: 'inbox', sent: 'send', drafts: 'drafts', archive: 'archive', junk: 'shield', spam: 'shield', trash: 'trash' };
 const SYS_ORDER = ['inbox', 'sent', 'drafts', 'archive', 'junk', 'spam', 'trash'];
@@ -75,6 +76,20 @@ const shortTime = iso => {
   return d.toDateString() === now.toDateString()
     ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     : d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+};
+const fullDateTime = iso => {
+  const d = new Date(iso);
+  return isNaN(d) ? '' : d.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+};
+// addressListText is display-only, for quoted reply/forward headers — never
+// fed back into a request (the actual To/Cc fields are built from raw
+// addresses elsewhere).
+const addressListText = list => {
+  if (!Array.isArray(list) || list.length === 0) return '';
+  return list.map(a => {
+    const email = decodeIdnAddress(a.email || '');
+    return a.name ? `${a.name} <${email}>` : email;
+  }).join(', ');
 };
 
 // Inline mailbox login shown when there is no webmail session (e.g. an admin
@@ -164,6 +179,7 @@ function WebmailClient() {
   const [messages, setMessages] = useState([]);
   const [selected, setSelected] = useState(null); // MessageHeader
   const [body, setBody] = useState(null);
+  const [showAllQuoted, setShowAllQuoted] = useState(false);
   const [q, setQ] = useState('');
   const [loadingList, setLoadingList] = useState(true);
   const [error, setError] = useState(null);
@@ -228,6 +244,7 @@ function WebmailClient() {
   async function openMessage(m) {
     setSelected(m);
     setBody(null);
+    setShowAllQuoted(false);
     try {
       const full = await wm.message(folder, m.uid);
       setBody(full);
@@ -280,13 +297,28 @@ function WebmailClient() {
   function reply(m) {
     const sender = m.from && m.from[0] ? m.from[0].email : '';
     const subj = m.subject || '';
-    const quote = body && body.text ? '\n\n> ' + body.text.split('\n').join('\n> ') : '';
+    let quote = '';
+    if (body && body.text) {
+      const header = t('webmail.quote.on', { date: fullDateTime(m.date), sender: addressListText(m.from) });
+      const quoted = body.text.split('\n').map(l => '> ' + l).join('\n');
+      quote = '\n\n' + header + '\n' + quoted;
+    }
     setComposing({ to: sender, subject: subj.startsWith('Re:') ? subj : 'Re: ' + subj, text: quote });
   }
 
   function forward(m) {
     const subj = m.subject || '';
-    const quote = body && body.text ? '\n\n---------- Forwarded message ----------\n' + body.text : '';
+    let quote = '';
+    if (body && body.text) {
+      const header = [
+        t('webmail.quote.forwardHeader'),
+        t('webmail.quote.from', { value: addressListText(m.from) }),
+        t('webmail.quote.date', { value: fullDateTime(m.date) }),
+        t('webmail.quote.subject', { value: subj }),
+        t('webmail.quote.to', { value: addressListText(m.to) }),
+      ].join('\n');
+      quote = '\n\n' + header + '\n\n' + body.text;
+    }
     setComposing({ subject: subj.startsWith('Fwd:') ? subj : 'Fwd: ' + subj, text: quote });
   }
 
@@ -329,6 +361,20 @@ function WebmailClient() {
   const listTitle = filterMode === 'starred'
     ? t('webmail.starred')
     : filterMode && filterMode.startsWith('label:') ? filterMode.slice(6) : folderLeaf(folder);
+
+  // Collapse deep quote history once here rather than in the render below —
+  // parsing HTML is not free, and the result only changes when the message
+  // (or its body) changes, not on every re-render.
+  const collapsedHtml = useMemo(
+    () => (body && body.html
+      ? collapseQuotedHtml(body.html, n => t('webmail.quote.showEarlier', { count: n }))
+      : null),
+    [body, t],
+  );
+  const collapsedText = useMemo(
+    () => (body && !body.html ? collapseQuotedText(body.text || '') : null),
+    [body],
+  );
 
   return (
     <>
@@ -456,11 +502,30 @@ function WebmailClient() {
               ) : body.html ? (
                 // Render HTML mail in a fully-sandboxed iframe: sandbox="" blocks
                 // scripts, forms, popups and same-origin access, so untrusted mail
-                // markup cannot run or reach the app.
-                <iframe title="message" sandbox="" srcDoc={body.html}
+                // markup cannot run or reach the app. Deep quote history is
+                // pre-collapsed into a native <details> (see collapseQuotedHtml),
+                // which toggles without JavaScript, so it still works here.
+                <iframe title="message" sandbox="" srcDoc={collapsedHtml}
                   style={{ border: 'none', width: '100%', flex: 1, minHeight: 320, background: '#fff' }} />
               ) : (
-                <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', font: '14px/1.6 var(--font-sans)', color: 'var(--ink)', margin: 0, padding: 22 }}>{body.text || ''}</pre>
+                <>
+                  <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', font: '14px/1.6 var(--font-sans)', color: 'var(--ink)', margin: 0, padding: 22 }}>
+                    {collapsedText.visible}
+                  </pre>
+                  {collapsedText.hiddenCount > 0 && (
+                    <button
+                      onClick={() => setShowAllQuoted(s => !s)}
+                      style={{ margin: '0 22px 22px', alignSelf: 'flex-start', background: 'none', border: 'none', color: 'var(--accent-ink)', font: '600 12.5px var(--font-sans)', cursor: 'pointer', padding: 0 }}
+                    >
+                      {showAllQuoted ? t('webmail.quote.hideEarlier') : t('webmail.quote.showEarlier', { count: collapsedText.hiddenCount })}
+                    </button>
+                  )}
+                  {showAllQuoted && (
+                    <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', font: '14px/1.6 var(--font-sans)', color: 'var(--ink)', margin: '0 0 22px', padding: '0 22px' }}>
+                      {collapsedText.hidden}
+                    </pre>
+                  )}
+                </>
               )}
               {body && Array.isArray(body.attachments) && body.attachments.length > 0 && (
                 <div style={{ margin: '0 22px 22px', borderTop: '1px solid var(--hair)', paddingTop: 14 }}>

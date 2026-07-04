@@ -122,6 +122,17 @@
     "replyTo": "Reply to {{name}}",
     "folderNamePrompt": "New folder name",
     "labelNamePrompt": "New label name",
+    "quote": {
+      "on": "On {{date}}, {{sender}} wrote:",
+      "forwardHeader": "---------- Forwarded message ----------",
+      "from": "From: {{value}}",
+      "date": "Date: {{value}}",
+      "subject": "Subject: {{value}}",
+      "to": "To: {{value}}",
+      "showEarlier_one": "▸ Show {{count}} earlier quoted message",
+      "showEarlier_other": "▸ Show {{count}} earlier quoted messages",
+      "hideEarlier": "▾ Hide earlier quoted messages"
+    },
     "folderCreated": "Folder “{{name}}” created.",
     "labelCreated": "Label “{{name}}” created.",
     "createFolderFailed": "Could not create the folder.",
