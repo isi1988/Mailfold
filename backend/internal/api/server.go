@@ -15,11 +15,17 @@ import (
 	"github.com/isi1988/Mailfold/backend/internal/auth"
 	"github.com/isi1988/Mailfold/backend/internal/config"
 	"github.com/isi1988/Mailfold/backend/internal/dav"
+	"github.com/isi1988/Mailfold/backend/internal/domainadmin"
 	"github.com/isi1988/Mailfold/backend/internal/metrics"
 	"github.com/isi1988/Mailfold/backend/internal/ratelimit"
 	"github.com/isi1988/Mailfold/backend/internal/webmail"
 	"github.com/isi1988/Mailfold/backend/internal/webmailuser"
 )
+
+// domainAdminSessionTTL bounds how long a domain admin's Mailfold session
+// (distinct from both the singleton super-admin's and a webmail user's) stays
+// valid before they must sign in again.
+const domainAdminSessionTTL = 12 * time.Hour
 
 // webmailPending2FATTL bounds how long a webmail login that passed the
 // password check but still needs a TOTP/recovery code stays redeemable.
@@ -29,26 +35,28 @@ const webmailPending2FATTL = 5 * time.Minute
 // its collaborators through interfaces/values so the transport layer stays
 // decoupled from concrete implementations.
 type Server struct {
-	cfg             *config.Config
-	mc              Mailcow
-	auth            *auth.Authenticator
-	loginLimiter    *ratelimit.Limiter
-	metrics         *metrics.Metrics
-	webmail         *webmail.Client
-	webmailSessions *webmail.Sessions
-	webmailPending  *webmail.Sessions  // holds {email,password} between a webmail login's password step and its 2FA step
-	webmailUsers    *webmailuser.Store // signature/2FA per mailbox; nil when DBPath is empty
-	davStore        *dav.Store
-	davAuth         *davVerifier
-	apikeyStore     *apikey.Store
-	apikeyCipher    *apikey.Cipher
-	apikeyKeyLimit  *ratelimit.Limiter // per-key request budget
-	apikeyIPLimit   *ratelimit.Limiter // pre-auth per-IP guard against token guessing
-	adminStore      *admin.Store       // password/profile/2FA/notify-sender/reset-tokens; nil when DBPath is empty
-	adminCipher     *admin.Cipher      // nil when MAILFOLD_ADMIN_ENC_KEY is unset (2FA/notify-sender then report 501)
-	resetLimiter    *ratelimit.Limiter // throttles the public forgot-password endpoint per IP
-	sso             *ssoManager        // nil unless every MAILFOLD_OIDC_* variable is set and discovery succeeded
-	logger          *slog.Logger
+	cfg                 *config.Config
+	mc                  Mailcow
+	auth                *auth.Authenticator
+	loginLimiter        *ratelimit.Limiter
+	metrics             *metrics.Metrics
+	webmail             *webmail.Client
+	webmailSessions     *webmail.Sessions
+	webmailPending      *webmail.Sessions  // holds {email,password} between a webmail login's password step and its 2FA step
+	webmailUsers        *webmailuser.Store // signature/2FA per mailbox; nil when DBPath is empty
+	davStore            *dav.Store
+	davAuth             *davVerifier
+	apikeyStore         *apikey.Store
+	apikeyCipher        *apikey.Cipher
+	apikeyKeyLimit      *ratelimit.Limiter    // per-key request budget
+	apikeyIPLimit       *ratelimit.Limiter    // pre-auth per-IP guard against token guessing
+	adminStore          *admin.Store          // password/profile/2FA/notify-sender/reset-tokens; nil when DBPath is empty
+	adminCipher         *admin.Cipher         // nil when MAILFOLD_ADMIN_ENC_KEY is unset (2FA/notify-sender then report 501)
+	resetLimiter        *ratelimit.Limiter    // throttles the public forgot-password endpoint per IP
+	domainAdminStore    *domainadmin.Store    // domain-admin login + SSO provider config; nil when DBPath is empty
+	domainAdminSessions *domainadmin.Sessions // domain-admin Mailfold sessions (distinct from the super-admin's and webmail's)
+	sso                 *ssoManager           // nil unless a database and the admin cipher are both available
+	logger              *slog.Logger
 }
 
 // NewServer constructs a Server from its collaborators. mc is any type
@@ -112,32 +120,38 @@ func NewServer(cfg *config.Config, mc Mailcow, authn *auth.Authenticator, limite
 	// like the other optional stores, a failure disables just this feature.
 	webmailUsers := openWebmailUserStore(cfg, logger)
 
-	// Set up OIDC single sign-on only when every variable is configured; a
-	// partially-configured set is treated the same as fully off, since there is
-	// no safe partial state to run in.
-	sso := openSSO(cfg, logger)
+	// Open the domain-admin store (login + SSO provider config) alongside the
+	// others; SSO itself additionally needs the admin cipher to decrypt stored
+	// client secrets, so it stays nil until both are available.
+	domainAdminStore := openDomainAdminStore(cfg, logger)
+	var sso *ssoManager
+	if domainAdminStore != nil && adminCipher != nil {
+		sso = newSSOManager(domainAdminStore, adminCipher)
+	}
 
 	return &Server{
-		cfg:             cfg,
-		mc:              mc,
-		auth:            authn,
-		loginLimiter:    limiter,
-		metrics:         metrics.New(),
-		webmail:         wm,
-		webmailSessions: webmail.NewSessions(cfg.WebmailSessionTTL),
-		webmailPending:  webmail.NewSessions(webmailPending2FATTL),
-		webmailUsers:    webmailUsers,
-		davStore:        davStore,
-		davAuth:         davAuth,
-		apikeyStore:     akStore,
-		apikeyCipher:    akCipher,
-		apikeyKeyLimit:  akKeyLimit,
-		apikeyIPLimit:   akIPLimit,
-		adminStore:      adminStore,
-		adminCipher:     adminCipher,
-		resetLimiter:    ratelimit.New(5, time.Hour),
-		sso:             sso,
-		logger:          logger,
+		cfg:                 cfg,
+		mc:                  mc,
+		auth:                authn,
+		loginLimiter:        limiter,
+		metrics:             metrics.New(),
+		webmail:             wm,
+		webmailSessions:     webmail.NewSessions(cfg.WebmailSessionTTL),
+		webmailPending:      webmail.NewSessions(webmailPending2FATTL),
+		webmailUsers:        webmailUsers,
+		davStore:            davStore,
+		davAuth:             davAuth,
+		apikeyStore:         akStore,
+		apikeyCipher:        akCipher,
+		apikeyKeyLimit:      akKeyLimit,
+		apikeyIPLimit:       akIPLimit,
+		adminStore:          adminStore,
+		adminCipher:         adminCipher,
+		resetLimiter:        ratelimit.New(5, time.Hour),
+		domainAdminStore:    domainAdminStore,
+		domainAdminSessions: domainadmin.NewSessions(domainAdminSessionTTL),
+		sso:                 sso,
+		logger:              logger,
 	}
 }
 
@@ -186,22 +200,19 @@ func openWebmailUserStore(cfg *config.Config, logger *slog.Logger) *webmailuser.
 	return st
 }
 
-// openSSO builds the OIDC single sign-on manager when every MAILFOLD_OIDC_*
-// variable is set. Discovery is a network call to the identity provider, so
-// it is bounded by a timeout and, like the other optional subsystems above,
-// any failure disables just this feature rather than the whole backend.
-func openSSO(cfg *config.Config, logger *slog.Logger) *ssoManager {
-	if cfg.OIDCIssuer == "" || cfg.OIDCClientID == "" || cfg.OIDCClientSecret == "" || cfg.OIDCRedirectURL == "" || cfg.OIDCAllowedEmail == "" {
+// openDomainAdminStore opens the domain-admin store (login credentials and
+// SSO provider configuration) when a database is configured, matching the
+// admin/DAV/API-key/webmail-user stores' fail-open behaviour.
+func openDomainAdminStore(cfg *config.Config, logger *slog.Logger) *domainadmin.Store {
+	if cfg.DBPath == "" {
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	mgr, err := newSSOManager(ctx, cfg)
+	st, err := domainadmin.Open(cfg.DBDriver, cfg.DBPath)
 	if err != nil {
-		logger.Error("failed to initialise SSO; SSO disabled", "error", err)
+		logger.Error("failed to open domain-admin store; domain-admin login and SSO disabled", "error", err)
 		return nil
 	}
-	return mgr
+	return st
 }
 
 // GCWebmail evicts expired webmail sessions and pending 2FA logins. It is
@@ -211,13 +222,14 @@ func (s *Server) GCWebmail() {
 	s.webmailPending.GC()
 }
 
-// GCSSO discards expired in-flight SSO login attempts. It is a no-op when SSO
-// is not configured and is intended to be called on the same periodic sweep
-// as GCWebmail.
+// GCSSO discards expired in-flight SSO login attempts and expired domain-admin
+// sessions. It is intended to be called on the same periodic sweep as
+// GCWebmail.
 func (s *Server) GCSSO() {
 	if s.sso != nil {
 		s.sso.GC()
 	}
+	s.domainAdminSessions.GC()
 }
 
 // GCAPIKeys reclaims stale entries from the API-key rate limiters so their maps
@@ -248,6 +260,9 @@ func (s *Server) Handler() http.Handler {
 	s.registerAuthRoutes(mux)
 	s.registerPasswordResetRoutes(mux)
 	s.registerSSORoutes(mux)
+	s.registerDomainAdminAuthRoutes(mux)
+	s.registerSSOProviderRoutes(mux)
+	s.registerDomainAdminSSORoutes(mux)
 
 	// Admin account settings: profile, password, sessions, two-factor auth,
 	// and the notification sender used to email reset links.

@@ -53,6 +53,14 @@ inline in the VEVENT); events are colour-coded by calendar (work / personal /
 team / holidays), and clicking one opens a detail card with an Outlook-style
 **RSVP** row (Going / Maybe / Can't, persisted as the owner's ATTENDEE
 `PARTSTAT`). So end users read, send and schedule without a separate client.
+From their own Settings, a mailbox user can also set a **signature** (added
+automatically to new messages, replies and forwards), build simple **rules**
+("if sender/recipient/subject contains X, move to folder Y", backed by
+mailcow's Sieve filters), and enroll their own optional two-factor auth. A
+long back-and-forth thread doesn't pile up as an ever-growing wall of quotes
+either: the reader collapses everything past the 3 most recent quoted
+messages behind a "show N earlier" toggle, and reply/forward now generate a
+proper quoted header instead of a bare `>` prefix.
 
 **One unified login** — a single sign-in screen checks the credentials against
 *both* the admin login and a mailbox (webmail) login in parallel: whoever you
@@ -67,11 +75,23 @@ on. Active sessions are listed by device/IP and can be revoked individually or
 all at once. A "forgot password?" link on the sign-in screen emails a reset link
 — from a mailbox the admin configures themselves in Settings (see
 [`MAILFOLD_ADMIN_ENC_KEY`](.env.example)), not a fixed environment variable.
-Optionally, sign-in can also delegate to an OIDC identity provider ("Continue
-with SSO"): the provider only ever authenticates a single, explicitly
-configured email address into the one Mailfold admin account (see the five
-`MAILFOLD_OIDC_*` variables in [`.env.example`](.env.example)) — it is fully
-inert until every one of them is set.
+Optionally, sign-in can also delegate to one or more OIDC identity providers
+("Continue with SSO"): unlike a single fixed provider, each is configured from
+the UI and scoped either to every domain or to a specific set, so a domain
+admin can add their own provider for just the domain(s) they manage while a
+super-admin's shared providers are available everywhere. A successful sign-in
+authenticates into the one mailbox whose address matches the provider's
+verified identity — never the admin panel. A webmail mailbox user can
+separately enroll their own optional TOTP two-factor auth from their webmail
+settings, independent of the admin's.
+
+**Domain admins** — mailcow's own scoped administrators (limited to a subset
+of domains) get a real login into Mailfold itself, not just mailcow's SOGo/
+admin UI: setting or changing a domain admin's password from the "New domain
+admin" drawer also registers it for this separate sign-in. Once in, a domain
+admin manages SSO for the domain(s) mailcow currently reports them scoped to —
+picking up a super-admin's shared providers automatically, or adding their
+own.
 
 **API keys — drive your mailbox from other apps.** Issue durable, individually
 revocable API keys so any third-party service can **send and collect mail** for a

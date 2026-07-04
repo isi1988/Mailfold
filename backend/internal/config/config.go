@@ -118,23 +118,14 @@ type Config struct {
 	ServerName string
 
 	// AdminEncKey is the decoded master key (>= 32 bytes) from which the
-	// AES-256-GCM key that encrypts the admin account's secrets (a TOTP seed,
-	// the system-notification mailbox password) is derived. It is optional:
-	// when unset, two-factor enrollment and the notification sender cannot be
-	// configured (their endpoints report 501), but everything else — password
-	// change, profile, sessions — still works off DBPath alone.
+	// AES-256-GCM key that encrypts every secret Mailfold stores at rest is
+	// derived: the admin's TOTP seed and notification-sender mailbox password,
+	// a webmail user's own TOTP seed, an SSO provider's OIDC client secret,
+	// and a mailbox's cached SSO app-password. It is optional: when unset,
+	// every one of those features reports 501 rather than failing, but
+	// everything else — password change, profile, sessions — still works off
+	// DBPath alone.
 	AdminEncKey []byte
-
-	// OIDCIssuer/OIDCClientID/OIDCClientSecret/OIDCRedirectURL/OIDCAllowedEmail
-	// configure optional single sign-on. SSO is only offered to the frontend
-	// (and only enabled server-side) when every one of these is set; an
-	// operator who does not configure an identity provider sees no SSO option
-	// at all, rather than a button that would fail.
-	OIDCIssuer       string
-	OIDCClientID     string
-	OIDCClientSecret string
-	OIDCRedirectURL  string
-	OIDCAllowedEmail string
 }
 
 // Load reads every configuration value from the environment, applies sensible
@@ -169,11 +160,6 @@ func Load() (*Config, error) {
 		APIKeyDefaultTTL:    getdur("MAILFOLD_APIKEY_DEFAULT_TTL", 0),
 		APIKeyMaxRecipients: int(getint64("MAILFOLD_APIKEY_MAX_RECIPIENTS", 50)),
 		ServerName:          getenv("MAILFOLD_SERVER_NAME", ""),
-		OIDCIssuer:          os.Getenv("MAILFOLD_OIDC_ISSUER"),
-		OIDCClientID:        os.Getenv("MAILFOLD_OIDC_CLIENT_ID"),
-		OIDCClientSecret:    os.Getenv("MAILFOLD_OIDC_CLIENT_SECRET"),
-		OIDCRedirectURL:     os.Getenv("MAILFOLD_OIDC_REDIRECT_URL"),
-		OIDCAllowedEmail:    os.Getenv("MAILFOLD_OIDC_ALLOWED_EMAIL"),
 	}
 
 	// The following three values have no safe default: without an upstream

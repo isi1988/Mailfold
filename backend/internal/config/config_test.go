@@ -141,30 +141,6 @@ func TestLoadAdminEncKeyInvalid(t *testing.T) {
 	}
 }
 
-func TestLoadOIDCFields(t *testing.T) {
-	setRequired(t)
-	if cfg, err := Load(); err != nil {
-		t.Fatalf("Load: %v", err)
-	} else if cfg.OIDCIssuer != "" || cfg.OIDCClientID != "" || cfg.OIDCClientSecret != "" || cfg.OIDCRedirectURL != "" || cfg.OIDCAllowedEmail != "" {
-		t.Errorf("OIDC fields should default to empty: %+v", cfg)
-	}
-
-	t.Setenv("MAILFOLD_OIDC_ISSUER", "https://idp.example/")
-	t.Setenv("MAILFOLD_OIDC_CLIENT_ID", "client-id")
-	t.Setenv("MAILFOLD_OIDC_CLIENT_SECRET", "client-secret")
-	t.Setenv("MAILFOLD_OIDC_REDIRECT_URL", "https://mail.example/api/auth/sso/callback")
-	t.Setenv("MAILFOLD_OIDC_ALLOWED_EMAIL", "admin@example.com")
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if cfg.OIDCIssuer != "https://idp.example/" || cfg.OIDCClientID != "client-id" ||
-		cfg.OIDCClientSecret != "client-secret" || cfg.OIDCRedirectURL != "https://mail.example/api/auth/sso/callback" ||
-		cfg.OIDCAllowedEmail != "admin@example.com" {
-		t.Errorf("OIDC overrides not applied: %+v", cfg)
-	}
-}
-
 func TestLoadMissingRequired(t *testing.T) {
 	cases := []struct{ name, url, key, pass string }{
 		{"no url", "", "k", "p"},

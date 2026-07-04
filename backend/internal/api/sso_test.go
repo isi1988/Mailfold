@@ -14,7 +14,8 @@ import (
 
 	josejwt "github.com/go-jose/go-jose/v4"
 
-	"github.com/isi1988/Mailfold/backend/internal/config"
+	"github.com/isi1988/Mailfold/backend/internal/admin"
+	"github.com/isi1988/Mailfold/backend/internal/domainadmin"
 )
 
 // fakeOIDCProvider is a minimal OIDC identity provider for tests: it serves
@@ -121,29 +122,55 @@ func defaultClaims(issuer, clientID, nonce, email string, emailVerified bool) ma
 	}
 }
 
-const testAllowedEmail = "admin@example.com"
+const testIdentityEmail = "someone@example.com"
 
-func newTestSSOManager(t *testing.T, provider *fakeOIDCProvider) *ssoManager {
+func testSSOCipher(t *testing.T) *admin.Cipher {
 	t.Helper()
-	cfg := &config.Config{
-		OIDCIssuer:       provider.srv.URL,
-		OIDCClientID:     "test-client",
-		OIDCClientSecret: "test-secret",
-		OIDCRedirectURL:  "https://mailfold.example/api/auth/sso/callback",
-		OIDCAllowedEmail: testAllowedEmail,
+	key := make([]byte, 32)
+	for i := range key {
+		key[i] = byte(i + 3)
 	}
-	mgr, err := newSSOManager(context.Background(), cfg)
+	ci, err := admin.NewCipher(key)
 	if err != nil {
-		t.Fatalf("newSSOManager: %v", err)
+		t.Fatalf("NewCipher: %v", err)
 	}
-	return mgr
+	return ci
 }
 
-// startAndExtractState mints a StartURL and pulls the "state" query parameter
-// back out of it, the way a browser redirect would carry it to the callback.
-func startAndExtractState(t *testing.T, mgr *ssoManager) string {
+// newTestSSOManager wraps a fresh domainadmin store and cipher, seeds one
+// AllDomains provider pointing at the fake OIDC provider, and returns the
+// manager alongside that provider's id.
+func newTestSSOManager(t *testing.T, provider *fakeOIDCProvider) (*ssoManager, int64) {
 	t.Helper()
-	dest, err := mgr.StartURL()
+	store, err := domainadmin.Open("sqlite", t.TempDir()+"/domainadmin.db")
+	if err != nil {
+		t.Fatalf("domainadmin.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	cipher := testSSOCipher(t)
+
+	enc, nonce, err := cipher.Seal([]byte("test-secret"))
+	if err != nil {
+		t.Fatalf("Seal: %v", err)
+	}
+	id, err := store.CreateProvider(domainadmin.Provider{
+		Name: "Test IdP", Issuer: provider.srv.URL, ClientID: "test-client",
+		ClientSecretEnc: enc, ClientSecretNonce: nonce,
+		RedirectURL: "https://mailfold.example/api/auth/sso/callback",
+		AllDomains:  true, Active: true,
+	}, time.Now())
+	if err != nil {
+		t.Fatalf("CreateProvider: %v", err)
+	}
+	return newSSOManager(store, cipher), id
+}
+
+// startAndExtractState mints a StartURL for providerID and pulls the "state"
+// query parameter back out of it, the way a browser redirect would carry it
+// to the callback.
+func startAndExtractState(t *testing.T, mgr *ssoManager, providerID int64) string {
+	t.Helper()
+	dest, err := mgr.StartURL(context.Background(), providerID)
 	if err != nil {
 		t.Fatalf("StartURL: %v", err)
 	}
@@ -169,26 +196,26 @@ func (m *ssoManager) peekNonce(state string) string {
 
 func TestSSOManagerFullFlowSuccess(t *testing.T) {
 	provider := newFakeOIDCProvider(t)
-	mgr := newTestSSOManager(t, provider)
-	state := startAndExtractState(t, mgr)
+	mgr, providerID := newTestSSOManager(t, provider)
+	state := startAndExtractState(t, mgr, providerID)
 	nonce := mgr.peekNonce(state)
 
 	provider.idTokenClaims = func() map[string]any {
-		return defaultClaims(provider.srv.URL, "test-client", nonce, testAllowedEmail, true)
+		return defaultClaims(provider.srv.URL, "test-client", nonce, testIdentityEmail, true)
 	}
 
-	email, err := mgr.Verify(context.Background(), state, "any-code")
+	identity, err := mgr.Verify(context.Background(), state, "any-code")
 	if err != nil {
 		t.Fatalf("Verify: %v", err)
 	}
-	if email != testAllowedEmail {
-		t.Errorf("Verify email = %q, want %q", email, testAllowedEmail)
+	if identity.Email != testIdentityEmail || identity.ProviderID != providerID {
+		t.Errorf("Verify identity = %+v, want email %q provider %d", identity, testIdentityEmail, providerID)
 	}
 }
 
 func TestSSOManagerUnknownState(t *testing.T) {
 	provider := newFakeOIDCProvider(t)
-	mgr := newTestSSOManager(t, provider)
+	mgr, _ := newTestSSOManager(t, provider)
 	if _, err := mgr.Verify(context.Background(), "not-a-real-state", "code"); err == nil {
 		t.Error("Verify should reject an unknown state")
 	}
@@ -196,11 +223,11 @@ func TestSSOManagerUnknownState(t *testing.T) {
 
 func TestSSOManagerStateIsSingleUse(t *testing.T) {
 	provider := newFakeOIDCProvider(t)
-	mgr := newTestSSOManager(t, provider)
-	state := startAndExtractState(t, mgr)
+	mgr, providerID := newTestSSOManager(t, provider)
+	state := startAndExtractState(t, mgr, providerID)
 	nonce := mgr.peekNonce(state)
 	provider.idTokenClaims = func() map[string]any {
-		return defaultClaims(provider.srv.URL, "test-client", nonce, testAllowedEmail, true)
+		return defaultClaims(provider.srv.URL, "test-client", nonce, testIdentityEmail, true)
 	}
 
 	if _, err := mgr.Verify(context.Background(), state, "code"); err != nil {
@@ -213,8 +240,8 @@ func TestSSOManagerStateIsSingleUse(t *testing.T) {
 
 func TestSSOManagerExpiredState(t *testing.T) {
 	provider := newFakeOIDCProvider(t)
-	mgr := newTestSSOManager(t, provider)
-	state := startAndExtractState(t, mgr)
+	mgr, providerID := newTestSSOManager(t, provider)
+	state := startAndExtractState(t, mgr, providerID)
 
 	mgr.mu.Lock()
 	p := mgr.pending[state]
@@ -229,11 +256,11 @@ func TestSSOManagerExpiredState(t *testing.T) {
 
 func TestSSOManagerNonceMismatch(t *testing.T) {
 	provider := newFakeOIDCProvider(t)
-	mgr := newTestSSOManager(t, provider)
-	state := startAndExtractState(t, mgr)
+	mgr, providerID := newTestSSOManager(t, provider)
+	state := startAndExtractState(t, mgr, providerID)
 
 	provider.idTokenClaims = func() map[string]any {
-		return defaultClaims(provider.srv.URL, "test-client", "wrong-nonce", testAllowedEmail, true)
+		return defaultClaims(provider.srv.URL, "test-client", "wrong-nonce", testIdentityEmail, true)
 	}
 	if _, err := mgr.Verify(context.Background(), state, "code"); err == nil {
 		t.Error("Verify should reject a mismatched nonce")
@@ -242,57 +269,42 @@ func TestSSOManagerNonceMismatch(t *testing.T) {
 
 func TestSSOManagerEmailNotVerified(t *testing.T) {
 	provider := newFakeOIDCProvider(t)
-	mgr := newTestSSOManager(t, provider)
-	state := startAndExtractState(t, mgr)
+	mgr, providerID := newTestSSOManager(t, provider)
+	state := startAndExtractState(t, mgr, providerID)
 	nonce := mgr.peekNonce(state)
 
 	provider.idTokenClaims = func() map[string]any {
-		return defaultClaims(provider.srv.URL, "test-client", nonce, testAllowedEmail, false)
+		return defaultClaims(provider.srv.URL, "test-client", nonce, testIdentityEmail, false)
 	}
 	_, err := mgr.Verify(context.Background(), state, "code")
-	if err != errSSONotAuthorized {
-		t.Errorf("want errSSONotAuthorized for an unverified email, got %v", err)
+	if err != errSSOMailboxNotAllowed {
+		t.Errorf("want errSSOMailboxNotAllowed for an unverified email, got %v", err)
 	}
 }
 
-func TestSSOManagerWrongEmail(t *testing.T) {
+func TestSSOManagerEmailIsNormalized(t *testing.T) {
 	provider := newFakeOIDCProvider(t)
-	mgr := newTestSSOManager(t, provider)
-	state := startAndExtractState(t, mgr)
+	mgr, providerID := newTestSSOManager(t, provider)
+	state := startAndExtractState(t, mgr, providerID)
 	nonce := mgr.peekNonce(state)
 
 	provider.idTokenClaims = func() map[string]any {
-		return defaultClaims(provider.srv.URL, "test-client", nonce, "someone-else@example.com", true)
+		return defaultClaims(provider.srv.URL, "test-client", nonce, strings.ToUpper(testIdentityEmail)+"  ", true)
 	}
-	_, err := mgr.Verify(context.Background(), state, "code")
-	if err != errSSONotAuthorized {
-		t.Errorf("want errSSONotAuthorized for a mismatched email, got %v", err)
-	}
-}
-
-func TestSSOManagerEmailCaseInsensitive(t *testing.T) {
-	provider := newFakeOIDCProvider(t)
-	mgr := newTestSSOManager(t, provider)
-	state := startAndExtractState(t, mgr)
-	nonce := mgr.peekNonce(state)
-
-	provider.idTokenClaims = func() map[string]any {
-		return defaultClaims(provider.srv.URL, "test-client", nonce, strings.ToUpper(testAllowedEmail), true)
-	}
-	email, err := mgr.Verify(context.Background(), state, "code")
+	identity, err := mgr.Verify(context.Background(), state, "code")
 	if err != nil {
-		t.Fatalf("Verify should accept a case-different match: %v", err)
+		t.Fatalf("Verify: %v", err)
 	}
-	if email != strings.ToUpper(testAllowedEmail) {
-		t.Errorf("Verify returned %q", email)
+	if identity.Email != testIdentityEmail {
+		t.Errorf("Verify email = %q, want normalized %q", identity.Email, testIdentityEmail)
 	}
 }
 
 func TestSSOManagerTokenEndpointFailure(t *testing.T) {
 	provider := newFakeOIDCProvider(t)
 	provider.tokenStatus = http.StatusBadRequest
-	mgr := newTestSSOManager(t, provider)
-	state := startAndExtractState(t, mgr)
+	mgr, providerID := newTestSSOManager(t, provider)
+	state := startAndExtractState(t, mgr, providerID)
 
 	if _, err := mgr.Verify(context.Background(), state, "bad-code"); err == nil {
 		t.Error("Verify should surface a token-endpoint failure as an error")
@@ -301,12 +313,12 @@ func TestSSOManagerTokenEndpointFailure(t *testing.T) {
 
 func TestSSOManagerWrongAudience(t *testing.T) {
 	provider := newFakeOIDCProvider(t)
-	mgr := newTestSSOManager(t, provider)
-	state := startAndExtractState(t, mgr)
+	mgr, providerID := newTestSSOManager(t, provider)
+	state := startAndExtractState(t, mgr, providerID)
 	nonce := mgr.peekNonce(state)
 
 	provider.idTokenClaims = func() map[string]any {
-		return defaultClaims(provider.srv.URL, "some-other-client", nonce, testAllowedEmail, true)
+		return defaultClaims(provider.srv.URL, "some-other-client", nonce, testIdentityEmail, true)
 	}
 	if _, err := mgr.Verify(context.Background(), state, "code"); err == nil {
 		t.Error("Verify should reject an ID token issued for a different client (audience)")
@@ -315,12 +327,12 @@ func TestSSOManagerWrongAudience(t *testing.T) {
 
 func TestSSOManagerExpiredToken(t *testing.T) {
 	provider := newFakeOIDCProvider(t)
-	mgr := newTestSSOManager(t, provider)
-	state := startAndExtractState(t, mgr)
+	mgr, providerID := newTestSSOManager(t, provider)
+	state := startAndExtractState(t, mgr, providerID)
 	nonce := mgr.peekNonce(state)
 
 	provider.idTokenClaims = func() map[string]any {
-		c := defaultClaims(provider.srv.URL, "test-client", nonce, testAllowedEmail, true)
+		c := defaultClaims(provider.srv.URL, "test-client", nonce, testIdentityEmail, true)
 		c["exp"] = time.Now().Add(-time.Hour).Unix()
 		return c
 	}
@@ -329,23 +341,39 @@ func TestSSOManagerExpiredToken(t *testing.T) {
 	}
 }
 
-func TestNewSSOManagerDiscoveryFailure(t *testing.T) {
-	cfg := &config.Config{
-		OIDCIssuer:       "http://127.0.0.1:1", // nothing listens here
-		OIDCClientID:     "x",
-		OIDCClientSecret: "y",
-		OIDCRedirectURL:  "https://mailfold.example/callback",
-		OIDCAllowedEmail: "a@example.com",
+func TestSSOManagerDiscoveryFailureOnUse(t *testing.T) {
+	// Discovery is lazy now (providers are DB rows, not startup-time env
+	// vars), so newSSOManager itself never fails — the first real use of a
+	// misconfigured provider does.
+	store, err := domainadmin.Open("sqlite", t.TempDir()+"/domainadmin.db")
+	if err != nil {
+		t.Fatalf("domainadmin.Open: %v", err)
 	}
-	if _, err := newSSOManager(context.Background(), cfg); err == nil {
-		t.Error("newSSOManager should fail when discovery is unreachable")
+	t.Cleanup(func() { _ = store.Close() })
+	cipher := testSSOCipher(t)
+	enc, nonce, err := cipher.Seal([]byte("secret"))
+	if err != nil {
+		t.Fatalf("Seal: %v", err)
+	}
+	id, err := store.CreateProvider(domainadmin.Provider{
+		Name: "Broken", Issuer: "http://127.0.0.1:1", ClientID: "x",
+		ClientSecretEnc: enc, ClientSecretNonce: nonce,
+		RedirectURL: "https://mailfold.example/callback",
+		AllDomains:  true, Active: true,
+	}, time.Now())
+	if err != nil {
+		t.Fatalf("CreateProvider: %v", err)
+	}
+	mgr := newSSOManager(store, cipher)
+	if _, err := mgr.StartURL(context.Background(), id); err == nil {
+		t.Error("StartURL should fail when discovery is unreachable")
 	}
 }
 
 func TestSSOManagerGC(t *testing.T) {
 	provider := newFakeOIDCProvider(t)
-	mgr := newTestSSOManager(t, provider)
-	state := startAndExtractState(t, mgr)
+	mgr, providerID := newTestSSOManager(t, provider)
+	state := startAndExtractState(t, mgr, providerID)
 
 	mgr.mu.Lock()
 	p := mgr.pending[state]
