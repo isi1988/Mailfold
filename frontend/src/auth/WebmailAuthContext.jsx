@@ -32,17 +32,35 @@ export function WebmailAuthProvider({ children }) {
     setStatus('authed');
   }, []);
 
-  // login adds (and switches to) another mailbox account. If it wasn't
-  // already linked, it's flagged via justAdded so the caller can offer the
-  // link-confirmation prompt.
-  const login = useCallback(async (mailbox, password) => {
-    const res = await wm.login(mailbox, password);
+  // commitLoginResult applies a successful login/2FA-verify response (both
+  // shapes carry {token, email}) as a session, flagging a genuinely new
+  // account via justAdded so the caller can offer the link-confirmation
+  // prompt.
+  const commitLoginResult = useCallback((res, mailbox) => {
     const finalEmail = res.email || mailbox;
     const alreadyLinked = getAccounts().some(a => a.email === finalEmail);
     applySession(res.token, finalEmail);
     if (!alreadyLinked) setJustAdded(finalEmail);
-    return res;
   }, [applySession]);
+
+  // login adds (and switches to) another mailbox account — unless the
+  // account has two-factor auth enabled, in which case it returns
+  // {needs_2fa, pending_token} instead of committing anything, and the
+  // caller must complete the second factor via verifyLogin2FA.
+  const login = useCallback(async (mailbox, password) => {
+    const res = await wm.login(mailbox, password);
+    if (res.needs_2fa) return res;
+    commitLoginResult(res, mailbox);
+    return res;
+  }, [commitLoginResult]);
+
+  // verifyLogin2FA redeems a pending login (from login() above) with a
+  // TOTP/recovery code and commits the resulting session.
+  const verifyLogin2FA = useCallback(async (pendingToken, code, mailbox) => {
+    const res = await wm.totp.verify(pendingToken, code);
+    commitLoginResult(res, mailbox);
+    return res;
+  }, [commitLoginResult]);
 
   const clearJustAdded = useCallback(() => setJustAdded(null), []);
 
@@ -91,7 +109,7 @@ export function WebmailAuthProvider({ children }) {
 
   return (
     <Ctx.Provider value={{
-      email, accounts, status, login, logout, applySession, switchAccount, removeAccount: dropAccount, expire,
+      email, accounts, status, login, verifyLogin2FA, logout, applySession, switchAccount, removeAccount: dropAccount, expire,
       justAdded, clearJustAdded, markTemporary, cleanupTemporary,
     }}>
       {children}

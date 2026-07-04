@@ -20,6 +20,7 @@ import { useT } from '../i18n/index.jsx';
 import { wm, downloadAttachment, subscribeMail } from '../api/webmail.js';
 import { ComposeModal } from './ComposeModal.jsx';
 import { AddAccountModal } from './AddAccountModal.jsx';
+import { WebmailSettingsDrawer } from './WebmailSettingsDrawer.jsx';
 import { CalendarView } from './CalendarView.jsx';
 import { Loading, ErrorState, Empty } from '../components/States.jsx';
 import { decodeIdnAddress } from '../lib/idn.js';
@@ -79,12 +80,15 @@ const shortTime = iso => {
 // Inline mailbox login shown when there is no webmail session (e.g. an admin
 // opening the Webmail page).
 function WebmailLogin() {
-  const { login } = useWebmailAuth();
+  const { login, verifyLogin2FA } = useWebmailAuth();
   const t = useT();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState(null); // { pendingToken } once this mailbox's own 2FA is required
+  const [code, setCode] = useState('');
+  const [codeError, setCodeError] = useState('');
 
   async function submit(e) {
     e.preventDefault();
@@ -92,12 +96,42 @@ function WebmailLogin() {
     setBusy(true);
     setError('');
     try {
-      await login(email.trim(), password);
+      const res = await login(email.trim(), password);
+      if (res && res.needs_2fa) setPending({ pendingToken: res.pending_token });
     } catch (err) {
       setError(err && err.status === 401 ? t('webmail.invalid') : (err.message || t('webmail.invalid')));
     } finally {
       setBusy(false);
     }
+  }
+
+  async function submitCode(e) {
+    e.preventDefault();
+    if (busy || !code.trim()) return;
+    setBusy(true);
+    setCodeError('');
+    try {
+      await verifyLogin2FA(pending.pendingToken, code.trim(), email.trim());
+    } catch {
+      setCodeError(t('login.twoFactor.invalidCode'));
+      setBusy(false);
+    }
+  }
+
+  if (pending) {
+    return (
+      <div style={{ maxWidth: 380, margin: '8vh auto 0' }}>
+        <form onSubmit={submitCode}>
+          <div className="mf-login__title" style={{ fontSize: 24 }}>{t('login.twoFactor.title')}</div>
+          <div className="mf-login__sub">{t('login.twoFactor.sub')}</div>
+          <FormField label={t('login.twoFactor.codeLabel')} style={{ marginTop: 22 }}>
+            <Input size="lg" mono autoFocus placeholder={t('login.twoFactor.codePlaceholder')} autoComplete="one-time-code" value={code} onChange={e => setCode(e.target.value)} />
+          </FormField>
+          {codeError && <div className="mf-form-error" style={{ marginTop: 14 }} role="alert">{codeError}</div>}
+          <Button variant="primary" block size="lg" type="submit" disabled={busy} style={{ marginTop: 22 }}>{busy ? t('login.twoFactor.verifying') : t('login.twoFactor.verify')}</Button>
+        </form>
+      </div>
+    );
   }
 
   return (
@@ -123,6 +157,7 @@ function WebmailClient() {
   const { email, accounts, switchAccount, expire, logout } = useWebmailAuth();
   const { toast } = useToast();
   const [addingAccount, setAddingAccount] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const [folders, setFolders] = useState([]);
   const [folder, setFolder] = useState('INBOX');
@@ -360,7 +395,8 @@ function WebmailClient() {
           <span style={{ width: 15, textAlign: 'center' }}>+</span>{t('webmail.newLabel')}
         </div>
 
-        <div style={{ padding: '12px 10px 0' }}>
+        <div style={{ padding: '12px 10px 0', display: 'flex', gap: 6 }}>
+          <Button variant="link" size="sm" onClick={() => setSettingsOpen(true)}>{t('webmail.settings.open')}</Button>
           <Button variant="link" size="sm" onClick={logout}>{t('webmail.signOut')}</Button>
         </div>
       </div>
@@ -453,6 +489,7 @@ function WebmailClient() {
         />
       )}
       {addingAccount && <AddAccountModal onClose={() => setAddingAccount(false)} />}
+      {settingsOpen && <WebmailSettingsDrawer onClose={() => setSettingsOpen(false)} />}
     </div>
       </>
       )}

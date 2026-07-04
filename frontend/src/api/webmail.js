@@ -158,6 +158,25 @@ export const wm = {
       URL.revokeObjectURL(url);
     },
   },
+  signature: {
+    get: () => req('GET', '/api/webmail/signature'),
+    set: signature => req('PUT', '/api/webmail/signature', { signature }),
+  },
+  rules: {
+    list: () => req('GET', '/api/webmail/rules'),
+    create: rule => req('POST', '/api/webmail/rules', rule),
+    update: (id, rule) => req('PUT', '/api/webmail/rules', { id: String(id), ...rule }),
+    del: id => req('DELETE', '/api/webmail/rules', { id: String(id) }),
+  },
+  totp: {
+    status: () => req('GET', '/api/webmail/2fa/status'),
+    enroll: currentPassword => req('POST', '/api/webmail/2fa/enroll', { current_password: currentPassword }),
+    confirm: code => req('POST', '/api/webmail/2fa/confirm', { code }),
+    disable: currentPassword => req('POST', '/api/webmail/2fa/disable', { current_password: currentPassword }),
+    regenerateRecoveryCodes: () => req('POST', '/api/webmail/2fa/recovery-codes'),
+    // verify does not use req(): it runs before any session token exists.
+    verify: (pendingToken, code) => req('POST', '/api/webmail/2fa/verify', { pending_token: pendingToken, code }),
+  },
 };
 
 // subscribeMail opens a Server-Sent Events stream that fires onMail(data) when

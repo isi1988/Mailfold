@@ -40,13 +40,16 @@ function TabBtn({ active, onClick, children }) {
 export function AddAccountModal({ onClose }) {
   const t = useT();
   const { toast } = useToast();
-  const { login } = useWebmailAuth();
+  const { login, verifyLogin2FA } = useWebmailAuth();
   const [tab, setTab] = useState('mailfold');
   const [busy, setBusy] = useState(false);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [pending2FA, setPending2FA] = useState(null); // { pendingToken } once the mailbox's own 2FA is required
+  const [code, setCode] = useState('');
+  const [codeError, setCodeError] = useState('');
 
   const [ext, setExt] = useState({ host: '', port: '993', user: '', password: '', encryption: 'SSL', interval: '15' });
   const [sel, setSel] = useState(''); // selected provider preset name
@@ -56,11 +59,30 @@ export function AddAccountModal({ onClose }) {
     if (busy) return;
     setBusy(true); setError('');
     try {
-      await login(email.trim(), password); // adds and switches to the new account
+      const res = await login(email.trim(), password); // adds and switches to the new account
+      if (res && res.needs_2fa) {
+        setPending2FA({ pendingToken: res.pending_token });
+        setBusy(false);
+        return;
+      }
       toast(t('webmail.account.added', { email: email.trim() }));
       onClose();
     } catch (e) {
       setError(e && e.status === 401 ? t('webmail.invalid') : (e.message || t('webmail.invalid')));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitCode() {
+    if (busy || !code.trim()) return;
+    setBusy(true); setCodeError('');
+    try {
+      await verifyLogin2FA(pending2FA.pendingToken, code.trim(), email.trim());
+      toast(t('webmail.account.added', { email: email.trim() }));
+      onClose();
+    } catch {
+      setCodeError(t('login.twoFactor.invalidCode'));
     } finally {
       setBusy(false);
     }
@@ -99,6 +121,14 @@ export function AddAccountModal({ onClose }) {
 
         <div style={{ padding: '0 20px', overflow: 'auto', flex: 1 }}>
           {tab === 'mailfold' ? (
+            pending2FA ? (
+              <>
+                <FormField label={t('login.twoFactor.codeLabel')}>
+                  <Input mono autoFocus placeholder={t('login.twoFactor.codePlaceholder')} autoComplete="one-time-code" value={code} onChange={e => setCode(e.target.value)} />
+                </FormField>
+                {codeError && <div className="mf-form-error" style={{ marginTop: 10 }} role="alert">{codeError}</div>}
+              </>
+            ) : (
             <>
               <FormField label={t('webmail.mailbox')}>
                 <Input placeholder="you@example.com" autoComplete="username" value={email} onChange={e => setEmail(e.target.value)} />
@@ -108,6 +138,7 @@ export function AddAccountModal({ onClose }) {
               </FormField>
               {error && <div className="mf-form-error" style={{ marginTop: 10 }} role="alert">{error}</div>}
             </>
+            )
           ) : (
             <>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
@@ -157,7 +188,9 @@ export function AddAccountModal({ onClose }) {
 
         <div className="mf-drawer__foot">
           {tab === 'mailfold'
-            ? <Button variant="primary" onClick={addLocal} disabled={busy}>{busy ? t('webmail.signingIn') : t('webmail.account.addBtn')}</Button>
+            ? (pending2FA
+              ? <Button variant="primary" onClick={submitCode} disabled={busy}>{busy ? t('login.twoFactor.verifying') : t('login.twoFactor.verify')}</Button>
+              : <Button variant="primary" onClick={addLocal} disabled={busy}>{busy ? t('webmail.signingIn') : t('webmail.account.addBtn')}</Button>)
             : <Button variant="primary" onClick={connectExt} disabled={busy}>{busy ? t('webmail.account.connecting') : t('webmail.account.connectBtn')}</Button>}
           <Button variant="link" className="mf-spacer" onClick={onClose}>{t('common.cancel')}</Button>
         </div>

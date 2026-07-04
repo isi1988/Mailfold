@@ -16,16 +16,19 @@ import markUrl from '../ds/assets/mailfold-mark.png';
 // goes, and when both succeed the user is asked which to open.
 export function LoginView() {
   const { applySession: applyAdmin } = useAuth();
-  const { applySession: applyWebmail } = useWebmailAuth();
+  const { applySession: applyWebmail, verifyLogin2FA } = useWebmailAuth();
   const t = useT();
   const [user, setUser] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [choice, setChoice] = useState(null); // { admin, web } when both succeed
-  const [pending, setPending] = useState(null); // { pendingToken, web } while a 2FA code is needed
+  const [pending, setPending] = useState(null); // { pendingToken, web } while the admin's 2FA code is needed
+  const [pendingWebmail, setPendingWebmail] = useState(null); // { pendingToken, mailbox } while only webmail needs a 2FA code
   const [code, setCode] = useState('');
   const [codeError, setCodeError] = useState('');
+  const [webmailCode, setWebmailCode] = useState('');
+  const [webmailCodeError, setWebmailCodeError] = useState('');
   const [screen, setScreen] = useState('signIn'); // 'signIn' | 'forgot'
   const [forgotSent, setForgotSent] = useState(false);
   const [ssoEnabled, setSsoEnabled] = useState(false);
@@ -79,13 +82,21 @@ export function LoginView() {
     const admin = adminR.status === 'fulfilled' ? adminR.value : null;
     const web = webR.status === 'fulfilled' ? webR.value : null;
 
+    // A webmail login that itself needs a second factor carries no token yet;
+    // only ride it along into the admin's own 2FA/choice screens when it's a
+    // genuine success. The (rare) case of both identities needing their own
+    // 2FA is not carried through here — webmail's can be completed
+    // separately afterwards via the same login form embedded in the admin
+    // panel's Webmail page.
+    const webOK = web && web.token ? web : null;
+
     if (admin && admin.needs_2fa) {
-      setPending({ pendingToken: admin.pending_token, web });
+      setPending({ pendingToken: admin.pending_token, web: webOK });
       setBusy(false);
       return;
     }
-    if (admin && web) {
-      setChoice({ admin, web });
+    if (admin && webOK) {
+      setChoice({ admin, web: webOK });
       setBusy(false);
       return;
     }
@@ -93,12 +104,30 @@ export function LoginView() {
       applyAdmin(admin.token, admin.user);
       return;
     }
-    if (web) {
-      applyWebmail(web.token, web.email || id);
+    if (web && web.needs_2fa) {
+      setPendingWebmail({ pendingToken: web.pending_token, mailbox: id });
+      setBusy(false);
+      return;
+    }
+    if (webOK) {
+      applyWebmail(webOK.token, webOK.email || id);
       return;
     }
     setError(t('login.invalidCredentials'));
     setBusy(false);
+  }
+
+  async function submitWebmailCode(e) {
+    e.preventDefault();
+    if (busy || !webmailCode.trim()) return;
+    setBusy(true);
+    setWebmailCodeError('');
+    try {
+      await verifyLogin2FA(pendingWebmail.pendingToken, webmailCode.trim(), pendingWebmail.mailbox);
+    } catch {
+      setWebmailCodeError(t('login.twoFactor.invalidCode'));
+      setBusy(false);
+    }
   }
 
   async function submitCode(e) {
@@ -120,6 +149,9 @@ export function LoginView() {
     setPending(null);
     setCode('');
     setCodeError('');
+    setPendingWebmail(null);
+    setWebmailCode('');
+    setWebmailCodeError('');
     setScreen('signIn');
     setForgotSent(false);
   }
@@ -193,6 +225,30 @@ export function LoginView() {
               />
             </div>
             {codeError && <div className="mf-form-error" style={{ marginTop: 14 }} role="alert">{codeError}</div>}
+            <Button variant="primary" block size="lg" type="submit" disabled={busy} style={{ marginTop: 22 }}>
+              {busy ? t('login.twoFactor.verifying') : t('login.twoFactor.verify')}
+            </Button>
+            <Button variant="secondary" block size="lg" type="button" style={{ marginTop: 10 }} onClick={backToSignIn}>
+              {t('login.twoFactor.back')}
+            </Button>
+          </form>
+        ) : pendingWebmail ? (
+          <form className="mf-login__form" onSubmit={submitWebmailCode}>
+            <div className="mf-login__title">{t('login.twoFactor.title')}</div>
+            <div className="mf-login__sub">{t('login.twoFactor.sub')}</div>
+            <div style={{ marginTop: 28 }}>
+              <Label strong style={{ marginBottom: 7 }}>{t('login.twoFactor.codeLabel')}</Label>
+              <Input
+                size="lg"
+                mono
+                autoFocus
+                placeholder={t('login.twoFactor.codePlaceholder')}
+                autoComplete="one-time-code"
+                value={webmailCode}
+                onChange={e => setWebmailCode(e.target.value)}
+              />
+            </div>
+            {webmailCodeError && <div className="mf-form-error" style={{ marginTop: 14 }} role="alert">{webmailCodeError}</div>}
             <Button variant="primary" block size="lg" type="submit" disabled={busy} style={{ marginTop: 22 }}>
               {busy ? t('login.twoFactor.verifying') : t('login.twoFactor.verify')}
             </Button>

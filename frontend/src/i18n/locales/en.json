@@ -177,6 +177,76 @@
     "view": {
       "mail": "Mail",
       "calendar": "Calendar"
+    },
+    "settings": {
+      "open": "Settings",
+      "title": "Mailbox settings",
+      "sub": "Signature, rules and security for this mailbox",
+      "tabs": {
+        "signature": "Signature",
+        "rules": "Rules",
+        "security": "Security"
+      },
+      "signature": {
+        "hint": "Added automatically to new messages, replies and forwards from this mailbox.",
+        "saved": "Signature saved",
+        "failed": "Could not save the signature"
+      },
+      "rules": {
+        "hint": "Automatically move incoming mail matching a condition into a folder.",
+        "empty": "No rules yet",
+        "untitled": "Untitled rule",
+        "description": "Description",
+        "descriptionPlaceholder": "e.g. Newsletters",
+        "field": "If",
+        "contains": "Contains",
+        "moveTo": "Move to folder",
+        "fields": {
+          "from": "Sender",
+          "to": "Recipient",
+          "subject": "Subject"
+        },
+        "summary": "If {{field}} contains \"{{value}}\" → move to {{folder}}",
+        "add": "+ Add rule",
+        "saved": "Rule saved",
+        "deleted": "Rule deleted",
+        "failed": "Something went wrong",
+        "deleteTitle": "Delete rule",
+        "deleteMsg": "Delete rule \"{{name}}\"? This cannot be undone."
+      },
+      "security": {
+        "hint": "Optional two-factor authentication for signing into this mailbox.",
+        "twoFactor": "Two-factor authentication",
+        "enabled": "Enabled",
+        "notEnabled": "Not enabled",
+        "enable": "Enable",
+        "disable": "Disable",
+        "disabled": "Two-factor authentication disabled",
+        "disableFailed": "Could not disable two-factor authentication",
+        "currentPasswordToDisable": "Current mailbox password",
+        "regenerateCodes": "New recovery codes",
+        "regenerated": "Recovery codes regenerated",
+        "regenerateFailed": "Could not regenerate recovery codes",
+        "newRecoveryCodes": "Your new recovery codes",
+        "enroll": {
+          "titleConfirm": "Confirm your password",
+          "currentPassword": "Current mailbox password",
+          "continue": "Continue",
+          "continuing": "Checking…",
+          "failed": "Could not start enrollment",
+          "titleScan": "Scan the QR code",
+          "scanHint": "Scan this with your authenticator app (Google Authenticator, 1Password, Authy, …), then enter the 6-digit code it shows.",
+          "manualEntry": "Or enter this code manually",
+          "code": "Code",
+          "confirm": "Confirm",
+          "confirming": "Confirming…",
+          "invalidCode": "That code didn't work. Try again.",
+          "titleCodes": "Save your recovery codes",
+          "codesIntro": "Store these somewhere safe. Each can be used once to sign in if you lose access to your authenticator app.",
+          "copy": "Copy",
+          "done": "Done"
+        }
+      }
     }
   },
   "login": {
