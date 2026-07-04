@@ -56,6 +56,7 @@
     "mailboxtemplates": "Mailbox templates",
     "admins": "Admins",
     "domainadmins": "Domain admins",
+    "ssoproviders": "SSO providers",
     "oauth2": "OAuth2 clients"
   },
   "shell": {
@@ -275,9 +276,10 @@
     "foot": "self-hosted · powered by mailcow",
     "choose": {
       "title": "Where would you like to go?",
-      "sub": "Your credentials work for both the admin panel and webmail.",
+      "sub": "Your credentials matched more than one account.",
       "admin": "Admin panel",
-      "webmail": "Webmail"
+      "webmail": "Webmail",
+      "domainAdmin": "Domain admin panel"
     },
     "twoFactor": {
       "title": "Two-factor authentication",
@@ -300,8 +302,66 @@
     },
     "sso": {
       "button": "Continue with SSO",
+      "buttonNamed": "Continue with {{name}}",
       "failed": "Single sign-on failed. Try again, or sign in with your password."
     }
+  },
+  "domainAdmin": {
+    "signedInAs": "Signed in as {{user}}",
+    "signOut": "Sign out",
+    "title": "Domain admin",
+    "sub": "Managing single sign-on for: {{domains}}",
+    "sso": {
+      "name": "Name",
+      "namePlaceholder": "My identity provider",
+      "issuer": "Issuer URL",
+      "clientId": "Client ID",
+      "clientSecret": "Client secret",
+      "secretHint": "Leave blank to keep the current secret",
+      "redirectUrl": "Redirect URL",
+      "domains": "Domains",
+      "domainsHint": "Only domains you manage can be selected.",
+      "hint": "Providers marked \"shared\" were set up by a super admin and apply to your domain automatically. You can add your own provider scoped to the domains you manage.",
+      "empty": "No SSO providers yet.",
+      "add": "Add provider",
+      "saved": "Provider saved.",
+      "failed": "Couldn't save the provider.",
+      "deleted": "Provider deleted.",
+      "allDomains": "All domains",
+      "shared": "shared",
+      "deleteTitle": "Delete this provider?",
+      "deleteMsg": "\"{{name}}\" will no longer be offered as a sign-in option."
+    }
+  },
+  "sso": {
+    "title": "SSO providers",
+    "sub": "Identity providers mailboxes can sign in with, scoped to specific domains or all of them.",
+    "name": "Name",
+    "namePlaceholder": "My identity provider",
+    "issuer": "Issuer URL",
+    "clientId": "Client ID",
+    "clientSecret": "Client secret",
+    "secretHint": "Leave blank to keep the current secret",
+    "redirectUrl": "Redirect URL",
+    "allDomains": "All domains",
+    "domains": "Domains",
+    "add": "Add provider",
+    "empty": "No SSO providers yet.",
+    "col": {
+      "name": "Name",
+      "scope": "Scope",
+      "createdBy": "Created by",
+      "status": "Status"
+    },
+    "superAdmin": "super admin",
+    "updated": "Provider updated.",
+    "created": "Provider created.",
+    "deleted": "Provider deleted.",
+    "failed": "Couldn't save the provider.",
+    "editTitle": "Edit SSO provider",
+    "newTitle": "New SSO provider",
+    "deleteTitle": "Delete this provider?",
+    "deleteMsg": "\"{{name}}\" will no longer be offered as a sign-in option."
   },
   "resetPassword": {
     "title": "Set a new password",

@@ -5,25 +5,28 @@ import { Label } from '../ds/components/atoms/Label.jsx';
 import { Button } from '../ds/components/atoms/Button.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { useWebmailAuth } from '../auth/WebmailAuthContext.jsx';
+import { useDomainAdminAuth } from '../auth/DomainAdminAuthContext.jsx';
 import { PasswordField } from '../components/PasswordField.jsx';
 import { api } from '../api/client.js';
 import { wm } from '../api/webmail.js';
+import { domainAdminApi } from '../api/domainAdmin.js';
 import { useT } from '../i18n/index.jsx';
 import markUrl from '../ds/assets/mailfold-mark.png';
 
-// The one login screen. It tries the admin and the webmail (mailbox) logins with
-// the same credentials in parallel: whichever succeeds decides where the user
-// goes, and when both succeed the user is asked which to open.
+// The one login screen. It tries the admin, webmail (mailbox), and domain-admin
+// logins with the same credentials in parallel: whichever succeed decide where
+// the user goes, and if more than one does, the user is asked which to open.
 export function LoginView() {
   const { applySession: applyAdmin } = useAuth();
   const { applySession: applyWebmail, verifyLogin2FA } = useWebmailAuth();
+  const { applySession: applyDomainAdmin } = useDomainAdminAuth();
   const t = useT();
   const [user, setUser] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [choice, setChoice] = useState(null); // { admin, web } when both succeed
-  const [pending, setPending] = useState(null); // { pendingToken, web } while the admin's 2FA code is needed
+  const [choice, setChoice] = useState(null); // { admin, web, domainAdmin } — whichever succeeded, when more than one did
+  const [pending, setPending] = useState(null); // { pendingToken, web, domainAdmin } while the admin's 2FA code is needed
   const [pendingWebmail, setPendingWebmail] = useState(null); // { pendingToken, mailbox } while only webmail needs a 2FA code
   const [code, setCode] = useState('');
   const [codeError, setCodeError] = useState('');
@@ -31,31 +34,43 @@ export function LoginView() {
   const [webmailCodeError, setWebmailCodeError] = useState('');
   const [screen, setScreen] = useState('signIn'); // 'signIn' | 'forgot'
   const [forgotSent, setForgotSent] = useState(false);
-  const [ssoEnabled, setSsoEnabled] = useState(false);
+  const [ssoProviders, setSsoProviders] = useState([]); // [{id, name}] for the domain part of whatever's typed so far
   const [ssoError, setSsoError] = useState('');
 
-  // Feature-detect SSO so the button only ever appears when the server has a
-  // fully configured identity provider to redirect to.
+  // Resolve SSO providers for whatever domain the user has typed so far
+  // (debounced) — there is no fixed global "is SSO on" flag any more: each
+  // provider is scoped to specific domains (or every domain), so the set of
+  // buttons to offer depends on what's typed into the email/username field.
   useEffect(() => {
+    const at = user.lastIndexOf('@');
+    const domain = at >= 0 ? user.slice(at + 1).trim() : '';
+    if (!domain) {
+      setSsoProviders([]);
+      return;
+    }
     let cancelled = false;
-    api.get('/api/auth/sso/config').then(res => {
-      if (!cancelled && res && res.enabled) setSsoEnabled(true);
-    }).catch(() => {});
-    return () => { cancelled = true; };
-  }, []);
+    const timer = setTimeout(() => {
+      api.get('/api/auth/sso/providers?domain=' + encodeURIComponent(domain)).then(list => {
+        if (!cancelled) setSsoProviders(Array.isArray(list) ? list : []);
+      }).catch(() => { if (!cancelled) setSsoProviders([]); });
+    }, 300);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [user]);
 
   // The SSO callback redirects back here with the outcome in the URL fragment
   // (never the query string, so it never hits server logs or a Referer
   // header) — consume it once on mount, then scrub it from the address bar.
+  // A successful SSO login always signs into a mailbox's webmail, never the
+  // admin panel or a domain-admin session.
   useEffect(() => {
     const hash = window.location.hash;
     if (!hash || hash.length < 2) return;
     const params = new URLSearchParams(hash.slice(1));
-    const token = params.get('sso_token');
-    const ssoUser = params.get('sso_user');
+    const token = params.get('sso_webmail_token');
+    const email = params.get('sso_webmail_email');
     const err = params.get('sso_error');
-    if (token && ssoUser) {
-      applyAdmin(token, ssoUser);
+    if (token && email) {
+      applyWebmail(token, email);
     } else if (err) {
       setSsoError(err);
     }
@@ -65,8 +80,8 @@ export function LoginView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function startSSO() {
-    window.location.href = '/api/auth/sso/start';
+  function startSSO(providerId) {
+    window.location.href = '/api/auth/sso/start?provider_id=' + encodeURIComponent(providerId);
   }
 
   async function submit(e) {
@@ -75,33 +90,37 @@ export function LoginView() {
     setBusy(true);
     setError('');
     const id = user.trim();
-    const [adminR, webR] = await Promise.allSettled([
+    const [adminR, webR, domainAdminR] = await Promise.allSettled([
       api.post('/api/auth/login', { user: id, password }),
       wm.login(id, password),
+      domainAdminApi.login(id, password),
     ]);
     const admin = adminR.status === 'fulfilled' ? adminR.value : null;
     const web = webR.status === 'fulfilled' ? webR.value : null;
+    const domainAdmin = domainAdminR.status === 'fulfilled' ? domainAdminR.value : null;
 
     // A webmail login that itself needs a second factor carries no token yet;
     // only ride it along into the admin's own 2FA/choice screens when it's a
-    // genuine success. The (rare) case of both identities needing their own
-    // 2FA is not carried through here — webmail's can be completed
-    // separately afterwards via the same login form embedded in the admin
-    // panel's Webmail page.
+    // genuine success.
     const webOK = web && web.token ? web : null;
+    const successes = [admin && { type: 'admin', value: admin }, domainAdmin && { type: 'domainAdmin', value: domainAdmin }, webOK && { type: 'web', value: webOK }].filter(Boolean);
 
     if (admin && admin.needs_2fa) {
-      setPending({ pendingToken: admin.pending_token, web: webOK });
+      setPending({ pendingToken: admin.pending_token, web: webOK, domainAdmin });
       setBusy(false);
       return;
     }
-    if (admin && webOK) {
-      setChoice({ admin, web: webOK });
+    if (successes.length > 1) {
+      setChoice({ admin, web: webOK, domainAdmin });
       setBusy(false);
       return;
     }
     if (admin) {
       applyAdmin(admin.token, admin.user);
+      return;
+    }
+    if (domainAdmin) {
+      applyDomainAdmin(domainAdmin.token, domainAdmin.user, domainAdmin.domains);
       return;
     }
     if (web && web.needs_2fa) {
@@ -138,6 +157,7 @@ export function LoginView() {
     try {
       const sess = await api.post('/api/auth/2fa/verify', { pending_token: pending.pendingToken, code: code.trim() });
       if (pending.web) applyWebmail(pending.web.token, pending.web.email || user.trim());
+      if (pending.domainAdmin) applyDomainAdmin(pending.domainAdmin.token, pending.domainAdmin.user, pending.domainAdmin.domains);
       applyAdmin(sess.token, sess.user);
     } catch {
       setCodeError(t('login.twoFactor.invalidCode'));
@@ -171,14 +191,18 @@ export function LoginView() {
     }
   }
 
-  // Both access levels: opening the admin panel keeps the webmail session too, so
-  // the in-panel Webmail page works; opening webmail commits only that session.
+  // Every access level a successful login could have matched: opening the
+  // admin panel keeps the webmail session too, so the in-panel Webmail page
+  // works; opening webmail or the domain-admin panel commits only that one.
   function openAdmin() {
-    applyWebmail(choice.web.token, choice.web.email || user.trim());
+    if (choice.web) applyWebmail(choice.web.token, choice.web.email || user.trim());
     applyAdmin(choice.admin.token, choice.admin.user);
   }
   function openWebmail() {
     applyWebmail(choice.web.token, choice.web.email || user.trim());
+  }
+  function openDomainAdmin() {
+    applyDomainAdmin(choice.domainAdmin.token, choice.domainAdmin.user, choice.domainAdmin.domains);
   }
 
   return (
@@ -205,8 +229,9 @@ export function LoginView() {
           <div className="mf-login__form">
             <div className="mf-login__title">{t('login.choose.title')}</div>
             <div className="mf-login__sub">{t('login.choose.sub')}</div>
-            <Button variant="primary" block size="lg" style={{ marginTop: 26 }} onClick={openAdmin}>{t('login.choose.admin')}</Button>
-            <Button variant="secondary" block size="lg" style={{ marginTop: 12 }} onClick={openWebmail}>{t('login.choose.webmail')}</Button>
+            {choice.admin && <Button variant="primary" block size="lg" style={{ marginTop: 26 }} onClick={openAdmin}>{t('login.choose.admin')}</Button>}
+            {choice.domainAdmin && <Button variant="secondary" block size="lg" style={{ marginTop: 12 }} onClick={openDomainAdmin}>{t('login.choose.domainAdmin')}</Button>}
+            {choice.web && <Button variant="secondary" block size="lg" style={{ marginTop: 12 }} onClick={openWebmail}>{t('login.choose.webmail')}</Button>}
           </div>
         ) : pending ? (
           <form className="mf-login__form" onSubmit={submitCode}>
@@ -295,11 +320,11 @@ export function LoginView() {
             <Button variant="primary" block size="lg" type="submit" disabled={busy} style={{ marginTop: 22 }}>
               {busy ? t('login.signingIn') : t('login.signIn')}
             </Button>
-            {ssoEnabled && (
-              <Button variant="secondary" block size="lg" type="button" style={{ marginTop: 12 }} onClick={startSSO}>
-                {t('login.sso.button')}
+            {ssoProviders.map(p => (
+              <Button key={p.id} variant="secondary" block size="lg" type="button" style={{ marginTop: 12 }} onClick={() => startSSO(p.id)}>
+                {t('login.sso.buttonNamed', { name: p.name })}
               </Button>
-            )}
+            ))}
           </form>
         )}
       </div>

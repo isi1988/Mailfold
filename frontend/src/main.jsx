@@ -11,6 +11,7 @@ import './ds/styles/responsive.css';
 import { I18nProvider } from './i18n/index.jsx';
 import { AuthProvider } from './auth/AuthContext.jsx';
 import { WebmailAuthProvider } from './auth/WebmailAuthContext.jsx';
+import { DomainAdminAuthProvider } from './auth/DomainAdminAuthContext.jsx';
 import { ToastProvider } from './components/Toast.jsx';
 import { App } from './App.jsx';
 
@@ -21,7 +22,9 @@ createRoot(document.getElementById('root')).render(
         <ToastProvider>
           <AuthProvider>
             <WebmailAuthProvider>
-              <App />
+              <DomainAdminAuthProvider>
+                <App />
+              </DomainAdminAuthProvider>
             </WebmailAuthProvider>
           </AuthProvider>
         </ToastProvider>

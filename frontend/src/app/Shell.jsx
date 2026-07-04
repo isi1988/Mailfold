@@ -33,6 +33,7 @@ import { MailboxTemplatesPage } from '../pages/MailboxTemplatesPage.jsx';
 import { AdminsPage } from '../pages/AdminsPage.jsx';
 import { DomainAdminsPage } from '../pages/DomainAdminsPage.jsx';
 import { OAuth2ClientsPage } from '../pages/OAuth2ClientsPage.jsx';
+import { SSOProvidersPage } from '../pages/SSOProvidersPage.jsx';
 
 // The authenticated application chrome: one AppShell (sidebar + top bar) with the
 // routed page content inside. Nav keys map directly to routes.
@@ -65,7 +66,7 @@ export function Shell() {
   );
   // Two collapsible sections group the many niche resources so the sidebar stays calm.
   const advancedKeys = ['relayhosts', 'transports', 'tlspolicies', 'fwdhosts', 'bcc', 'recipientmaps', 'domaintemplates', 'mailboxtemplates'];
-  const adminKeys = ['admins', 'domainadmins', 'oauth2'];
+  const adminKeys = ['admins', 'domainadmins', 'ssoproviders', 'oauth2'];
   nav.push({ collapsibleGroup: true, label: t('nav.group.advanced'), items: advancedKeys.map(k => ({ key: k, label: t('nav.' + k) })) });
   nav.push({ collapsibleGroup: true, label: t('nav.group.admin'), items: adminKeys.map(k => ({ key: k, label: t('nav.' + k) })) });
   const themeOptions = [
@@ -129,6 +130,7 @@ export function Shell() {
         <Route path="/mailboxtemplates" element={<MailboxTemplatesPage />} />
         <Route path="/admins" element={<AdminsPage />} />
         <Route path="/domainadmins" element={<DomainAdminsPage />} />
+        <Route path="/ssoproviders" element={<SSOProvidersPage />} />
         <Route path="/oauth2" element={<OAuth2ClientsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
