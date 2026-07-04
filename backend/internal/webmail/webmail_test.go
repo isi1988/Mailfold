@@ -229,6 +229,33 @@ func TestSessions(t *testing.T) {
 	}
 }
 
+func TestSessionsTake(t *testing.T) {
+	s := NewSessions(time.Hour)
+	token, _, err := s.Create("u@example.com", "pw")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	cred, ok := s.Take(token)
+	if !ok || cred.Email != "u@example.com" || cred.Password != "pw" {
+		t.Fatalf("Take failed: %v %+v", ok, cred)
+	}
+	// Single-use: a second Take of the same token must fail.
+	if _, ok := s.Take(token); ok {
+		t.Error("Take should be single-use")
+	}
+	if _, ok := s.Take(""); ok {
+		t.Error("empty token must be invalid")
+	}
+}
+
+func TestSessionsTakeExpired(t *testing.T) {
+	s := NewSessions(-time.Second) // expire immediately
+	token, _, _ := s.Create("a", "b")
+	if _, ok := s.Take(token); ok {
+		t.Error("Take should reject an expired token")
+	}
+}
+
 func TestSessionExpiryAndGC(t *testing.T) {
 	s := NewSessions(-time.Second) // expire immediately
 	token, _, _ := s.Create("a", "b")

@@ -215,6 +215,16 @@ func (s *Server) handleWebmailLogin(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
 		return
 	}
+	if s.webmailTOTPEnabled(req.Email) {
+		pendingToken, _, err := s.webmailPending.Create(req.Email, req.Password)
+		if err != nil {
+			s.writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"needs_2fa": true, "pending_token": pendingToken})
+		return
+	}
+
 	token, exp, err := s.webmailSessions.Create(req.Email, req.Password)
 	if err != nil {
 		s.writeError(w, http.StatusInternalServerError, err)

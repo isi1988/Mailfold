@@ -75,6 +75,27 @@ func (s *Sessions) Delete(token string) {
 	s.mu.Unlock()
 }
 
+// Take atomically returns and removes a session, so a caller can use it as a
+// single-use pending token (e.g. the password step of a two-factor login):
+// two concurrent redemptions of the same token cannot both succeed.
+func (s *Sessions) Take(token string) (*Credentials, bool) {
+	if token == "" {
+		return nil, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	cred, ok := s.m[token]
+	if !ok {
+		return nil, false
+	}
+	delete(s.m, token)
+	if s.now().After(cred.ExpiresAt) {
+		return nil, false
+	}
+	return cred, true
+}
+
 // GC evicts expired sessions.
 func (s *Sessions) GC() {
 	now := s.now()

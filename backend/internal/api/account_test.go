@@ -78,15 +78,16 @@ func (b *capturingSMTP) sent() (int, string) {
 func newAccountTestServer(t *testing.T, opts accountTestOpts) (http.Handler, *Server, *capturingSMTP) {
 	t.Helper()
 	cfg := &config.Config{
-		MailcowBaseURL:  mockMailcow(t, 0, "").URL,
-		MailcowAPIKey:   "k",
-		AdminUser:       "admin",
-		AdminPassword:   "pw",
-		SessionTTL:      time.Hour,
-		CORSOrigins:     []string{"*"},
-		LoginRateMax:    1000,
-		LoginRateWindow: time.Minute,
-		MaxBodyBytes:    1 << 20,
+		MailcowBaseURL:    mockMailcow(t, 0, "").URL,
+		MailcowAPIKey:     "k",
+		AdminUser:         "admin",
+		AdminPassword:     "pw",
+		SessionTTL:        time.Hour,
+		WebmailSessionTTL: time.Hour,
+		CORSOrigins:       []string{"*"},
+		LoginRateMax:      1000,
+		LoginRateWindow:   time.Minute,
+		MaxBodyBytes:      1 << 20,
 	}
 	if opts.withDB {
 		cfg.DBDriver = "sqlite"

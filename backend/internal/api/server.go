@@ -18,7 +18,12 @@ import (
 	"github.com/isi1988/Mailfold/backend/internal/metrics"
 	"github.com/isi1988/Mailfold/backend/internal/ratelimit"
 	"github.com/isi1988/Mailfold/backend/internal/webmail"
+	"github.com/isi1988/Mailfold/backend/internal/webmailuser"
 )
+
+// webmailPending2FATTL bounds how long a webmail login that passed the
+// password check but still needs a TOTP/recovery code stays redeemable.
+const webmailPending2FATTL = 5 * time.Minute
 
 // Server wires HTTP routes to the mailcow API and the authenticator. It holds
 // its collaborators through interfaces/values so the transport layer stays
@@ -31,6 +36,8 @@ type Server struct {
 	metrics         *metrics.Metrics
 	webmail         *webmail.Client
 	webmailSessions *webmail.Sessions
+	webmailPending  *webmail.Sessions  // holds {email,password} between a webmail login's password step and its 2FA step
+	webmailUsers    *webmailuser.Store // signature/2FA per mailbox; nil when DBPath is empty
 	davStore        *dav.Store
 	davAuth         *davVerifier
 	apikeyStore     *apikey.Store
@@ -101,6 +108,10 @@ func NewServer(cfg *config.Config, mc Mailcow, authn *auth.Authenticator, limite
 	// also set) two-factor auth and the notification sender.
 	adminStore, adminCipher := openAdminStore(cfg, authn, logger)
 
+	// Open the webmail-user store (signature, 2FA) alongside the admin store;
+	// like the other optional stores, a failure disables just this feature.
+	webmailUsers := openWebmailUserStore(cfg, logger)
+
 	// Set up OIDC single sign-on only when every variable is configured; a
 	// partially-configured set is treated the same as fully off, since there is
 	// no safe partial state to run in.
@@ -114,6 +125,8 @@ func NewServer(cfg *config.Config, mc Mailcow, authn *auth.Authenticator, limite
 		metrics:         metrics.New(),
 		webmail:         wm,
 		webmailSessions: webmail.NewSessions(cfg.WebmailSessionTTL),
+		webmailPending:  webmail.NewSessions(webmailPending2FATTL),
+		webmailUsers:    webmailUsers,
 		davStore:        davStore,
 		davAuth:         davAuth,
 		apikeyStore:     akStore,
@@ -158,6 +171,21 @@ func openAdminStore(cfg *config.Config, authn *auth.Authenticator, logger *slog.
 	return st, adminCipher
 }
 
+// openWebmailUserStore opens the webmail-user store (mailbox signature and
+// optional 2FA enrollment) when a database is configured, matching the
+// admin/DAV/API-key stores' fail-open behaviour.
+func openWebmailUserStore(cfg *config.Config, logger *slog.Logger) *webmailuser.Store {
+	if cfg.DBPath == "" {
+		return nil
+	}
+	st, err := webmailuser.Open(cfg.DBDriver, cfg.DBPath)
+	if err != nil {
+		logger.Error("failed to open webmail-user store; signature/2FA disabled", "error", err)
+		return nil
+	}
+	return st
+}
+
 // openSSO builds the OIDC single sign-on manager when every MAILFOLD_OIDC_*
 // variable is set. Discovery is a network call to the identity provider, so
 // it is bounded by a timeout and, like the other optional subsystems above,
@@ -176,9 +204,12 @@ func openSSO(cfg *config.Config, logger *slog.Logger) *ssoManager {
 	return mgr
 }
 
-// GCWebmail evicts expired webmail sessions. It is intended to be called
-// periodically from a background goroutine.
-func (s *Server) GCWebmail() { s.webmailSessions.GC() }
+// GCWebmail evicts expired webmail sessions and pending 2FA logins. It is
+// intended to be called periodically from a background goroutine.
+func (s *Server) GCWebmail() {
+	s.webmailSessions.GC()
+	s.webmailPending.GC()
+}
 
 // GCSSO discards expired in-flight SSO login attempts. It is a no-op when SSO
 // is not configured and is intended to be called on the same periodic sweep
@@ -227,6 +258,9 @@ func (s *Server) Handler() http.Handler {
 	// End-user webmail (IMAP/SMTP-backed).
 	s.registerWebmailRoutes(mux)
 	s.registerWebmailCalendar(mux)
+	s.registerWebmailSignatureRoutes(mux)
+	s.registerWebmailRuleRoutes(mux)
+	s.registerWebmailTOTPRoutes(mux)
 
 	// Self-hosted CardDAV/CalDAV (contacts/calendar), when configured.
 	s.registerDAV(mux)
