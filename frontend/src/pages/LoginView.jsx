@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Logo } from '../ds/components/atoms/Logo.jsx';
 import { Input } from '../ds/components/atoms/Input.jsx';
 import { Label } from '../ds/components/atoms/Label.jsx';
@@ -28,6 +28,43 @@ export function LoginView() {
   const [codeError, setCodeError] = useState('');
   const [screen, setScreen] = useState('signIn'); // 'signIn' | 'forgot'
   const [forgotSent, setForgotSent] = useState(false);
+  const [ssoEnabled, setSsoEnabled] = useState(false);
+  const [ssoError, setSsoError] = useState('');
+
+  // Feature-detect SSO so the button only ever appears when the server has a
+  // fully configured identity provider to redirect to.
+  useEffect(() => {
+    let cancelled = false;
+    api.get('/api/auth/sso/config').then(res => {
+      if (!cancelled && res && res.enabled) setSsoEnabled(true);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  // The SSO callback redirects back here with the outcome in the URL fragment
+  // (never the query string, so it never hits server logs or a Referer
+  // header) — consume it once on mount, then scrub it from the address bar.
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (!hash || hash.length < 2) return;
+    const params = new URLSearchParams(hash.slice(1));
+    const token = params.get('sso_token');
+    const ssoUser = params.get('sso_user');
+    const err = params.get('sso_error');
+    if (token && ssoUser) {
+      applyAdmin(token, ssoUser);
+    } else if (err) {
+      setSsoError(err);
+    }
+    if (token || err) {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function startSSO() {
+    window.location.href = '/api/auth/sso/start';
+  }
 
   async function submit(e) {
     e.preventDefault();
@@ -198,10 +235,15 @@ export function LoginView() {
               </div>
               <PasswordField value={password} onChange={e => setPassword(e.target.value)} />
             </div>
-            {error && <div className="mf-form-error" style={{ marginTop: 14 }} role="alert">{error}</div>}
+            {(error || ssoError) && <div className="mf-form-error" style={{ marginTop: 14 }} role="alert">{error || t('login.sso.failed')}</div>}
             <Button variant="primary" block size="lg" type="submit" disabled={busy} style={{ marginTop: 22 }}>
               {busy ? t('login.signingIn') : t('login.signIn')}
             </Button>
+            {ssoEnabled && (
+              <Button variant="secondary" block size="lg" type="button" style={{ marginTop: 12 }} onClick={startSSO}>
+                {t('login.sso.button')}
+              </Button>
+            )}
           </form>
         )}
       </div>

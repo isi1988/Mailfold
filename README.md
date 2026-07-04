@@ -67,6 +67,11 @@ on. Active sessions are listed by device/IP and can be revoked individually or
 all at once. A "forgot password?" link on the sign-in screen emails a reset link
 — from a mailbox the admin configures themselves in Settings (see
 [`MAILFOLD_ADMIN_ENC_KEY`](.env.example)), not a fixed environment variable.
+Optionally, sign-in can also delegate to an OIDC identity provider ("Continue
+with SSO"): the provider only ever authenticates a single, explicitly
+configured email address into the one Mailfold admin account (see the five
+`MAILFOLD_OIDC_*` variables in [`.env.example`](.env.example)) — it is fully
+inert until every one of them is set.
 
 **API keys — drive your mailbox from other apps.** Issue durable, individually
 revocable API keys so any third-party service can **send and collect mail** for a

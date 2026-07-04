@@ -40,6 +40,7 @@ type Server struct {
 	adminStore      *admin.Store       // password/profile/2FA/notify-sender/reset-tokens; nil when DBPath is empty
 	adminCipher     *admin.Cipher      // nil when MAILFOLD_ADMIN_ENC_KEY is unset (2FA/notify-sender then report 501)
 	resetLimiter    *ratelimit.Limiter // throttles the public forgot-password endpoint per IP
+	sso             *ssoManager        // nil unless every MAILFOLD_OIDC_* variable is set and discovery succeeded
 	logger          *slog.Logger
 }
 
@@ -100,6 +101,11 @@ func NewServer(cfg *config.Config, mc Mailcow, authn *auth.Authenticator, limite
 	// also set) two-factor auth and the notification sender.
 	adminStore, adminCipher := openAdminStore(cfg, authn, logger)
 
+	// Set up OIDC single sign-on only when every variable is configured; a
+	// partially-configured set is treated the same as fully off, since there is
+	// no safe partial state to run in.
+	sso := openSSO(cfg, logger)
+
 	return &Server{
 		cfg:             cfg,
 		mc:              mc,
@@ -117,6 +123,7 @@ func NewServer(cfg *config.Config, mc Mailcow, authn *auth.Authenticator, limite
 		adminStore:      adminStore,
 		adminCipher:     adminCipher,
 		resetLimiter:    ratelimit.New(5, time.Hour),
+		sso:             sso,
 		logger:          logger,
 	}
 }
@@ -151,9 +158,36 @@ func openAdminStore(cfg *config.Config, authn *auth.Authenticator, logger *slog.
 	return st, adminCipher
 }
 
+// openSSO builds the OIDC single sign-on manager when every MAILFOLD_OIDC_*
+// variable is set. Discovery is a network call to the identity provider, so
+// it is bounded by a timeout and, like the other optional subsystems above,
+// any failure disables just this feature rather than the whole backend.
+func openSSO(cfg *config.Config, logger *slog.Logger) *ssoManager {
+	if cfg.OIDCIssuer == "" || cfg.OIDCClientID == "" || cfg.OIDCClientSecret == "" || cfg.OIDCRedirectURL == "" || cfg.OIDCAllowedEmail == "" {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	mgr, err := newSSOManager(ctx, cfg)
+	if err != nil {
+		logger.Error("failed to initialise SSO; SSO disabled", "error", err)
+		return nil
+	}
+	return mgr
+}
+
 // GCWebmail evicts expired webmail sessions. It is intended to be called
 // periodically from a background goroutine.
 func (s *Server) GCWebmail() { s.webmailSessions.GC() }
+
+// GCSSO discards expired in-flight SSO login attempts. It is a no-op when SSO
+// is not configured and is intended to be called on the same periodic sweep
+// as GCWebmail.
+func (s *Server) GCSSO() {
+	if s.sso != nil {
+		s.sso.GC()
+	}
+}
 
 // GCAPIKeys reclaims stale entries from the API-key rate limiters so their maps
 // do not grow without bound (every distinct client IP and key id would otherwise
@@ -182,6 +216,7 @@ func (s *Server) Handler() http.Handler {
 	// Authentication.
 	s.registerAuthRoutes(mux)
 	s.registerPasswordResetRoutes(mux)
+	s.registerSSORoutes(mux)
 
 	// Admin account settings: profile, password, sessions, two-factor auth,
 	// and the notification sender used to email reset links.

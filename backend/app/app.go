@@ -59,6 +59,7 @@ func Run() error {
 			loginLimiter.GC()
 			server.GCWebmail()
 			server.GCAPIKeys()
+			server.GCSSO()
 		}
 	}()
 

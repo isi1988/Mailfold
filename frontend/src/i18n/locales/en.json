@@ -209,6 +209,10 @@
       "sending": "Sending…",
       "sent": "If everything is configured, a reset link is on its way. Check the admin mailbox.",
       "back": "Back to sign in"
+    },
+    "sso": {
+      "button": "Continue with SSO",
+      "failed": "Single sign-on failed. Try again, or sign in with your password."
     }
   },
   "resetPassword": {
