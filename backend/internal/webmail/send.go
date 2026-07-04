@@ -68,6 +68,9 @@ func (c *Client) Send(email, password string, msg *OutgoingMessage) error {
 	if err := msg.validate(); err != nil {
 		return err
 	}
+	// Normalized once and reused everywhere below (From header, SMTP AUTH,
+	// MAIL FROM envelope) so all three agree — see normalizeAddress.
+	email = normalizeAddress(email)
 	raw, err := renderMessage(email, msg)
 	if err != nil {
 		return err
@@ -105,6 +108,9 @@ func (c *Client) Send(email, password string, msg *OutgoingMessage) error {
 // already been submitted over SMTP, so a failure here only means the sent copy is
 // missing, not that delivery failed.
 func (c *Client) SaveToSent(email, password string, msg *OutgoingMessage) error {
+	// Normalized so the saved copy's From header matches what Send actually
+	// used on the wire, not the raw address the caller happened to type.
+	email = normalizeAddress(email)
 	raw, err := renderMessage(email, msg)
 	if err != nil {
 		return err

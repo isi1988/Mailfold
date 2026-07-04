@@ -38,6 +38,7 @@ func (c *Client) Configured() bool { return c.imapAddr != "" }
 
 // dial opens an authenticated IMAP connection for the given user.
 func (c *Client) dial(email, password string) (*client.Client, error) {
+	email = normalizeAddress(email)
 	var (
 		ic  *client.Client
 		err error
