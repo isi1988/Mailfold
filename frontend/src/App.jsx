@@ -2,6 +2,7 @@ import React from 'react';
 import { useAuth } from './auth/AuthContext.jsx';
 import { useWebmailAuth } from './auth/WebmailAuthContext.jsx';
 import { LoginView } from './pages/LoginView.jsx';
+import { ResetPasswordPage } from './pages/ResetPasswordPage.jsx';
 import { Shell } from './app/Shell.jsx';
 import { WebmailApp } from './app/WebmailApp.jsx';
 import { useT } from './i18n/index.jsx';
@@ -10,6 +11,13 @@ export function App() {
   const { status: adminStatus } = useAuth();
   const { status: webmailStatus } = useWebmailAuth();
   const t = useT();
+
+  // /reset is reached straight from an emailed link, before any session exists —
+  // it must render regardless of auth state, so it is checked ahead of every
+  // other screen below.
+  if (window.location.pathname === '/reset') {
+    return <ResetPasswordPage />;
+  }
 
   if (adminStatus === 'loading') {
     return (

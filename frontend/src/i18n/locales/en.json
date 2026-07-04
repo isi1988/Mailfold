@@ -190,7 +190,40 @@
       "sub": "Your credentials work for both the admin panel and webmail.",
       "admin": "Admin panel",
       "webmail": "Webmail"
+    },
+    "twoFactor": {
+      "title": "Two-factor authentication",
+      "sub": "Enter the 6-digit code from your authenticator app, or a recovery code.",
+      "codeLabel": "Code",
+      "codePlaceholder": "123456 or XXXXX-XXXXX",
+      "verify": "Verify",
+      "verifying": "Verifying…",
+      "invalidCode": "That code didn't work. Try again.",
+      "back": "Back to sign in"
+    },
+    "forgotLink": "Forgot password?",
+    "forgot": {
+      "title": "Reset your password",
+      "sub": "If a notification sender is configured, we'll email a reset link to the admin's profile address.",
+      "send": "Send reset link",
+      "sending": "Sending…",
+      "sent": "If everything is configured, a reset link is on its way. Check the admin mailbox.",
+      "back": "Back to sign in"
     }
+  },
+  "resetPassword": {
+    "title": "Set a new password",
+    "sub": "Choose a new password for the admin account.",
+    "newPassword": "New password",
+    "confirmPassword": "Confirm password",
+    "submit": "Reset password",
+    "submitting": "Resetting…",
+    "mismatch": "Passwords don't match.",
+    "tooShort": "Password must be at least 8 characters.",
+    "success": "Password reset. You can sign in now.",
+    "failed": "That reset link is invalid or has expired.",
+    "backToLogin": "Back to sign in",
+    "missingToken": "This reset link is missing its token."
   },
   "mailboxes": {
     "title": "Mailboxes",
@@ -613,7 +646,105 @@
     "profile": {
       "title": "Profile",
       "username": "Admin username",
-      "expires": "Session expires"
+      "expires": "Session expires",
+      "displayName": "Display name",
+      "email": "Email",
+      "timezone": "Timezone",
+      "save": "Save",
+      "saving": "Saving…",
+      "saved": "Profile saved",
+      "saveFailed": "Could not save profile",
+      "unavailable": "Profile editing needs MAILFOLD_DB_PATH configured on the server."
+    },
+    "security": {
+      "title": "Security",
+      "unavailable": "Security settings need MAILFOLD_DB_PATH configured on the server.",
+      "password": {
+        "title": "Password",
+        "desc": "Change your admin password",
+        "change": "Change",
+        "current": "Current password",
+        "new": "New password",
+        "confirm": "Confirm new password",
+        "save": "Save",
+        "saving": "Saving…",
+        "saved": "Password changed",
+        "mismatch": "Passwords don't match",
+        "tooShort": "Must be at least 8 characters",
+        "failed": "Could not change the password"
+      },
+      "twoFactor": {
+        "title": "Two-factor authentication",
+        "descOn": "TOTP via authenticator app · enabled",
+        "descOff": "Not enabled",
+        "enabled": "Enabled",
+        "disabled": "Disabled",
+        "enable": "Enable",
+        "disable": "Disable",
+        "regenerate": "New recovery codes",
+        "unavailable": "Two-factor auth needs MAILFOLD_ADMIN_ENC_KEY configured on the server.",
+        "failed": "Action failed",
+        "enroll": {
+          "titleConfirm": "Confirm your password",
+          "titleScan": "Scan this QR code",
+          "titleCodes": "Save your recovery codes",
+          "currentPassword": "Current password",
+          "continue": "Continue",
+          "scanHint": "Scan with Google Authenticator, 1Password or any TOTP app, then enter the 6-digit code it shows.",
+          "manualEntry": "Or enter this key manually:",
+          "code": "Code",
+          "confirm": "Confirm",
+          "confirming": "Confirming…",
+          "invalidCode": "That code didn't work.",
+          "codesIntro": "Store these somewhere safe. Each one works once, if you ever lose access to your authenticator app.",
+          "done": "Done",
+          "copy": "Copy",
+          "copied": "Copied"
+        },
+        "disableModal": {
+          "title": "Disable two-factor authentication",
+          "currentPassword": "Current password",
+          "confirm": "Disable",
+          "confirming": "Disabling…"
+        },
+        "regenerateModal": {
+          "title": "Generate new recovery codes",
+          "desc": "Your existing recovery codes will stop working.",
+          "currentPassword": "Current password",
+          "confirm": "Generate",
+          "confirming": "Generating…"
+        }
+      },
+      "sessions": {
+        "title": "Active sessions",
+        "desc_one": "{{count}} device signed in",
+        "desc_other": "{{count}} devices signed in",
+        "current": "This device",
+        "revoke": "Revoke",
+        "revokeAll": "Sign out all other devices",
+        "revoked": "Session revoked",
+        "revokedAll": "Signed out {{count}} other session(s)",
+        "failed": "Action failed",
+        "unknownDevice": "Unknown device"
+      }
+    },
+    "notify": {
+      "title": "Notification sender",
+      "desc": "The mailbox Mailfold sends system emails from, such as a password-reset link.",
+      "unavailable": "This needs MAILFOLD_DB_PATH and MAILFOLD_ADMIN_ENC_KEY configured on the server.",
+      "requiresMail": "This needs MAILFOLD_IMAP_ADDR and MAILFOLD_SMTP_ADDR configured on the server.",
+      "mailbox": "Mailbox",
+      "password": "Mailbox password",
+      "currentPassword": "Your current admin password",
+      "save": "Save",
+      "saving": "Saving…",
+      "saved": "Notification sender saved",
+      "failed": "Could not save",
+      "test": "Send test email",
+      "testing": "Sending…",
+      "tested": "Test email sent",
+      "testFailed": "Could not send the test email",
+      "notConfigured": "Not configured"
     },
     "appearance": {
       "title": "Appearance",

@@ -23,6 +23,11 @@ export function LoginView() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [choice, setChoice] = useState(null); // { admin, web } when both succeed
+  const [pending, setPending] = useState(null); // { pendingToken, web } while a 2FA code is needed
+  const [code, setCode] = useState('');
+  const [codeError, setCodeError] = useState('');
+  const [screen, setScreen] = useState('signIn'); // 'signIn' | 'forgot'
+  const [forgotSent, setForgotSent] = useState(false);
 
   async function submit(e) {
     e.preventDefault();
@@ -37,6 +42,11 @@ export function LoginView() {
     const admin = adminR.status === 'fulfilled' ? adminR.value : null;
     const web = webR.status === 'fulfilled' ? webR.value : null;
 
+    if (admin && admin.needs_2fa) {
+      setPending({ pendingToken: admin.pending_token, web });
+      setBusy(false);
+      return;
+    }
     if (admin && web) {
       setChoice({ admin, web });
       setBusy(false);
@@ -52,6 +62,44 @@ export function LoginView() {
     }
     setError(t('login.invalidCredentials'));
     setBusy(false);
+  }
+
+  async function submitCode(e) {
+    e.preventDefault();
+    if (busy || !code.trim()) return;
+    setBusy(true);
+    setCodeError('');
+    try {
+      const sess = await api.post('/api/auth/2fa/verify', { pending_token: pending.pendingToken, code: code.trim() });
+      if (pending.web) applyWebmail(pending.web.token, pending.web.email || user.trim());
+      applyAdmin(sess.token, sess.user);
+    } catch {
+      setCodeError(t('login.twoFactor.invalidCode'));
+      setBusy(false);
+    }
+  }
+
+  function backToSignIn() {
+    setPending(null);
+    setCode('');
+    setCodeError('');
+    setScreen('signIn');
+    setForgotSent(false);
+  }
+
+  async function submitForgot(e) {
+    e.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    try {
+      await api.post('/api/auth/forgot-password', {});
+    } catch {
+      /* the endpoint always answers 200; a network error still shows the same
+         generic confirmation so the flow can't be used to probe server state */
+    } finally {
+      setForgotSent(true);
+      setBusy(false);
+    }
   }
 
   // Both access levels: opening the admin panel keeps the webmail session too, so
@@ -91,6 +139,43 @@ export function LoginView() {
             <Button variant="primary" block size="lg" style={{ marginTop: 26 }} onClick={openAdmin}>{t('login.choose.admin')}</Button>
             <Button variant="secondary" block size="lg" style={{ marginTop: 12 }} onClick={openWebmail}>{t('login.choose.webmail')}</Button>
           </div>
+        ) : pending ? (
+          <form className="mf-login__form" onSubmit={submitCode}>
+            <div className="mf-login__title">{t('login.twoFactor.title')}</div>
+            <div className="mf-login__sub">{t('login.twoFactor.sub')}</div>
+            <div style={{ marginTop: 28 }}>
+              <Label strong style={{ marginBottom: 7 }}>{t('login.twoFactor.codeLabel')}</Label>
+              <Input
+                size="lg"
+                mono
+                autoFocus
+                placeholder={t('login.twoFactor.codePlaceholder')}
+                autoComplete="one-time-code"
+                value={code}
+                onChange={e => setCode(e.target.value)}
+              />
+            </div>
+            {codeError && <div className="mf-form-error" style={{ marginTop: 14 }} role="alert">{codeError}</div>}
+            <Button variant="primary" block size="lg" type="submit" disabled={busy} style={{ marginTop: 22 }}>
+              {busy ? t('login.twoFactor.verifying') : t('login.twoFactor.verify')}
+            </Button>
+            <Button variant="secondary" block size="lg" type="button" style={{ marginTop: 10 }} onClick={backToSignIn}>
+              {t('login.twoFactor.back')}
+            </Button>
+          </form>
+        ) : screen === 'forgot' ? (
+          <form className="mf-login__form" onSubmit={submitForgot}>
+            <div className="mf-login__title">{t('login.forgot.title')}</div>
+            <div className="mf-login__sub">{forgotSent ? t('login.forgot.sent') : t('login.forgot.sub')}</div>
+            {!forgotSent && (
+              <Button variant="primary" block size="lg" type="submit" disabled={busy} style={{ marginTop: 22 }}>
+                {busy ? t('login.forgot.sending') : t('login.forgot.send')}
+              </Button>
+            )}
+            <Button variant="secondary" block size="lg" type="button" style={{ marginTop: 12 }} onClick={backToSignIn}>
+              {t('login.forgot.back')}
+            </Button>
+          </form>
         ) : (
           <form className="mf-login__form" onSubmit={submit}>
             <div className="mf-login__title">{t('login.signIn')}</div>
@@ -100,8 +185,16 @@ export function LoginView() {
               <Input size="lg" placeholder={t('login.usernamePlaceholder')} autoComplete="username" value={user} onChange={e => setUser(e.target.value)} />
             </div>
             <div style={{ marginTop: 16 }}>
-              <div className="mf-row" style={{ marginBottom: 7 }}>
+              <div className="mf-row mf-row--between" style={{ marginBottom: 7 }}>
                 <Label strong style={{ marginBottom: 0 }}>{t('login.password')}</Label>
+                <span
+                  role="button"
+                  className="mf-u-faint"
+                  style={{ fontSize: 12.5, cursor: 'pointer' }}
+                  onClick={() => setScreen('forgot')}
+                >
+                  {t('login.forgotLink')}
+                </span>
               </div>
               <PasswordField value={password} onChange={e => setPassword(e.target.value)} />
             </div>

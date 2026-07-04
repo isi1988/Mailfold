@@ -7,12 +7,17 @@ import { Input } from '../ds/components/atoms/Input.jsx';
 import { Textarea } from '../ds/components/atoms/Textarea.jsx';
 import { Button } from '../ds/components/atoms/Button.jsx';
 import { Segmented } from '../ds/components/atoms/Segmented.jsx';
+import { Pill } from '../ds/components/atoms/Pill.jsx';
+import { PasswordField } from '../components/PasswordField.jsx';
 import { useApi } from '../lib/useApi.js';
 import { api } from '../api/client.js';
 import { AsyncView } from '../components/States.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { useT, useI18n } from '../i18n/index.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
+import { PasswordChangeDrawer } from './PasswordChangeDrawer.jsx';
+import { TwoFactorEnrollModal } from './TwoFactorEnrollModal.jsx';
+import { TwoFactorConfirmDrawer } from './TwoFactorConfirmDrawer.jsx';
 
 // Client-only appearance preferences. Theme + accent live as data-attributes on
 // <html> and are persisted so they survive a reload; there is no backend.
@@ -166,6 +171,292 @@ function Fail2BanSection({ t }) {
   );
 }
 
+// ProfileSection shows the read-only session identity plus the editable profile
+// fields backed by /api/account/profile. When that endpoint is unavailable (no
+// MAILFOLD_DB_PATH), it falls back to just the read-only session fields.
+function ProfileSection({ t, me }) {
+  const { toast } = useToast();
+  const profile = useApi('/api/account/profile', []);
+  const [form, setForm] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  React.useEffect(() => {
+    const d = profile.data;
+    if (!d) return;
+    setForm({ display_name: d.display_name || '', email: d.email || '', timezone: d.timezone || '', avatar_url: d.avatar_url || '' });
+  }, [profile.data]);
+
+  const set = (k, v) => setForm(prev => ({ ...(prev || {}), [k]: v }));
+  const unavailable = profile.error && profile.error.status === 501;
+
+  async function save() {
+    if (!form) return;
+    setSaving(true);
+    try {
+      await api.put('/api/account/profile', form);
+      toast(t('settings.profile.saved'));
+      profile.reload();
+    } catch (err) {
+      toast(t('settings.profile.saveFailed'), (err && err.message) || '');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card pad>
+      <div className="mf-card__title" style={{ marginBottom: 16 }}>{t('settings.profile.title')}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+        <FormField label={t('settings.profile.username')}>
+          <Input mono readonly value={(me.data && me.data.user) || ''} />
+        </FormField>
+        <FormField label={t('settings.profile.expires')}>
+          <Input readonly value={fmtExpiry(me.data && me.data.expires_at)} />
+        </FormField>
+      </div>
+      {unavailable ? (
+        <div className="mf-u-faint" style={{ fontSize: 12, marginTop: 14 }}>{t('settings.profile.unavailable')}</div>
+      ) : (
+        <AsyncView loading={profile.loading} error={profile.error && profile.error.status !== 501 ? profile.error : null} reload={profile.reload}>
+          {form && (
+            <>
+              <div style={{ height: 14 }} />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                <FormField label={t('settings.profile.displayName')}>
+                  <Input value={form.display_name} onChange={e => set('display_name', e.target.value)} />
+                </FormField>
+                <FormField label={t('settings.profile.email')}>
+                  <Input mono value={form.email} onChange={e => set('email', e.target.value)} />
+                </FormField>
+                <FormField label={t('settings.profile.timezone')}>
+                  <Input placeholder="Europe/Madrid" value={form.timezone} onChange={e => set('timezone', e.target.value)} />
+                </FormField>
+              </div>
+              <div className="mf-row" style={{ justifyContent: 'flex-end', marginTop: 16 }}>
+                <Button variant="primary" size="sm" onClick={save} disabled={saving}>
+                  {saving ? t('settings.profile.saving') : t('settings.profile.save')}
+                </Button>
+              </div>
+            </>
+          )}
+        </AsyncView>
+      )}
+    </Card>
+  );
+}
+
+function fmtWhen(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString();
+}
+
+// SecuritySection covers password change, two-factor auth, and the active
+// session/device list — all backed by the admin-account store, so the whole
+// card degrades to a muted note when that store is unavailable.
+function SecuritySection({ t }) {
+  const { toast } = useToast();
+  const profile = useApi('/api/account/profile', []);
+  const sessions = useApi('/api/account/sessions', []);
+  const [modal, setModal] = useState(null); // 'password' | 'enroll' | 'disable' | 'regenerate' | null
+
+  const unavailable = profile.error && profile.error.status === 501;
+  const totpEnabled = !!(profile.data && profile.data.totp_enabled);
+  const list = Array.isArray(sessions.data) ? sessions.data : [];
+
+  async function revoke(id) {
+    try {
+      await api.post(`/api/account/sessions/${id}/revoke`, {});
+      toast(t('settings.security.sessions.revoked'));
+      sessions.reload();
+    } catch (err) {
+      toast(t('settings.security.sessions.failed'), (err && err.message) || '');
+    }
+  }
+
+  async function revokeAll() {
+    try {
+      const res = await api.post('/api/account/sessions/revoke-all', {});
+      toast(t('settings.security.sessions.revokedAll', { count: (res && res.revoked) || 0 }));
+      sessions.reload();
+    } catch (err) {
+      toast(t('settings.security.sessions.failed'), (err && err.message) || '');
+    }
+  }
+
+  async function disable2FA(password) {
+    await api.post('/api/account/2fa/disable', { current_password: password });
+    toast(t('settings.security.twoFactor.disabled'));
+    profile.reload();
+  }
+
+  // Returning the response lets TwoFactorConfirmDrawer reveal the new codes
+  // once, in place, the same way the enroll wizard does.
+  function regenerateCodes(password) {
+    return api.post('/api/account/2fa/recovery-codes', { current_password: password });
+  }
+
+  return (
+    <>
+      <Card style={{ padding: '6px 20px 14px' }}>
+        <div style={{ padding: '14px 0 12px' }} className="mf-card__title">{t('settings.security.title')}</div>
+        {unavailable ? (
+          <div className="mf-u-faint" style={{ fontSize: 12, paddingBottom: 12 }}>{t('settings.security.unavailable')}</div>
+        ) : (
+          <>
+            <ToggleRow
+              title={t('settings.security.password.title')}
+              desc={t('settings.security.password.desc')}
+              control={<Button variant="secondary" size="sm" onClick={() => setModal('password')}>{t('settings.security.password.change')}</Button>}
+            />
+            <ToggleRow
+              title={t('settings.security.twoFactor.title')}
+              desc={totpEnabled ? t('settings.security.twoFactor.descOn') : t('settings.security.twoFactor.descOff')}
+              control={(
+                <div className="mf-row" style={{ gap: 8 }}>
+                  <Pill tone={totpEnabled ? 'green' : 'neutral'}>
+                    {totpEnabled ? t('settings.security.twoFactor.enabled') : t('settings.security.twoFactor.disabled')}
+                  </Pill>
+                  {totpEnabled && (
+                    <Button variant="secondary" size="sm" onClick={() => setModal('regenerate')}>
+                      {t('settings.security.twoFactor.regenerate')}
+                    </Button>
+                  )}
+                  <Button variant={totpEnabled ? 'danger' : 'secondary'} size="sm" onClick={() => setModal(totpEnabled ? 'disable' : 'enroll')}>
+                    {totpEnabled ? t('settings.security.twoFactor.disable') : t('settings.security.twoFactor.enable')}
+                  </Button>
+                </div>
+              )}
+            />
+            <ToggleRow
+              title={t('settings.security.sessions.title')}
+              desc={t('settings.security.sessions.desc', { count: list.length })}
+              control={<Button variant="danger" size="sm" onClick={revokeAll}>{t('settings.security.sessions.revokeAll')}</Button>}
+            />
+            <AsyncView loading={sessions.loading} error={sessions.error && sessions.error.status !== 501 ? sessions.error : null} reload={sessions.reload}>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                {list.map(si => (
+                  <ToggleRow
+                    key={si.id}
+                    flush
+                    title={si.user_agent || t('settings.security.sessions.unknownDevice')}
+                    desc={[si.ip, fmtWhen(si.created_at)].filter(Boolean).join(' · ')}
+                    control={si.current
+                      ? <Pill tone="blue">{t('settings.security.sessions.current')}</Pill>
+                      : <Button variant="secondary" size="sm" onClick={() => revoke(si.id)}>{t('settings.security.sessions.revoke')}</Button>}
+                  />
+                ))}
+              </div>
+            </AsyncView>
+          </>
+        )}
+      </Card>
+
+      {modal === 'password' && (
+        <PasswordChangeDrawer
+          onClose={() => setModal(null)}
+          onSaved={() => { setModal(null); toast(t('settings.security.password.saved')); }}
+        />
+      )}
+      {modal === 'enroll' && (
+        <TwoFactorEnrollModal onClose={() => setModal(null)} onSaved={() => profile.reload()} />
+      )}
+      {modal === 'disable' && (
+        <TwoFactorConfirmDrawer mode="disable" onClose={() => setModal(null)} onConfirm={disable2FA} />
+      )}
+      {modal === 'regenerate' && (
+        <TwoFactorConfirmDrawer mode="regenerate" onClose={() => setModal(null)} onConfirm={regenerateCodes} />
+      )}
+    </>
+  );
+}
+
+// NotifySection configures the mailbox Mailfold sends system emails (password
+// resets) from. Backed by /api/account/notify-sender, gated on the admin store
+// and encryption key the same way two-factor auth is.
+function NotifySection({ t }) {
+  const { toast } = useToast();
+  const notify = useApi('/api/account/notify-sender', []);
+  const [mailbox, setMailbox] = useState('');
+  const [password, setPassword] = useState('');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+
+  React.useEffect(() => {
+    if (notify.data) setMailbox(notify.data.mailbox || '');
+  }, [notify.data]);
+
+  const unavailable = notify.error && notify.error.status === 501;
+
+  async function save() {
+    setSaving(true);
+    try {
+      await api.put('/api/account/notify-sender', { mailbox: mailbox.trim(), password, current_password: currentPassword });
+      toast(t('settings.notify.saved'));
+      setPassword('');
+      setCurrentPassword('');
+      notify.reload();
+    } catch (err) {
+      toast(t('settings.notify.failed'), (err && err.message) || '');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function test() {
+    setTesting(true);
+    try {
+      await api.post('/api/account/notify-sender/test', {});
+      toast(t('settings.notify.tested'));
+    } catch (err) {
+      toast(t('settings.notify.testFailed'), (err && err.message) || '');
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  return (
+    <Card pad>
+      <div className="mf-card__title" style={{ marginBottom: 4 }}>{t('settings.notify.title')}</div>
+      <div className="mf-u-faint" style={{ fontSize: 12, marginBottom: 16 }}>{t('settings.notify.desc')}</div>
+      {unavailable ? (
+        <div className="mf-u-faint" style={{ fontSize: 12 }}>{t('settings.notify.unavailable')}</div>
+      ) : (
+        <AsyncView loading={notify.loading} error={notify.error && notify.error.status !== 501 ? notify.error : null} reload={notify.reload}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <FormField label={t('settings.notify.mailbox')}>
+              <Input mono placeholder="noreply@example.com" value={mailbox} onChange={e => setMailbox(e.target.value)} />
+            </FormField>
+            <FormField label={t('settings.notify.password')}>
+              <PasswordField autoComplete="off" value={password} onChange={e => setPassword(e.target.value)} />
+            </FormField>
+            <FormField label={t('settings.notify.currentPassword')}>
+              <PasswordField autoComplete="current-password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} />
+            </FormField>
+          </div>
+          <div className="mf-row mf-row--between" style={{ marginTop: 16 }}>
+            <span className="mf-u-faint" style={{ fontSize: 12 }}>
+              {notify.data && notify.data.configured ? notify.data.mailbox : t('settings.notify.notConfigured')}
+            </span>
+            <div className="mf-row" style={{ gap: 8 }}>
+              {notify.data && notify.data.configured && (
+                <Button variant="secondary" size="sm" onClick={test} disabled={testing}>
+                  {testing ? t('settings.notify.testing') : t('settings.notify.test')}
+                </Button>
+              )}
+              <Button variant="primary" size="sm" onClick={save} disabled={saving}>
+                {saving ? t('settings.notify.saving') : t('settings.notify.save')}
+              </Button>
+            </div>
+          </div>
+        </AsyncView>
+      )}
+    </Card>
+  );
+}
+
 export function SettingsPage() {
   const t = useT();
   const { toast } = useToast();
@@ -215,20 +506,11 @@ export function SettingsPage() {
       <PageHeader title={t('settings.title')} sub={t('settings.sub')} />
 
       <div style={{ maxWidth: 720, display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {/* Profile — bound to /api/auth/me (session only). */}
-        <Card pad>
-          <div className="mf-card__title" style={{ marginBottom: 16 }}>{t('settings.profile.title')}</div>
-          <AsyncView loading={me.loading} error={me.error} reload={me.reload}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-              <FormField label={t('settings.profile.username')}>
-                <Input mono readonly value={(me.data && me.data.user) || ''} />
-              </FormField>
-              <FormField label={t('settings.profile.expires')}>
-                <Input readonly value={fmtExpiry(me.data && me.data.expires_at)} />
-              </FormField>
-            </div>
-          </AsyncView>
-        </Card>
+        {/* Profile — read-only session fields plus the editable admin profile. */}
+        <ProfileSection t={t} me={me} />
+
+        {/* Security — password, two-factor auth, active sessions. */}
+        <SecuritySection t={t} />
 
         {/* Appearance — client-only, no backend. */}
         <Card pad>
@@ -313,6 +595,9 @@ export function SettingsPage() {
             />
           </AsyncView>
         </Card>
+
+        {/* Notifications — the sender mailbox used for password-reset emails. */}
+        <NotifySection t={t} />
 
         {/* Fail2Ban — intrusion-prevention config, bound to /api/fail2ban. */}
         <Fail2BanSection t={t} />
