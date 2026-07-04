@@ -323,19 +323,19 @@ func TestWebmailTOTPEnrollConfirmLoginDisable(t *testing.T) {
 		t.Fatalf("expected a pending 2FA challenge, got %+v", pending)
 	}
 
-	// A wrong code at the verify step is rejected, and burns the pending token
-	// (single-use regardless of outcome).
+	// A wrong code at the verify step is rejected, but does NOT burn the
+	// pending token: the same token must still work with the correct code
+	// afterward (regression test for a bug where any wrong attempt
+	// permanently stranded the login).
 	badBody := fmt.Sprintf(`{"pending_token":%q,"code":"000000"}`, pending.PendingToken)
 	if rec := do(h, http.MethodPost, "/api/webmail/2fa/verify", "", badBody); rec.Code != http.StatusUnauthorized {
 		t.Errorf("2fa verify wrong code = %d, want 401", rec.Code)
 	}
 
-	rec = do(h, http.MethodPost, "/api/webmail/login", "", `{"email":"username","password":"password"}`)
-	_ = json.Unmarshal(rec.Body.Bytes(), &pending)
 	goodBody := fmt.Sprintf(`{"pending_token":%q,"code":%q}`, pending.PendingToken, totpCodeFor(t, enroll.Secret))
 	rec = do(h, http.MethodPost, "/api/webmail/2fa/verify", "", goodBody)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("2fa verify = %d", rec.Code)
+		t.Fatalf("2fa verify after a prior wrong code = %d, body=%s", rec.Code, rec.Body.String())
 	}
 	var sess struct {
 		Token string `json:"token"`

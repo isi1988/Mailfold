@@ -97,16 +97,17 @@ func TestPendingTwoFactorFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("IssuePending: %v", err)
 	}
-	user, ok := a.ConsumePending(token)
+	user, ok := a.VerifyPending(token)
 	if !ok || user != "admin" {
-		t.Fatalf("ConsumePending: ok=%v user=%q", ok, user)
+		t.Fatalf("VerifyPending: ok=%v user=%q", ok, user)
 	}
-	// A pending token is single-use.
-	if _, ok := a.ConsumePending(token); ok {
-		t.Error("pending token should not be redeemable twice")
+	a.ConsumePending(token)
+	// A consumed pending token is no longer redeemable.
+	if _, ok := a.VerifyPending(token); ok {
+		t.Error("pending token should not be verifiable after ConsumePending")
 	}
-	if _, ok := a.ConsumePending("bogus"); ok {
-		t.Error("unknown pending token should not redeem")
+	if _, ok := a.VerifyPending("bogus"); ok {
+		t.Error("unknown pending token should not verify")
 	}
 
 	sess, err := a.MintSession(SessionMeta{IP: "10.0.0.1"})
@@ -115,6 +116,46 @@ func TestPendingTwoFactorFlow(t *testing.T) {
 	}
 	if sess.User != "admin" || sess.IP != "10.0.0.1" {
 		t.Errorf("unexpected session: %+v", sess)
+	}
+}
+
+// TestPendingTwoFactorSurvivesAWrongCode is the regression test for the bug
+// where a wrong second-factor code permanently stranded the login: verifying
+// a pending token must NOT consume it, so a typo followed by the correct
+// code still succeeds.
+func TestPendingTwoFactorSurvivesAWrongCode(t *testing.T) {
+	a := New("admin", "pw", time.Hour)
+	token, err := a.IssuePending()
+	if err != nil {
+		t.Fatalf("IssuePending: %v", err)
+	}
+	// Simulate a wrong code: the handler calls VerifyPending, the code check
+	// fails, and it never calls ConsumePending.
+	if _, ok := a.VerifyPending(token); !ok {
+		t.Fatal("first (simulated wrong-code) verify should still succeed")
+	}
+	// The same token must still work for a subsequent (correct) attempt.
+	user, ok := a.VerifyPending(token)
+	if !ok || user != "admin" {
+		t.Fatalf("pending token should survive a prior failed code check: ok=%v user=%q", ok, user)
+	}
+}
+
+// TestPendingTwoFactorAttemptCap ensures unlimited retries are still bounded:
+// once maxPendingAttempts is exceeded the token is invalidated.
+func TestPendingTwoFactorAttemptCap(t *testing.T) {
+	a := New("admin", "pw", time.Hour)
+	token, err := a.IssuePending()
+	if err != nil {
+		t.Fatalf("IssuePending: %v", err)
+	}
+	for i := 0; i < maxPendingAttempts; i++ {
+		if _, ok := a.VerifyPending(token); !ok {
+			t.Fatalf("attempt %d should still be within budget", i+1)
+		}
+	}
+	if _, ok := a.VerifyPending(token); ok {
+		t.Error("pending token should be invalidated once the attempt budget is exceeded")
 	}
 }
 

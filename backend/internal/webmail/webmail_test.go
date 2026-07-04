@@ -256,6 +256,61 @@ func TestSessionsTakeExpired(t *testing.T) {
 	}
 }
 
+// TestSessionsPeekSurvivesAWrongCode is the regression test for the bug where
+// any failed second-factor attempt permanently stranded a pending webmail
+// login: Peek must not consume the token, so it can be verified again.
+func TestSessionsPeekSurvivesAWrongCode(t *testing.T) {
+	s := NewSessions(time.Hour)
+	token, _, err := s.Create("u@example.com", "pw")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	// Simulate a wrong code: the handler calls Peek, the code check fails,
+	// and it never calls Delete.
+	if _, ok := s.Peek(token); !ok {
+		t.Fatal("first (simulated wrong-code) peek should still succeed")
+	}
+	cred, ok := s.Peek(token)
+	if !ok || cred.Email != "u@example.com" || cred.Password != "pw" {
+		t.Fatalf("pending token should survive a prior failed code check: ok=%v %+v", ok, cred)
+	}
+	// Only an explicit Delete (called once a code actually verifies) removes it.
+	s.Delete(token)
+	if _, ok := s.Peek(token); ok {
+		t.Error("token should be gone after Delete")
+	}
+}
+
+func TestSessionsPeekAttemptCap(t *testing.T) {
+	s := NewSessions(time.Hour)
+	token, _, err := s.Create("u@example.com", "pw")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	for i := 0; i < maxPendingAttempts; i++ {
+		if _, ok := s.Peek(token); !ok {
+			t.Fatalf("attempt %d should still be within budget", i+1)
+		}
+	}
+	if _, ok := s.Peek(token); ok {
+		t.Error("token should be invalidated once the attempt budget is exceeded")
+	}
+}
+
+func TestSessionsPeekExpiredAndEmpty(t *testing.T) {
+	s := NewSessions(-time.Second) // expire immediately
+	token, _, _ := s.Create("a", "b")
+	if _, ok := s.Peek(token); ok {
+		t.Error("Peek should reject an expired token")
+	}
+	if _, ok := s.Peek(""); ok {
+		t.Error("empty token must be invalid")
+	}
+	if _, ok := s.Peek("bogus"); ok {
+		t.Error("unknown token must be invalid")
+	}
+}
+
 func TestSessionExpiryAndGC(t *testing.T) {
 	s := NewSessions(-time.Second) // expire immediately
 	token, _, _ := s.Create("a", "b")

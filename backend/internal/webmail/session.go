@@ -17,7 +17,17 @@ type Credentials struct {
 	Email     string
 	Password  string
 	ExpiresAt time.Time
+	// Attempts counts verification tries against a PENDING (not yet
+	// consumed) credential, e.g. the second-factor step of a login. Real,
+	// already-established sessions never touch it.
+	Attempts int
 }
+
+// maxPendingAttempts bounds how many codes can be tried against one pending
+// login (see Peek) before it's invalidated — enough to absorb an honest
+// typo, not enough to make guessing a 6-digit TOTP code or a recovery code
+// practical.
+const maxPendingAttempts = 5
 
 // Sessions is an in-memory store mapping bearer tokens to webmail credentials.
 // It is safe for concurrent use.
@@ -73,6 +83,35 @@ func (s *Sessions) Delete(token string) {
 	s.mu.Lock()
 	delete(s.m, token)
 	s.mu.Unlock()
+}
+
+// Peek validates a pending token (existence, expiry, attempt budget) and
+// returns its credentials WITHOUT consuming it, so a wrong second-factor code
+// can be retried instead of permanently stranding the caller — unlike Take.
+// Each call counts as one attempt; exceeding maxPendingAttempts invalidates
+// the token exactly like expiry does. The caller should explicitly Delete
+// the token once its code has actually verified, to finalize the login.
+func (s *Sessions) Peek(token string) (*Credentials, bool) {
+	if token == "" {
+		return nil, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	cred, ok := s.m[token]
+	if !ok {
+		return nil, false
+	}
+	if s.now().After(cred.ExpiresAt) {
+		delete(s.m, token)
+		return nil, false
+	}
+	cred.Attempts++
+	if cred.Attempts > maxPendingAttempts {
+		delete(s.m, token)
+		return nil, false
+	}
+	return cred, true
 }
 
 // Take atomically returns and removes a session, so a caller can use it as a

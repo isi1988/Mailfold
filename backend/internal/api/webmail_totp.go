@@ -254,8 +254,10 @@ type webmailTOTPVerifyRequest struct {
 // handleWebmailTOTPVerify redeems a pending webmail login (issued by
 // handleWebmailLogin once the password check succeeded but a second factor
 // was still required) together with a TOTP or recovery code, and mints the
-// real webmail session on success. The pending token is single-use — Take
-// removes it immediately — so it cannot be retried indefinitely.
+// real webmail session on success. A wrong code does not invalidate the
+// pending token — Peek only counts the attempt — so a typo can be retried a
+// bounded number of times instead of permanently stranding the caller; the
+// token is only consumed once a code actually verifies.
 func (s *Server) handleWebmailTOTPVerify(w http.ResponseWriter, r *http.Request) {
 	if allowed, retry := s.loginLimiter.Allow(clientIP(r)); !allowed {
 		w.Header().Set("Retry-After", strconv.Itoa(int(retry.Seconds())+1))
@@ -267,7 +269,7 @@ func (s *Server) handleWebmailTOTPVerify(w http.ResponseWriter, r *http.Request)
 		s.writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	cred, ok := s.webmailPending.Take(req.PendingToken)
+	cred, ok := s.webmailPending.Peek(req.PendingToken)
 	if !ok {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "sign in again"})
 		return
@@ -276,6 +278,7 @@ func (s *Server) handleWebmailTOTPVerify(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid code"})
 		return
 	}
+	s.webmailPending.Delete(req.PendingToken)
 	token, exp, err := s.webmailSessions.Create(cred.Email, cred.Password)
 	if err != nil {
 		s.writeError(w, http.StatusInternalServerError, err)

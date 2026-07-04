@@ -89,10 +89,11 @@ type login2FARequest struct {
 }
 
 // handleLogin2FAVerify redeems a pending token together with a TOTP or recovery
-// code and, on success, mints the real session. The pending token is single-use
-// regardless of outcome — ConsumePending removes it immediately — so a leaked
-// or guessed code cannot be retried against the same pending login indefinitely
-// (the client must start over from handleLogin, which is itself rate-limited).
+// code and, on success, mints the real session. A wrong code does not
+// invalidate the pending token — VerifyPending only counts the attempt — so a
+// typo can be retried up to auth.maxPendingAttempts times before the client
+// must start over from handleLogin (which is itself rate-limited); the token
+// is only consumed once a code actually verifies.
 func (s *Server) handleLogin2FAVerify(w http.ResponseWriter, r *http.Request) {
 	if allowed, retry := s.loginLimiter.Allow(clientIP(r)); !allowed {
 		w.Header().Set("Retry-After", strconv.Itoa(int(retry.Seconds())+1))
@@ -105,7 +106,7 @@ func (s *Server) handleLogin2FAVerify(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	user, ok := s.auth.ConsumePending(req.PendingToken)
+	user, ok := s.auth.VerifyPending(req.PendingToken)
 	if !ok {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "sign in again"})
 		return
@@ -114,6 +115,7 @@ func (s *Server) handleLogin2FAVerify(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid code"})
 		return
 	}
+	s.auth.ConsumePending(req.PendingToken)
 
 	sess, err := s.auth.MintSession(sessionMetaFrom(r))
 	if err != nil {

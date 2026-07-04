@@ -81,7 +81,14 @@ type SessionInfo struct {
 type pending struct {
 	user      string
 	expiresAt time.Time
+	attempts  int
 }
+
+// maxPendingAttempts bounds how many codes can be tried against one pending
+// login (see VerifyPending) before it's invalidated — enough to absorb an
+// honest typo, not enough to make guessing a 6-digit TOTP code or a recovery
+// code practical.
+const maxPendingAttempts = 5
 
 // Authenticator validates login credentials against a single configured admin
 // account and manages the lifecycle of the sessions it issues. One
@@ -195,7 +202,7 @@ func (a *Authenticator) MintSession(meta SessionMeta) (*Session, error) {
 
 // IssuePending records that the password step succeeded and a second factor is
 // still required, returning a short-lived token the client exchanges (with the
-// TOTP/recovery code) for a real session via ConsumePending.
+// TOTP/recovery code) for a real session via VerifyPending + ConsumePending.
 func (a *Authenticator) IssuePending() (string, error) {
 	token, err := randomToken()
 	if err != nil {
@@ -207,9 +214,13 @@ func (a *Authenticator) IssuePending() (string, error) {
 	return token, nil
 }
 
-// ConsumePending redeems (and invalidates) a pending token, reporting the user
-// it was issued for. It fails for an unknown, already-used, or expired token.
-func (a *Authenticator) ConsumePending(token string) (string, bool) {
+// VerifyPending reports the user a pending token was issued for, WITHOUT
+// consuming it, so a wrong second-factor code can be retried instead of
+// permanently stranding the caller. Each call counts as one attempt;
+// exceeding maxPendingAttempts invalidates the token exactly like expiry
+// does. Call ConsumePending once the code itself has actually verified, to
+// finalize the login.
+func (a *Authenticator) VerifyPending(token string) (string, bool) {
 	if token == "" {
 		return "", false
 	}
@@ -219,11 +230,24 @@ func (a *Authenticator) ConsumePending(token string) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	delete(a.pendings, token)
 	if time.Now().After(p.expiresAt) {
+		delete(a.pendings, token)
+		return "", false
+	}
+	p.attempts++
+	if p.attempts > maxPendingAttempts {
+		delete(a.pendings, token)
 		return "", false
 	}
 	return p.user, true
+}
+
+// ConsumePending invalidates a pending token after its code has verified
+// successfully, so it cannot be replayed.
+func (a *Authenticator) ConsumePending(token string) {
+	a.mu.Lock()
+	delete(a.pendings, token)
+	a.mu.Unlock()
 }
 
 // Validate looks up the session for a bearer token and returns it together with
