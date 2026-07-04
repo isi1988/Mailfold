@@ -64,6 +64,10 @@
     "searchPlaceholder": "Search or jump to…",
     "logout": "Sign out",
     "backToAdmin": "Admin panel",
+    "logoutConfirm": {
+      "title": "Sign out?",
+      "msg": "You'll need to sign in again to get back in."
+    },
     "theme": {
       "light": "Light",
       "dark": "Dark"
@@ -96,6 +100,10 @@
     "attachments_one": "{{count}} attachment",
     "attachments_other": "{{count}} attachments",
     "signOut": "Sign out",
+    "signOutConfirm": {
+      "title": "Sign out?",
+      "msg": "You'll need to sign in again to get back into this mailbox."
+    },
     "sent": "Message sent",
     "sendFailed": "Could not send the message",
     "deleted": "Message deleted",
@@ -318,6 +326,10 @@
   "domainAdmin": {
     "signedInAs": "Signed in as {{user}}",
     "signOut": "Sign out",
+    "signOutConfirm": {
+      "title": "Sign out?",
+      "msg": "You'll need to sign in again to get back in."
+    },
     "title": "Domain admin",
     "sub": "Managing single sign-on for: {{domains}}",
     "sso": {

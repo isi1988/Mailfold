@@ -18,6 +18,7 @@ import { useAuth } from '../auth/AuthContext.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { useT } from '../i18n/index.jsx';
 import { wm, downloadAttachment, subscribeMail } from '../api/webmail.js';
+import { ConfirmModal } from '../ds/components/organisms/ConfirmModal.jsx';
 import { ComposeModal } from './ComposeModal.jsx';
 import { AddAccountModal } from './AddAccountModal.jsx';
 import { WebmailSettingsDrawer } from './WebmailSettingsDrawer.jsx';
@@ -173,6 +174,7 @@ function WebmailClient() {
   const { toast } = useToast();
   const [addingAccount, setAddingAccount] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [confirmLogout, setConfirmLogout] = useState(false);
 
   const [folders, setFolders] = useState([]);
   const [folder, setFolder] = useState('INBOX');
@@ -443,7 +445,7 @@ function WebmailClient() {
 
         <div style={{ padding: '12px 10px 0', display: 'flex', gap: 6 }}>
           <Button variant="link" size="sm" onClick={() => setSettingsOpen(true)}>{t('webmail.settings.open')}</Button>
-          <Button variant="link" size="sm" onClick={logout}>{t('webmail.signOut')}</Button>
+          <Button variant="link" size="sm" onClick={() => setConfirmLogout(true)}>{t('webmail.signOut')}</Button>
         </div>
       </div>
 
@@ -555,6 +557,15 @@ function WebmailClient() {
       )}
       {addingAccount && <AddAccountModal onClose={() => setAddingAccount(false)} />}
       {settingsOpen && <WebmailSettingsDrawer onClose={() => setSettingsOpen(false)} />}
+      {confirmLogout && (
+        <ConfirmModal
+          title={t('webmail.signOutConfirm.title')}
+          msg={t('webmail.signOutConfirm.msg')}
+          cta={t('webmail.signOut')}
+          onCancel={() => setConfirmLogout(false)}
+          onConfirm={logout}
+        />
+      )}
     </div>
       </>
       )}

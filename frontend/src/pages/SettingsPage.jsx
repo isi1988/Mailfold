@@ -16,6 +16,7 @@ import { useToast } from '../components/Toast.jsx';
 import { useT, useI18n } from '../i18n/index.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { decodeIdnAddress } from '../lib/idn.js';
+import { ConfirmModal } from '../ds/components/organisms/ConfirmModal.jsx';
 import { PasswordChangeDrawer } from './PasswordChangeDrawer.jsx';
 import { TwoFactorEnrollModal } from './TwoFactorEnrollModal.jsx';
 import { TwoFactorConfirmDrawer } from './TwoFactorConfirmDrawer.jsx';
@@ -471,6 +472,7 @@ export function SettingsPage() {
 
   const [theme, setTheme] = useState(readTheme);
   const [accent, setAccent] = useState(readAccent);
+  const [confirmLogout, setConfirmLogout] = useState(false);
 
   const applyTheme = value => {
     document.documentElement.dataset.theme = value;
@@ -609,10 +611,20 @@ export function SettingsPage() {
             flush
             title={t('settings.signOut.title')}
             desc={t('settings.signOut.desc')}
-            control={<Button variant="danger" size="sm" onClick={signOut}>{t('settings.signOut.cta')}</Button>}
+            control={<Button variant="danger" size="sm" onClick={() => setConfirmLogout(true)}>{t('settings.signOut.cta')}</Button>}
           />
         </Card>
       </div>
+      {confirmLogout && (
+        <ConfirmModal
+          title={t('shell.logoutConfirm.title')}
+          msg={t('shell.logoutConfirm.msg')}
+          cta={t('settings.signOut.cta')}
+          danger
+          onCancel={() => setConfirmLogout(false)}
+          onConfirm={signOut}
+        />
+      )}
     </>
   );
 }

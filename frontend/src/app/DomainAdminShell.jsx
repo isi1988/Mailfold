@@ -160,13 +160,14 @@ function SSOProvidersSection() {
 export function DomainAdminShell() {
   const t = useT();
   const { user, domains, logout } = useDomainAdminAuth();
+  const [confirmLogout, setConfirmLogout] = useState(false);
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg)' }}>
       <header className="mf-row" style={{ padding: '12px 22px', borderBottom: '1px solid var(--hair)', flex: 'none', gap: 12 }}>
         <Logo size="sm" />
         <span className="mf-spacer" />
         <span className="mf-u-faint" style={{ fontSize: 12.5 }}>{t('domainAdmin.signedInAs', { user })}</span>
-        <Button variant="link" size="sm" onClick={logout}>{t('domainAdmin.signOut')}</Button>
+        <Button variant="link" size="sm" onClick={() => setConfirmLogout(true)}>{t('domainAdmin.signOut')}</Button>
       </header>
       <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '28px 22px' }}>
         <div style={{ maxWidth: 640, margin: '0 auto' }}>
@@ -179,6 +180,15 @@ export function DomainAdminShell() {
           <SSOProvidersSection />
         </div>
       </div>
+      {confirmLogout && (
+        <ConfirmModal
+          title={t('domainAdmin.signOutConfirm.title')}
+          msg={t('domainAdmin.signOutConfirm.msg')}
+          cta={t('domainAdmin.signOut')}
+          onCancel={() => setConfirmLogout(false)}
+          onConfirm={logout}
+        />
+      )}
     </div>
   );
 }

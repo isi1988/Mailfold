@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-
 import { AppShell } from '../ds/components/organisms/AppShell.jsx';
 import { Logo } from '../ds/components/atoms/Logo.jsx';
 import { Button } from '../ds/components/atoms/Button.jsx';
+import { ConfirmModal } from '../ds/components/organisms/ConfirmModal.jsx';
 import { NAV } from './nav.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { useWebmailAuth } from '../auth/WebmailAuthContext.jsx';
@@ -44,6 +45,7 @@ export function Shell() {
   const { cleanupTemporary } = useWebmailAuth();
   const t = useT();
   const [theme, setTheme] = useState(getTheme());
+  const [confirmLogout, setConfirmLogout] = useState(false);
   const { data: serverStatus } = useApi('/api/status/server');
   const serverName = (serverStatus && serverStatus.name) || '';
 
@@ -106,8 +108,17 @@ export function Shell() {
       onNavigate={key => navigate('/' + key)}
       onTheme={setTheme}
       onSearch={() => {}}
-      onLogout={logout}
+      onLogout={() => setConfirmLogout(true)}
     >
+      {confirmLogout && (
+        <ConfirmModal
+          title={t('shell.logoutConfirm.title')}
+          msg={t('shell.logoutConfirm.msg')}
+          cta={t('shell.logout')}
+          onCancel={() => setConfirmLogout(false)}
+          onConfirm={logout}
+        />
+      )}
       <Routes>
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<DashboardPage />} />
