@@ -19,6 +19,7 @@ import { useToast } from '../components/Toast.jsx';
 import { isActive, human, asList } from '../lib/format.js';
 import { useT } from '../i18n/index.jsx';
 import { MailboxDrawer } from './MailboxDrawer.jsx';
+import { MailboxImportDrawer } from './MailboxImportDrawer.jsx';
 
 // Filter tabs keyed by a stable value with a translated label.
 const TABS = [
@@ -94,6 +95,7 @@ export function MailboxesPage() {
   const location = useLocation();
   const [drawer, setDrawer] = useState(location.state && location.state.openCreate ? { mode: 'create' } : null); // { mode:'create' } | { mode:'edit', mailbox }
   const [confirmMb, setConfirmMb] = useState(null);
+  const [importing, setImporting] = useState(false);
 
   async function doDelete() {
     const mb = confirmMb;
@@ -143,7 +145,12 @@ export function MailboxesPage() {
       <PageHeader
         title={t('mailboxes.title')}
         sub={t('mailboxes.count', { count: rows.length })}
-        actions={<Button variant="primary" onClick={() => setDrawer({ mode: 'create' })}>{t('mailboxes.new')}</Button>}
+        actions={(
+          <div className="mf-row" style={{ gap: 8 }}>
+            <Button variant="secondary" onClick={() => setImporting(true)}>{t('mailboxes.importCsv')}</Button>
+            <Button variant="primary" onClick={() => setDrawer({ mode: 'create' })}>{t('mailboxes.new')}</Button>
+          </div>
+        )}
       />
       <div className="mf-row" style={{ marginBottom: 14 }}>
         <FilterTabs options={tabOptions} value={tab} onSelect={onTab} />
@@ -230,6 +237,10 @@ export function MailboxesPage() {
           onCancel={() => setConfirmMb(null)}
           onConfirm={doDelete}
         />
+      )}
+
+      {importing && (
+        <MailboxImportDrawer onClose={() => setImporting(false)} onSaved={reload} />
       )}
     </>
   );

@@ -204,6 +204,7 @@ func (s *Server) Handler() http.Handler {
 	s.registerDomainRoutes(mux)
 	s.registerDomainDNSRoutes(mux)
 	s.registerMailboxRoutes(mux)
+	s.registerMailboxBulkRoutes(mux)
 	s.registerAliasRoutes(mux)
 	s.registerDKIMRoutes(mux)
 	s.registerSyncJobRoutes(mux)

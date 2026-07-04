@@ -20,8 +20,9 @@ All code and documentation are written in English.
 
 **Admin panel** — run the whole mailcow server from one calm UI: a live
 dashboard (container health, storage, mail queue), mailboxes (quotas, a usage
-bar, last login, and per-mailbox app passwords, Sieve filters, rate limits and
-temporary aliases in a slide-over drawer), domains (a detail page per domain
+bar, last login, per-mailbox app passwords, Sieve filters, rate limits and
+temporary aliases in a slide-over drawer, plus bulk creation from a CSV file),
+domains (a detail page per domain
 with DKIM key management, rate limits, and a live DNS check that verifies MX,
 the mail host's A record, SPF, DKIM and DMARC against the live zone), aliases
 (with a mailbox-picker for recipients and a catch-all-for-domain toggle),

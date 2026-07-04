@@ -230,6 +230,7 @@
     "count_one": "{{count}} mailbox",
     "count_other": "{{count}} mailboxes",
     "new": "+ New mailbox",
+    "importCsv": "Import CSV",
     "filter": "Filter mailboxes…",
     "tabs": {
       "all": "All",
@@ -268,6 +269,22 @@
       "failed": "Action failed",
       "deleteTitle": "Delete mailbox?",
       "deleteMsg": "{{mailbox}} and all its mail will be permanently removed. This cannot be undone."
+    },
+    "importForm": {
+      "title": "Import mailboxes from CSV",
+      "sub": "Bulk-create mailboxes",
+      "hint": "The file needs a header row. Required columns: local_part, domain, password. Optional: name, quota_gb (default 3), active (default 1).",
+      "chooseFile": "Choose file…",
+      "noFile": "Choose a CSV file first.",
+      "readFailed": "Could not read that file.",
+      "import": "Import",
+      "importing": "Importing…",
+      "failed": "The import failed.",
+      "resultsTitle": "Import results",
+      "summary": "{{created}} created, {{failed}} failed.",
+      "rowN": "Row {{row}}",
+      "created": "Created",
+      "done": "Done"
     },
     "appPw": {
       "added": "App password created.",
