@@ -1,10 +1,14 @@
 import React from 'react';
 import { ResourceManager } from '../components/ResourceManager.jsx';
+import { useApi } from '../lib/useApi.js';
+import { asList } from '../lib/format.js';
 import { decodeIdnAddress, decodeIdnDomain } from '../lib/idn.js';
 import { useT } from '../i18n/index.jsx';
 
 export function DomainAdminsPage() {
   const t = useT();
+  const domainsApi = useApi('/api/domains', []);
+  const domainNames = asList(domainsApi.data).map(d => d.domain_name);
   return (
     <ResourceManager
       endpoint="/api/domain-admins"
@@ -30,7 +34,9 @@ export function DomainAdminsPage() {
         { key: 'username', label: t('advanced.domainadmins.f.username'), type: 'text', mono: true, createOnly: true },
         { key: 'password', label: t('advanced.domainadmins.f.password'), type: 'text', mono: true, hint: t('advanced.domainadmins.f.passwordHint') },
         { key: 'password2', label: t('advanced.domainadmins.f.password2'), type: 'text', mono: true },
-        { key: 'domains', label: t('advanced.domainadmins.f.domains'), type: 'textarea', placeholder: 'example.com', hint: t('advanced.domainadmins.f.domainsHint') },
+        { key: 'domains', label: t('advanced.domainadmins.f.domains'), type: 'domain-multiselect',
+          readKey: 'selected_domains', options: domainNames, decorate: decodeIdnDomain,
+          emptyLabel: t('advanced.domainadmins.f.domainsEmpty'), hint: t('advanced.domainadmins.f.domainsHint') },
         { key: 'active', label: t('common.active'), type: 'toggle', default: true },
       ]}
       canEdit={true}

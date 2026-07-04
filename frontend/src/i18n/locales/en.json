@@ -975,7 +975,8 @@
       "empty": "No domain admins yet",
       "f": {
         "domains": "Domains",
-        "domainsHint": "One or more domains this admin may manage, comma or newline separated",
+        "domainsEmpty": "No domains yet",
+        "domainsHint": "One or more domains this admin may manage",
         "password": "Password",
         "password2": "Confirm password",
         "passwordHint": "Leave blank to keep the current password when editing",

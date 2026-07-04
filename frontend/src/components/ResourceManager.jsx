@@ -27,18 +27,29 @@ function errText(err, fallback) {
 function coerce(field, value) {
   if (field.type === 'toggle') return value ? '1' : '0';
   if (field.type === 'number') return Number(value) || 0;
+  if (field.type === 'domain-multiselect') return (value || []).join(',');
   return value;
 }
 
 // initialFor derives a field's starting value for create (default) or edit (row).
+// readKey lets a field read its edit-mode default from a differently-named row
+// property than the one it submits under (e.g. mailcow's domain-admin list
+// exposes `selected_domains`, while the edit payload's field is `domains`).
 function initialFor(field, row) {
-  if (row && field.key in row) {
-    if (field.type === 'toggle') return row[field.key] === 1 || row[field.key] === '1' || row[field.key] === true;
-    return row[field.key];
+  const readKey = field.readKey || field.key;
+  if (row && readKey in row) {
+    if (field.type === 'toggle') return row[readKey] === 1 || row[readKey] === '1' || row[readKey] === true;
+    if (field.type === 'domain-multiselect') {
+      const v = row[readKey];
+      if (Array.isArray(v)) return v;
+      return v ? String(v).split(/[,\n]/).map(s => s.trim()).filter(Boolean) : [];
+    }
+    return row[readKey];
   }
   if (field.type === 'toggle') return field.default != null ? field.default : true;
   if (field.type === 'number') return field.default != null ? field.default : 0;
   if (field.type === 'select') return field.default != null ? field.default : (field.options && field.options[0] ? field.options[0].value : '');
+  if (field.type === 'domain-multiselect') return field.default != null ? field.default : [];
   return field.default != null ? field.default : '';
 }
 
@@ -74,6 +85,28 @@ function ResourceDrawer({ mode, row, fields, title, subtitle, onClose, onSubmit,
               <span className="mf-u-muted" style={{ fontSize: 13 }}>{f.label}</span>
               <Toggle on={!!values[f.key]} onClick={() => !locked && set(f.key, !values[f.key])} style={{ cursor: locked ? 'default' : 'pointer' }} />
             </div>
+          );
+        }
+        if (f.type === 'domain-multiselect') {
+          const selected = values[f.key] || [];
+          const toggleDomain = (name) => {
+            if (locked) return;
+            set(f.key, selected.includes(name) ? selected.filter(d => d !== name) : [...selected, name]);
+          };
+          return (
+            <FormField key={f.key} label={f.label}>
+              <div className="mf-input" style={{ padding: 8, maxHeight: 220, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {(f.options || []).length === 0 ? (
+                  <span className="mf-u-faint" style={{ fontSize: 12.5, padding: '4px 2px' }}>{f.emptyLabel || '—'}</span>
+                ) : (f.options || []).map(name => (
+                  <label key={name} className="mf-row" style={{ gap: 8, padding: '4px 2px', cursor: locked ? 'default' : 'pointer', fontSize: 13 }}>
+                    <input type="checkbox" checked={selected.includes(name)} disabled={locked} onChange={() => toggleDomain(name)} />
+                    <span className="mf-u-mono mf-truncate">{f.decorate ? f.decorate(name) : name}</span>
+                  </label>
+                ))}
+              </div>
+              {f.hint ? <div className="mf-u-faint" style={{ fontSize: 12, marginTop: 4 }}>{f.hint}</div> : null}
+            </FormField>
           );
         }
         return (
@@ -113,7 +146,13 @@ function ResourceDrawer({ mode, row, fields, title, subtitle, onClose, onSubmit,
  *   filterKeys  row keys the search box matches against (optional)
  *   filterPlaceholder
  *   columns     [{ key, label, w, mono, render(row) }]
- *   fields      [{ key, label, type:'text'|'number'|'select'|'toggle'|'textarea', options, placeholder, hint, default, createOnly, mono, editable:false }]
+ *   fields      [{ key, label, type:'text'|'number'|'select'|'toggle'|'textarea'|'domain-multiselect',
+ *                  options, readKey, decorate, placeholder, hint, default, createOnly, mono, editable:false }]
+ *               readKey lets a field read its edit-mode default from a differently-named row
+ *               property (mailcow's list responses don't always match their edit payload's field
+ *               names). domain-multiselect renders `options` (an array of domain name strings) as
+ *               a checkbox list and submits the selection joined with commas; `decorate` formats
+ *               each option's visible label (e.g. IDN decoding) without changing the value used.
  *   canCreate / canEdit / canDelete
  *   labels      { deleteTitle, deleteMsg(row), created, updated, deleted, failed, empty }
  *   describe(row) -> string  (identifier shown in toasts / drawer subtitle)
