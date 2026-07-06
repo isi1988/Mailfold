@@ -187,6 +187,20 @@ export const wm = {
     subscribe: subscription => req('POST', '/api/webmail/push/subscribe', subscription),
     unsubscribe: endpoint => req('DELETE', '/api/webmail/push/subscribe', { endpoint }),
   },
+  // shared covers team/shared mailboxes: discovering which ones this mailbox
+  // has been granted access to, activating one as an ordinary account (no
+  // password needed — the backend mints the session), and, once inside one,
+  // per-message assignment and internal notes.
+  shared: {
+    mine: () => req('GET', '/api/webmail/shared'),
+    activate: id => req('POST', '/api/webmail/shared/' + id + '/session'),
+    members: () => req('GET', '/api/webmail/shared/members'),
+    assignment: (folder, uid) => req('GET', '/api/webmail/shared/assignment?' + q({ folder, uid })),
+    setAssignment: (folder, uid, assignedTo) => req('POST', '/api/webmail/shared/assignment', { folder, uid, assigned_to: assignedTo }),
+    notes: (folder, uid) => req('GET', '/api/webmail/shared/notes?' + q({ folder, uid })),
+    addNote: (folder, uid, body) => req('POST', '/api/webmail/shared/notes', { folder, uid, body }),
+    deleteNote: id => req('DELETE', '/api/webmail/shared/notes', { id }),
+  },
 };
 
 // subscribeMail opens a Server-Sent Events stream that fires onMail(data) when

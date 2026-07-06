@@ -58,7 +58,8 @@
     "domainadmins": "Domain admins",
     "ssoproviders": "SSO providers",
     "oauth2": "OAuth2 clients",
-    "auditlog": "Audit log"
+    "auditlog": "Audit log",
+    "sharedmailboxes": "Shared mailboxes"
   },
   "shell": {
     "role": "Administrator",
@@ -170,11 +171,21 @@
       "clearFormat": "Clear formatting"
     },
     "compose": "Compose",
+    "shared": {
+      "assignedTo": "Assigned to",
+      "unassigned": "Unassigned",
+      "notes": "Internal notes",
+      "notesEmpty": "No notes yet.",
+      "notePlaceholder": "Add a note for the team…",
+      "addNote": "Add"
+    },
     "account": {
       "add": "Add account",
       "addSub": "Add another mailbox to your fold, or connect one from elsewhere — all in one inbox.",
       "tabMailfold": "Mailfold mailbox",
+      "tabShared": "Shared",
       "tabExternal": "External account",
+      "sharedEmpty": "No shared mailboxes yet — ask an admin to grant you access to one.",
       "addBtn": "Add mailbox",
       "connectBtn": "Connect account",
       "connecting": "Connecting…",
@@ -407,6 +418,30 @@
     "newTitle": "New SSO provider",
     "deleteTitle": "Delete this provider?",
     "deleteMsg": "\"{{name}}\" will no longer be offered as a sign-in option."
+  },
+  "sharedMailboxes": {
+    "title": "Shared mailboxes",
+    "sub": "Let more than one webmail user sign into a team mailbox — like support@ — without sharing its real password, and track who's handling each message.",
+    "add": "Add shared mailbox",
+    "empty": "No shared mailboxes yet.",
+    "email": "Mailbox address",
+    "displayName": "Display name",
+    "displayNamePlaceholder": "Support",
+    "createHint": "The mailbox must already exist. Mailfold mints a dedicated app-password for it — members never see or need its real password.",
+    "newTitle": "New shared mailbox",
+    "membersHint": "Anyone added here can sign into this mailbox from their own webmail account, with no password needed.",
+    "addMember": "Add",
+    "noMembers": "No members yet.",
+    "col": {
+      "mailbox": "Mailbox",
+      "members": "Members",
+      "createdBy": "Created by"
+    },
+    "created": "Shared mailbox created.",
+    "deleted": "Shared mailbox deleted.",
+    "failed": "Something went wrong.",
+    "deleteTitle": "Delete this shared mailbox?",
+    "deleteMsg": "\"{{name}}\" will no longer be shared, and its delegated app-password will be revoked. Members lose access; the mailbox itself is untouched."
   },
   "auditlog": {
     "title": "Audit log",

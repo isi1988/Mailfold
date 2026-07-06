@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Icon } from '../ds/components/atoms/Icon.jsx';
 import { Button } from '../ds/components/atoms/Button.jsx';
 import { Input } from '../ds/components/atoms/Input.jsx';
@@ -40,9 +40,30 @@ function TabBtn({ active, onClick, children }) {
 export function AddAccountModal({ onClose }) {
   const t = useT();
   const { toast } = useToast();
-  const { login, verifyLogin2FA } = useWebmailAuth();
+  const { login, verifyLogin2FA, applySession } = useWebmailAuth();
   const [tab, setTab] = useState('mailfold');
   const [busy, setBusy] = useState(false);
+
+  const [shared, setShared] = useState(null); // [] once loaded, null while loading/unavailable
+  useEffect(() => {
+    if (tab !== 'shared' || shared !== null) return;
+    wm.shared.mine().then(setShared).catch(() => setShared([]));
+  }, [tab, shared]);
+
+  async function activateShared(mailbox) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await wm.shared.activate(mailbox.id);
+      applySession(res.token, res.email);
+      toast(t('webmail.account.added', { email: res.email }));
+      onClose();
+    } catch (e) {
+      toast(t('webmail.account.connectFailed'), (e && e.body && e.body.error) || (e && e.message) || '');
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -115,6 +136,7 @@ export function AddAccountModal({ onClose }) {
           <div className="mf-u-muted" style={{ fontSize: 12.5, margin: '2px 0 14px', lineHeight: 1.5 }}>{t('webmail.account.addSub')}</div>
           <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
             <TabBtn active={tab === 'mailfold'} onClick={() => setTab('mailfold')}>{t('webmail.account.tabMailfold')}</TabBtn>
+            <TabBtn active={tab === 'shared'} onClick={() => setTab('shared')}>{t('webmail.account.tabShared')}</TabBtn>
             <TabBtn active={tab === 'external'} onClick={() => setTab('external')}>{t('webmail.account.tabExternal')}</TabBtn>
           </div>
         </div>
@@ -138,6 +160,24 @@ export function AddAccountModal({ onClose }) {
               </FormField>
               {error && <div className="mf-form-error" style={{ marginTop: 10 }} role="alert">{error}</div>}
             </>
+            )
+          ) : tab === 'shared' ? (
+            shared === null ? (
+              <div className="mf-u-muted" style={{ fontSize: 13, padding: '10px 0' }}>{t('common.loading')}</div>
+            ) : shared.length === 0 ? (
+              <div className="mf-u-faint" style={{ fontSize: 12.5, padding: '10px 0', lineHeight: 1.5 }}>{t('webmail.account.sharedEmpty')}</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {shared.map(mbox => (
+                  <div key={mbox.id} className="mf-row mf-row--between" style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid var(--hair)' }}>
+                    <div className="mf-min0">
+                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{mbox.display_name || mbox.email}</div>
+                      <div className="mf-u-faint mf-u-mono mf-truncate" style={{ fontSize: 12 }}>{mbox.email}</div>
+                    </div>
+                    <Button variant="secondary" size="sm" disabled={busy} onClick={() => activateShared(mbox)}>{t('webmail.account.addBtn')}</Button>
+                  </div>
+                ))}
+              </div>
             )
           ) : (
             <>
@@ -191,7 +231,9 @@ export function AddAccountModal({ onClose }) {
             ? (pending2FA
               ? <Button variant="primary" onClick={submitCode} disabled={busy}>{busy ? t('login.twoFactor.verifying') : t('login.twoFactor.verify')}</Button>
               : <Button variant="primary" onClick={addLocal} disabled={busy}>{busy ? t('webmail.signingIn') : t('webmail.account.addBtn')}</Button>)
-            : <Button variant="primary" onClick={connectExt} disabled={busy}>{busy ? t('webmail.account.connecting') : t('webmail.account.connectBtn')}</Button>}
+            : tab === 'external'
+              ? <Button variant="primary" onClick={connectExt} disabled={busy}>{busy ? t('webmail.account.connecting') : t('webmail.account.connectBtn')}</Button>
+              : null}
           <Button variant="link" className="mf-spacer" onClick={onClose}>{t('common.cancel')}</Button>
         </div>
       </div>

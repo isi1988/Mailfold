@@ -189,6 +189,18 @@ function WebmailClient() {
   const [view, setView] = useState('mail'); // 'mail' | 'calendar'
   const [filterMode, setFilterMode] = useState(null); // null | 'starred' | 'label:<name>'
   const [labels, setLabels] = useState(() => loadLabels(email));
+  // sharedMembers is non-null only inside a shared/team mailbox (see
+  // wm.shared.members()); it gates the assignment/notes UI in the reading
+  // pane below. WebmailClient remounts (key={email}, see WebmailPage at the
+  // bottom of this file) on every account switch, so a plain mount-time
+  // fetch is enough — no need to re-check on every render.
+  const [sharedMembers, setSharedMembers] = useState(null);
+  const [notes, setNotes] = useState([]);
+  const [noteDraft, setNoteDraft] = useState('');
+
+  useEffect(() => {
+    wm.shared.members().then(setSharedMembers).catch(() => setSharedMembers(null));
+  }, []);
 
   const { sys: sysFolders, custom: customFolders } = useMemo(() => classifyFolders(folders), [folders]);
 
@@ -247,6 +259,8 @@ function WebmailClient() {
     setSelected(m);
     setBody(null);
     setShowAllQuoted(false);
+    setNotes([]);
+    setNoteDraft('');
     try {
       const full = await wm.message(folder, m.uid);
       setBody(full);
@@ -256,8 +270,48 @@ function WebmailClient() {
         await wm.flag(folder, m.uid, 'seen', true);
         setMessages(list => list.map(x => (x.uid === m.uid ? { ...x, flags: [...(x.flags || []), '\\Seen'] } : x)));
       }
+      if (sharedMembers !== null) {
+        wm.shared.notes(folder, m.uid).then(setNotes).catch(() => setNotes([]));
+      }
     } catch (err) {
       onErr(err);
+    }
+  }
+
+  // assignMessage sets (or, with an empty value, clears) who on the team is
+  // handling the selected message — only reachable from inside a shared
+  // mailbox (see sharedMembers above).
+  async function assignMessage(assignedTo) {
+    if (!selected) return;
+    try {
+      await wm.shared.setAssignment(folder, selected.uid, assignedTo);
+      setMessages(list => list.map(x => (x.uid === selected.uid ? { ...x, assigned_to: assignedTo } : x)));
+      setSelected(s => (s ? { ...s, assigned_to: assignedTo } : s));
+    } catch (err) {
+      toast(t('webmail.actionFailed'), (err && err.message) || '');
+    }
+  }
+
+  async function addNote() {
+    const body = noteDraft.trim();
+    if (!selected || !body) return;
+    try {
+      const note = await wm.shared.addNote(folder, selected.uid, body);
+      setNotes(list => [...list, note]);
+      setNoteDraft('');
+      setMessages(list => list.map(x => (x.uid === selected.uid ? { ...x, notes_count: (x.notes_count || 0) + 1 } : x)));
+    } catch (err) {
+      toast(t('webmail.actionFailed'), (err && err.message) || '');
+    }
+  }
+
+  async function deleteNote(id) {
+    try {
+      await wm.shared.deleteNote(id);
+      setNotes(list => list.filter(n => n.id !== id));
+      setMessages(list => list.map(x => (x.uid === selected.uid ? { ...x, notes_count: Math.max(0, (x.notes_count || 0) - 1) } : x)));
+    } catch (err) {
+      toast(t('webmail.actionFailed'), (err && err.message) || '');
     }
   }
 
@@ -468,6 +522,8 @@ function WebmailClient() {
                   time={shortTime(m.date)}
                   unread={!hasFlag(m.flags, '\\Seen')}
                   starred={hasFlag(m.flags, '\\Flagged')}
+                  assignedTo={m.assigned_to || ''}
+                  notesCount={m.notes_count || 0}
                   active={selected && selected.uid === m.uid}
                   onClick={() => openMessage(m)} />
               ))}
@@ -499,6 +555,34 @@ function WebmailClient() {
                 </div>
                 <span className="mf-u-faint" style={{ fontSize: 12.5 }}>{shortTime(selected.date)}</span>
               </div>
+              {sharedMembers !== null && (
+                <div style={{ margin: '0 0 20px', padding: 14, borderRadius: 10, border: '1px solid var(--hair)', background: 'var(--surface-soft)' }}>
+                  <div className="mf-row" style={{ gap: 10, alignItems: 'center' }}>
+                    <span className="mf-u-faint" style={{ fontSize: 12, flex: 'none' }}>{t('webmail.shared.assignedTo')}</span>
+                    <select className="mf-input" style={{ maxWidth: 220 }} value={selected.assigned_to || ''} onChange={e => assignMessage(e.target.value)}>
+                      <option value="">{t('webmail.shared.unassigned')}</option>
+                      {sharedMembers.map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                  </div>
+                  <div className="mf-u-faint" style={{ fontSize: 12, margin: '12px 0 6px' }}>{t('webmail.shared.notes')}</div>
+                  {notes.length === 0 && <div className="mf-u-faint" style={{ fontSize: 12.5 }}>{t('webmail.shared.notesEmpty')}</div>}
+                  {notes.map(n => (
+                    <div key={n.id} className="mf-row" style={{ gap: 8, padding: '6px 0', borderTop: '1px solid var(--hair-soft)', alignItems: 'flex-start' }}>
+                      <div className="mf-min0" style={{ flex: 1 }}>
+                        <div style={{ fontSize: 12.5, color: 'var(--ink)', whiteSpace: 'pre-wrap' }}>{n.body}</div>
+                        <div className="mf-u-faint" style={{ fontSize: 11 }}>{n.author} · {shortTime(n.created_at)}</div>
+                      </div>
+                      <IconButton onClick={() => deleteNote(n.id)} title={t('common.delete')}><Icon name="trash" size={13} /></IconButton>
+                    </div>
+                  ))}
+                  <div className="mf-row" style={{ gap: 8, marginTop: 10 }}>
+                    <Input className="mf-spacer" placeholder={t('webmail.shared.notePlaceholder')} value={noteDraft}
+                      onChange={e => setNoteDraft(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') addNote(); }} />
+                    <Button variant="secondary" size="sm" onClick={addNote} disabled={!noteDraft.trim()}>{t('webmail.shared.addNote')}</Button>
+                  </div>
+                </div>
+              )}
               {body === null ? (
                 <div style={{ padding: 22 }}><Loading message={t('webmail.loadingMessage')} /></div>
               ) : body.html ? (
