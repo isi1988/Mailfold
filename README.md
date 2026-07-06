@@ -125,6 +125,15 @@ A built-in three-pane webmail client (folders · message list · reader):
   distraction-free reading view, with a button back to the panel; an admin
   opening a mailbox they hadn't opened before is asked whether to keep it
   linked to their account or just view it once.
+- **Installable PWA + push notifications** — webmail has a manifest and
+  service worker, so it can be installed as an app from the browser. From
+  Settings > Notifications a mailbox can turn on Web Push per device: a
+  background poller checks for new mail every minute and delivers a system
+  notification even with no Mailfold tab open anywhere, using a VAPID key
+  pair Mailfold generates and stores itself. Requires `MAILFOLD_DB_PATH` and
+  `MAILFOLD_ADMIN_ENC_KEY` (the subscription's IMAP password is kept
+  encrypted so the poller can check mail on its own); see
+  `MAILFOLD_VAPID_CONTACT_EMAIL` in [`.env.example`](.env.example).
 
 ## Calendar & contacts
 
