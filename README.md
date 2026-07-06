@@ -78,6 +78,12 @@ On top of password sign-in:
   emails a reset link from a mailbox the admin configures themselves (see
   [`MAILFOLD_ADMIN_ENC_KEY`](.env.example)), not a fixed environment
   variable.
+- **Audit log** — every admin and domain-admin sign-in (successful or
+  failed), sign-out, and mutating action (create/update/delete) is recorded
+  with who, when, from which IP, and the outcome — a single place to review
+  "who did what" in the admin panel. It's scoped to administration, not
+  regular webmail activity (sending or reading mail isn't logged here).
+  Available under Administration → Audit log.
 
 ## Mail
 
