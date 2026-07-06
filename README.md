@@ -134,6 +134,16 @@ A built-in three-pane webmail client (folders · message list · reader):
   `MAILFOLD_ADMIN_ENC_KEY` (the subscription's IMAP password is kept
   encrypted so the poller can check mail on its own); see
   `MAILFOLD_VAPID_CONTACT_EMAIL` in [`.env.example`](.env.example).
+- **Shared/team mailboxes** — a super-admin can turn any existing mailbox
+  (e.g. `support@company.com`) into a shared mailbox and grant webmail users
+  access to it, from Administration > Shared mailboxes. A member picks it up
+  under Add account > Shared with one click — no password needed, since
+  Mailfold mints a dedicated mailcow app-password for the mailbox and never
+  shows it to anyone. Inside a shared mailbox, any message can be **assigned**
+  to a team member and carries a thread of **internal notes** (visible only
+  to the team, never sent to the actual sender or recipient), both shown
+  right in the message list and reader. Requires `MAILFOLD_DB_PATH` and
+  `MAILFOLD_ADMIN_ENC_KEY`.
 
 ## Calendar & contacts
 
