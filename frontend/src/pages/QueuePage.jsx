@@ -13,6 +13,7 @@ import { AsyncView } from '../components/States.jsx';
 import { human, asList } from '../lib/format.js';
 import { useToast } from '../components/Toast.jsx';
 import { useT } from '../i18n/index.jsx';
+import { QueuePens } from './QueuePens.jsx';
 
 const PAGE_SIZE = 20;
 
@@ -114,6 +115,16 @@ export function QueuePage() {
   ];
 
   const rows = asList(data);
+  // Three broad buckets for the Cow-Managed pens: "active" is on its way out
+  // right now, anything red-toned (reject/error/...) is stuck, everything
+  // else (deferred, hold, unrecognized) is waiting its turn.
+  const counts = rows.reduce((acc, r) => {
+    const status = statusOf(r);
+    if (status === 'active') acc.ready++;
+    else if (tone(status) === 'red') acc.failed++;
+    else acc.queued++;
+    return acc;
+  }, { ready: 0, queued: 0, failed: 0 });
   const filtered = q
     ? rows.filter(r => {
         const hay = (
@@ -148,6 +159,7 @@ export function QueuePage() {
           </>
         }
       />
+      <QueuePens counts={counts} t={t} />
       <div className="mf-row" style={{ marginBottom: 14 }}>
         <SearchInput className="mf-spacer" style={{ width: 250 }} placeholder={t('queue.filter')} value={q} onChange={onQuery} />
       </div>

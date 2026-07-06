@@ -726,6 +726,14 @@
       "confirmMsg": "This permanently discards every message currently in the queue instead of retrying delivery. This cannot be undone.",
       "done": "Queue cleared",
       "failed": "Could not clear the queue"
+    },
+    "pens": {
+      "title": "The herd",
+      "tagline": "Secure. Scalable. Cow-Managed.",
+      "ready": "Ready",
+      "queued": "Queued",
+      "failed": "Stuck",
+      "empty": "No mail here"
     }
   },
   "quarantine": {
