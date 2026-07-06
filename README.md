@@ -84,6 +84,12 @@ On top of password sign-in:
   "who did what" in the admin panel. It's scoped to administration, not
   regular webmail activity (sending or reading mail isn't logged here).
   Available under Administration → Audit log.
+- **Security alert emails** — the admin's notify mailbox (the same one used
+  for password-reset links) sends a heads-up email on two events: three
+  failed admin sign-ins in a row, and a successful admin sign-in from a
+  device (IP + browser) not seen before. Both are best-effort — a missing
+  notify mailbox just means no email, never a blocked sign-in — and a known
+  device is remembered indefinitely so it won't re-alert on every visit.
 
 ## Mail
 
