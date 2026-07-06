@@ -72,6 +72,15 @@ On top of password sign-in:
   user can each independently enroll their own optional TOTP 2FA (QR code +
   one-time recovery codes) from their own settings; sign-in gains a
   second-factor step once it's on.
+- **Passkeys & security keys (WebAuthn)** — the admin can additionally enroll
+  a passkey (Face ID, Touch ID, Windows Hello) or a hardware security key from
+  Settings, alongside TOTP rather than replacing it. Once enrolled, sign-in
+  offers either factor: enter a TOTP code, or confirm with the passkey — no
+  authenticator app needed for the latter. Enrolling requires re-confirming
+  the current password first, exactly like TOTP. This needs a database and a
+  non-wildcard `MAILFOLD_CORS_ORIGINS` (the browser's WebAuthn API is
+  same-origin-only, so a fixed origin is required either way) — no separate
+  environment variable to turn it on.
 - **Account security & recovery** — the admin can change their password,
   edit their profile, and review/revoke active sessions (by device/IP,
   individually or all at once) from Settings. A "forgot password?" link
