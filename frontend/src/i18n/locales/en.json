@@ -292,12 +292,18 @@
     },
     "twoFactor": {
       "title": "Two-factor authentication",
-      "sub": "Enter the 6-digit code from your authenticator app, or a recovery code.",
+      "sub": "Verify it's you to finish signing in.",
       "codeLabel": "Code",
       "codePlaceholder": "123456 or XXXXX-XXXXX",
       "verify": "Verify",
       "verifying": "Verifying…",
       "invalidCode": "That code didn't work. Try again.",
+      "or": "or",
+      "usePasskey": "Sign in with a passkey",
+      "passkeyVerifying": "Waiting for your passkey…",
+      "passkeyCancelled": "Cancelled — try again.",
+      "passkeyFailed": "That passkey didn't verify. Try again.",
+      "passkeyUnsupported": "This browser doesn't support passkeys — try another browser or device.",
       "back": "Back to sign in"
     },
     "forgotLink": "Forgot password?",
@@ -952,6 +958,28 @@
           "currentPassword": "Current password",
           "confirm": "Generate",
           "confirming": "Generating…"
+        }
+      },
+      "passkeys": {
+        "title": "Passkeys & security keys",
+        "desc_one": "{{count}} passkey enrolled",
+        "desc_other": "{{count}} passkeys enrolled",
+        "unavailable": "Passkeys need a database and a non-wildcard MAILFOLD_CORS_ORIGINS configured on the server.",
+        "remove": "Remove",
+        "removed": "Passkey removed",
+        "added": "Passkey added",
+        "failed": "Action failed",
+        "add": {
+          "cta": "Add a passkey",
+          "title": "Add a passkey",
+          "hint": "You'll be asked to confirm with Face ID, Touch ID, Windows Hello, or a security key. Once added, it can sign you in without an authenticator-app code.",
+          "currentPassword": "Current password",
+          "nameLabel": "Name this passkey",
+          "namePlaceholder": "e.g. MacBook Touch ID",
+          "continue": "Continue",
+          "adding": "Adding…",
+          "cancelled": "Cancelled — no passkey was added.",
+          "failed": "Could not add this passkey."
         }
       },
       "sessions": {

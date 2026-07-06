@@ -20,6 +20,7 @@ import { ConfirmModal } from '../ds/components/organisms/ConfirmModal.jsx';
 import { PasswordChangeDrawer } from './PasswordChangeDrawer.jsx';
 import { TwoFactorEnrollModal } from './TwoFactorEnrollModal.jsx';
 import { TwoFactorConfirmDrawer } from './TwoFactorConfirmDrawer.jsx';
+import { PasskeyEnrollDrawer } from './PasskeyEnrollDrawer.jsx';
 
 // Client-only appearance preferences. Theme + accent live as data-attributes on
 // <html> and are persisted so they survive a reload; there is no backend.
@@ -261,11 +262,14 @@ function SecuritySection({ t }) {
   const { toast } = useToast();
   const profile = useApi('/api/account/profile', []);
   const sessions = useApi('/api/account/sessions', []);
-  const [modal, setModal] = useState(null); // 'password' | 'enroll' | 'disable' | 'regenerate' | null
+  const passkeys = useApi('/api/account/webauthn/credentials', []);
+  const [modal, setModal] = useState(null); // 'password' | 'enroll' | 'disable' | 'regenerate' | 'passkeyAdd' | null
 
   const unavailable = profile.error && profile.error.status === 501;
   const totpEnabled = !!(profile.data && profile.data.totp_enabled);
   const list = Array.isArray(sessions.data) ? sessions.data : [];
+  const passkeysUnavailable = passkeys.error && passkeys.error.status === 501;
+  const passkeyList = Array.isArray(passkeys.data) ? passkeys.data : [];
 
   async function revoke(id) {
     try {
@@ -297,6 +301,16 @@ function SecuritySection({ t }) {
   // once, in place, the same way the enroll wizard does.
   function regenerateCodes(password) {
     return api.post('/api/account/2fa/recovery-codes', { current_password: password });
+  }
+
+  async function deletePasskey(id) {
+    try {
+      await api.del(`/api/account/webauthn/credentials/${id}`);
+      toast(t('settings.security.passkeys.removed'));
+      passkeys.reload();
+    } catch (err) {
+      toast(t('settings.security.passkeys.failed'), (err && err.message) || '');
+    }
   }
 
   return (
@@ -331,6 +345,30 @@ function SecuritySection({ t }) {
                 </div>
               )}
             />
+            <ToggleRow
+              title={t('settings.security.passkeys.title')}
+              desc={passkeysUnavailable ? t('settings.security.passkeys.unavailable') : t('settings.security.passkeys.desc', { count: passkeyList.length })}
+              control={!passkeysUnavailable && (
+                <Button variant="secondary" size="sm" onClick={() => setModal('passkeyAdd')}>
+                  {t('settings.security.passkeys.add.cta')}
+                </Button>
+              )}
+            />
+            {!passkeysUnavailable && (
+              <AsyncView loading={passkeys.loading} error={passkeys.error && passkeys.error.status !== 501 ? passkeys.error : null} reload={passkeys.reload}>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  {passkeyList.map(pk => (
+                    <ToggleRow
+                      key={pk.id}
+                      flush
+                      title={pk.name}
+                      desc={fmtWhen(pk.created_at)}
+                      control={<Button variant="danger" size="sm" onClick={() => deletePasskey(pk.id)}>{t('settings.security.passkeys.remove')}</Button>}
+                    />
+                  ))}
+                </div>
+              </AsyncView>
+            )}
             <ToggleRow
               title={t('settings.security.sessions.title')}
               desc={t('settings.security.sessions.desc', { count: list.length })}
@@ -369,6 +407,12 @@ function SecuritySection({ t }) {
       )}
       {modal === 'regenerate' && (
         <TwoFactorConfirmDrawer mode="regenerate" onClose={() => setModal(null)} onConfirm={regenerateCodes} />
+      )}
+      {modal === 'passkeyAdd' && (
+        <PasskeyEnrollDrawer
+          onClose={() => setModal(null)}
+          onSaved={() => { passkeys.reload(); toast(t('settings.security.passkeys.added')); }}
+        />
       )}
     </>
   );

@@ -10,6 +10,7 @@ import { PasswordField } from '../components/PasswordField.jsx';
 import { api } from '../api/client.js';
 import { wm } from '../api/webmail.js';
 import { domainAdminApi } from '../api/domainAdmin.js';
+import { getPasskeyAssertion, isWebAuthnSupported } from '../lib/webauthn.js';
 import { useT } from '../i18n/index.jsx';
 import markUrl from '../ds/assets/mailfold-mark.png';
 
@@ -30,6 +31,8 @@ export function LoginView() {
   const [pendingWebmail, setPendingWebmail] = useState(null); // { pendingToken, mailbox } while only webmail needs a 2FA code
   const [code, setCode] = useState('');
   const [codeError, setCodeError] = useState('');
+  const [passkeyBusy, setPasskeyBusy] = useState(false);
+  const [passkeyError, setPasskeyError] = useState('');
   const [webmailCode, setWebmailCode] = useState('');
   const [webmailCodeError, setWebmailCodeError] = useState('');
   const [screen, setScreen] = useState('signIn'); // 'signIn' | 'forgot' | 'device'
@@ -108,7 +111,7 @@ export function LoginView() {
     const successes = [admin && { type: 'admin', value: admin }, domainAdmin && { type: 'domainAdmin', value: domainAdmin }, webOK && { type: 'web', value: webOK }].filter(Boolean);
 
     if (admin && admin.needs_2fa) {
-      setPending({ pendingToken: admin.pending_token, web: webOK, domainAdmin });
+      setPending({ pendingToken: admin.pending_token, web: webOK, domainAdmin, methods: admin.methods || ['totp'] });
       setBusy(false);
       return;
     }
@@ -167,10 +170,32 @@ export function LoginView() {
     }
   }
 
+  // submitPasskey redeems the same pending token as submitCode, but via a
+  // WebAuthn assertion instead of a TOTP code — either one finishes the same
+  // admin login.
+  async function submitPasskey() {
+    if (busy || passkeyBusy) return;
+    setPasskeyBusy(true);
+    setPasskeyError('');
+    try {
+      const options = await api.post('/api/auth/2fa/webauthn/begin', { pending_token: pending.pendingToken });
+      const assertion = await getPasskeyAssertion(options);
+      const sess = await api.post('/api/auth/2fa/webauthn/finish?pending_token=' + encodeURIComponent(pending.pendingToken), assertion);
+      if (pending.web) applyWebmail(pending.web.token, pending.web.email || user.trim());
+      if (pending.domainAdmin) applyDomainAdmin(pending.domainAdmin.token, pending.domainAdmin.user, pending.domainAdmin.domains);
+      applyAdmin(sess.token, sess.user);
+    } catch (err) {
+      setPasskeyError(err && err.name === 'NotAllowedError' ? t('login.twoFactor.passkeyCancelled') : t('login.twoFactor.passkeyFailed'));
+      setPasskeyBusy(false);
+    }
+  }
+
   function backToSignIn() {
     setPending(null);
     setCode('');
     setCodeError('');
+    setPasskeyError('');
+    setPasskeyBusy(false);
     setPendingWebmail(null);
     setWebmailCode('');
     setWebmailCodeError('');
@@ -254,29 +279,61 @@ export function LoginView() {
             {choice.web && <Button variant="secondary" block size="lg" style={{ marginTop: 12 }} onClick={openWebmail}>{t('login.choose.webmail')}</Button>}
           </div>
         ) : pending ? (
-          <form className="mf-login__form" onSubmit={submitCode}>
-            <div className="mf-login__title">{t('login.twoFactor.title')}</div>
-            <div className="mf-login__sub">{t('login.twoFactor.sub')}</div>
-            <div style={{ marginTop: 28 }}>
-              <Label strong style={{ marginBottom: 7 }}>{t('login.twoFactor.codeLabel')}</Label>
-              <Input
-                size="lg"
-                mono
-                autoFocus
-                placeholder={t('login.twoFactor.codePlaceholder')}
-                autoComplete="one-time-code"
-                value={code}
-                onChange={e => setCode(e.target.value)}
-              />
-            </div>
-            {codeError && <div className="mf-form-error" style={{ marginTop: 14 }} role="alert">{codeError}</div>}
-            <Button variant="primary" block size="lg" type="submit" disabled={busy} style={{ marginTop: 22 }}>
-              {busy ? t('login.twoFactor.verifying') : t('login.twoFactor.verify')}
-            </Button>
-            <Button variant="secondary" block size="lg" type="button" style={{ marginTop: 10 }} onClick={backToSignIn}>
-              {t('login.twoFactor.back')}
-            </Button>
-          </form>
+          (() => {
+            const showTotp = pending.methods.includes('totp');
+            const passkeySupported = isWebAuthnSupported();
+            const showPasskey = pending.methods.includes('webauthn') && passkeySupported;
+            const passkeyUnsupported = pending.methods.includes('webauthn') && !passkeySupported && !showTotp;
+            return (
+              <div className="mf-login__form">
+                <div className="mf-login__title">{t('login.twoFactor.title')}</div>
+                <div className="mf-login__sub">{t('login.twoFactor.sub')}</div>
+                {showTotp && (
+                  <form onSubmit={submitCode}>
+                    <div style={{ marginTop: 28 }}>
+                      <Label strong style={{ marginBottom: 7 }}>{t('login.twoFactor.codeLabel')}</Label>
+                      <Input
+                        size="lg"
+                        mono
+                        autoFocus
+                        placeholder={t('login.twoFactor.codePlaceholder')}
+                        autoComplete="one-time-code"
+                        value={code}
+                        onChange={e => setCode(e.target.value)}
+                      />
+                    </div>
+                    {codeError && <div className="mf-form-error" style={{ marginTop: 14 }} role="alert">{codeError}</div>}
+                    <Button variant="primary" block size="lg" type="submit" disabled={busy} style={{ marginTop: 22 }}>
+                      {busy ? t('login.twoFactor.verifying') : t('login.twoFactor.verify')}
+                    </Button>
+                  </form>
+                )}
+                {showPasskey && (
+                  <>
+                    {showTotp && <div className="mf-u-faint" style={{ textAlign: 'center', margin: '16px 0', fontSize: 12.5 }}>{t('login.twoFactor.or')}</div>}
+                    <Button
+                      variant={showTotp ? 'secondary' : 'primary'}
+                      block
+                      size="lg"
+                      type="button"
+                      disabled={passkeyBusy}
+                      onClick={submitPasskey}
+                      style={{ marginTop: showTotp ? 0 : 28 }}
+                    >
+                      {passkeyBusy ? t('login.twoFactor.passkeyVerifying') : t('login.twoFactor.usePasskey')}
+                    </Button>
+                    {passkeyError && <div className="mf-form-error" style={{ marginTop: 14 }} role="alert">{passkeyError}</div>}
+                  </>
+                )}
+                {passkeyUnsupported && (
+                  <div className="mf-form-error" style={{ marginTop: 22 }} role="alert">{t('login.twoFactor.passkeyUnsupported')}</div>
+                )}
+                <Button variant="secondary" block size="lg" type="button" style={{ marginTop: 10 }} onClick={backToSignIn}>
+                  {t('login.twoFactor.back')}
+                </Button>
+              </div>
+            );
+          })()
         ) : pendingWebmail ? (
           <form className="mf-login__form" onSubmit={submitWebmailCode}>
             <div className="mf-login__title">{t('login.twoFactor.title')}</div>
