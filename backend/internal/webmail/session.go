@@ -5,14 +5,18 @@ import (
 	"encoding/hex"
 	"sync"
 	"time"
+
+	"github.com/isi1988/Mailfold/backend/internal/sessionstore"
 )
 
 // Credentials are a webmail user's mailbox login, held for the lifetime of a
 // session so subsequent IMAP/SMTP calls can act on the user's behalf.
 //
-// Storing the password in memory is inherent to a stateless webmail proxy:
-// IMAP/SMTP require the password on every connection. It never leaves the
-// process and is discarded on logout or expiry.
+// Storing the password is inherent to a stateless webmail proxy: IMAP/SMTP
+// require the password on every connection. It never leaves the process
+// unencrypted: kept in memory in the clear for the in-process fallback, or
+// AES-256-GCM-encrypted at rest once a Sessions store is attached (see
+// SetStore) — never both persisted and plaintext.
 type Credentials struct {
 	Email     string
 	Password  string
@@ -29,19 +33,53 @@ type Credentials struct {
 // practical.
 const maxPendingAttempts = 5
 
-// Sessions is an in-memory store mapping bearer tokens to webmail credentials.
-// It is safe for concurrent use.
+// Sessions is a store mapping bearer tokens to webmail credentials. Each
+// instance is scoped to one "kind" (e.g. real sessions vs. pending
+// second-factor logins), since a single Mailfold process constructs more
+// than one Sessions instance and, once store-backed, they all share one
+// physical table — the kind keeps their tokens from colliding. It is safe
+// for concurrent use, and falls back to an in-memory map whenever no durable
+// store is attached, exactly like every other optional Mailfold feature.
 type Sessions struct {
-	ttl time.Duration
-	now func() time.Time
+	ttl  time.Duration
+	kind string
+	now  func() time.Time
 
 	mu sync.Mutex
 	m  map[string]*Credentials
+
+	// store/cipher, once attached via SetStore, persist sessions to the
+	// shared database instead of m above. Both are required together: this
+	// type always holds a plaintext mailbox password, which must never be
+	// written to disk unencrypted, so a store attached without a cipher (or
+	// vice versa) leaves sessions in memory rather than persisting a secret
+	// in the clear.
+	store  *sessionstore.Store
+	cipher *sessionstore.Cipher
 }
 
-// NewSessions creates a session store whose sessions live for ttl.
-func NewSessions(ttl time.Duration) *Sessions {
-	return &Sessions{ttl: ttl, now: time.Now, m: make(map[string]*Credentials)}
+// NewSessions creates a session store whose sessions live for ttl, scoped to
+// kind (see the Sessions doc comment).
+func NewSessions(ttl time.Duration, kind string) *Sessions {
+	return &Sessions{ttl: ttl, kind: kind, now: time.Now, m: make(map[string]*Credentials)}
+}
+
+// SetStore attaches durable, encrypted backing for these sessions, so they
+// persist across a restart and are visible to every backend instance sharing
+// the database rather than only the one that created them. See the Sessions
+// doc comment for why both store and cipher are required together.
+func (s *Sessions) SetStore(store *sessionstore.Store, cipher *sessionstore.Cipher) {
+	s.mu.Lock()
+	s.store, s.cipher = store, cipher
+	s.mu.Unlock()
+}
+
+// currentBackend reads the attached store/cipher, if any, under the same
+// mutex SetStore writes them under.
+func (s *Sessions) currentBackend() (*sessionstore.Store, *sessionstore.Cipher) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.store, s.cipher
 }
 
 // Create stores the credentials under a fresh random token and returns it.
@@ -51,7 +89,20 @@ func (s *Sessions) Create(email, password string) (string, time.Time, error) {
 		return "", time.Time{}, err
 	}
 	token := hex.EncodeToString(buf)
-	exp := s.now().Add(s.ttl)
+	now := s.now()
+	exp := now.Add(s.ttl)
+
+	if store, cipher := s.currentBackend(); store != nil && cipher != nil {
+		enc, nonce, err := cipher.Seal([]byte(password))
+		if err != nil {
+			return "", time.Time{}, err
+		}
+		p := sessionstore.PutParams{Token: token, Kind: s.kind, Subject: email, Secret: enc, SecretNonce: nonce, Now: now, ExpiresAt: exp}
+		if err := store.Put(p); err != nil {
+			return "", time.Time{}, err
+		}
+		return token, exp, nil
+	}
 
 	s.mu.Lock()
 	s.m[token] = &Credentials{Email: email, Password: password, ExpiresAt: exp}
@@ -64,6 +115,15 @@ func (s *Sessions) Get(token string) (*Credentials, bool) {
 	if token == "" {
 		return nil, false
 	}
+
+	if store, cipher := s.currentBackend(); store != nil && cipher != nil {
+		row, ok, err := store.Get(token, s.kind, s.now())
+		if err != nil || !ok {
+			return nil, false
+		}
+		return decryptRow(row, cipher)
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -80,6 +140,10 @@ func (s *Sessions) Get(token string) (*Credentials, bool) {
 
 // Delete removes a session (logout).
 func (s *Sessions) Delete(token string) {
+	if store, cipher := s.currentBackend(); store != nil && cipher != nil {
+		_ = store.Delete(token, s.kind)
+		return
+	}
 	s.mu.Lock()
 	delete(s.m, token)
 	s.mu.Unlock()
@@ -95,6 +159,11 @@ func (s *Sessions) Peek(token string) (*Credentials, bool) {
 	if token == "" {
 		return nil, false
 	}
+
+	if store, cipher := s.currentBackend(); store != nil && cipher != nil {
+		return s.peekStoreBacked(store, cipher, token)
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -114,6 +183,30 @@ func (s *Sessions) Peek(token string) (*Credentials, bool) {
 	return cred, true
 }
 
+// peekStoreBacked is Peek's database path: split out so Peek itself stays
+// simple enough to read at a glance.
+func (s *Sessions) peekStoreBacked(store *sessionstore.Store, cipher *sessionstore.Cipher, token string) (*Credentials, bool) {
+	now := s.now()
+	attempts, _, ok, err := store.IncrementAttempts(token, s.kind, now)
+	if err != nil || !ok {
+		return nil, false
+	}
+	if attempts > maxPendingAttempts {
+		_ = store.Delete(token, s.kind)
+		return nil, false
+	}
+	row, ok, err := store.Get(token, s.kind, now)
+	if err != nil || !ok {
+		return nil, false
+	}
+	cred, ok := decryptRow(row, cipher)
+	if !ok {
+		return nil, false
+	}
+	cred.Attempts = attempts
+	return cred, true
+}
+
 // Take atomically returns and removes a session, so a caller can use it as a
 // single-use pending token (e.g. the password step of a two-factor login):
 // two concurrent redemptions of the same token cannot both succeed.
@@ -121,6 +214,20 @@ func (s *Sessions) Take(token string) (*Credentials, bool) {
 	if token == "" {
 		return nil, false
 	}
+
+	if store, cipher := s.currentBackend(); store != nil && cipher != nil {
+		row, ok, err := store.Get(token, s.kind, s.now())
+		if err != nil {
+			return nil, false
+		}
+		if !ok {
+			// Get already deleted the row if it merely expired.
+			return nil, false
+		}
+		_ = store.Delete(token, s.kind)
+		return decryptRow(row, cipher)
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -137,6 +244,11 @@ func (s *Sessions) Take(token string) (*Credentials, bool) {
 
 // GC evicts expired sessions.
 func (s *Sessions) GC() {
+	if store, cipher := s.currentBackend(); store != nil && cipher != nil {
+		_ = store.GC(s.now())
+		return
+	}
+
 	now := s.now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -145,4 +257,17 @@ func (s *Sessions) GC() {
 			delete(s.m, token)
 		}
 	}
+}
+
+// decryptRow turns a raw sessionstore row back into Credentials, decrypting
+// its stored password. A decryption failure (a corrupt row, or a cipher key
+// that no longer matches what encrypted it) is treated as "not found" rather
+// than surfaced as an error, since the caller can't do anything about a
+// broken row except treat the session as gone.
+func decryptRow(row sessionstore.Row, cipher *sessionstore.Cipher) (*Credentials, bool) {
+	plain, err := cipher.Open(row.Secret, row.SecretNonce)
+	if err != nil {
+		return nil, false
+	}
+	return &Credentials{Email: row.Subject, Password: string(plain), ExpiresAt: row.ExpiresAt}, true
 }

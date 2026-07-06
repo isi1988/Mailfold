@@ -5,7 +5,25 @@ import (
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
+
+	"github.com/isi1988/Mailfold/backend/internal/sessionstore"
 )
+
+// newStoreBackedAuthenticator builds an Authenticator with a real, temporary
+// sessionstore.Store attached, so every store-backed test below exercises the
+// database path instead of the in-memory fallback the rest of this file
+// covers.
+func newStoreBackedAuthenticator(t *testing.T, ttl time.Duration) *Authenticator {
+	t.Helper()
+	store, err := sessionstore.Open("sqlite", t.TempDir()+"/session.db")
+	if err != nil {
+		t.Fatalf("sessionstore.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	a := New("admin", "pw", ttl)
+	a.SetStore(store)
+	return a
+}
 
 func TestLoginSuccessAndValidate(t *testing.T) {
 	a := New("admin", "pw", time.Hour)
@@ -202,6 +220,147 @@ func TestListRevokeSessions(t *testing.T) {
 	}
 
 	// RevokeAllExcept clears everything but the given token.
+	s3, _ := a.Login("admin", "pw", SessionMeta{})
+	n := a.RevokeAllExcept(s1.Token)
+	if n != 1 {
+		t.Errorf("RevokeAllExcept should have revoked 1 session, got %d", n)
+	}
+	if _, ok := a.Validate(s3.Token); ok {
+		t.Error("s3 should have been revoked")
+	}
+	if _, ok := a.Validate(s1.Token); !ok {
+		t.Error("s1 (the excluded token) should remain valid")
+	}
+}
+
+// TestStoreBackedLoginAndValidate mirrors TestLoginSuccessAndValidate against
+// a store-backed Authenticator: sessions must survive being looked up via the
+// database rather than the in-process map.
+func TestStoreBackedLoginAndValidate(t *testing.T) {
+	a := newStoreBackedAuthenticator(t, time.Hour)
+	sess, err := a.Login("admin", "pw", SessionMeta{IP: "127.0.0.1", UserAgent: "test-agent"})
+	if err != nil {
+		t.Fatalf("Login: %v", err)
+	}
+	got, ok := a.Validate(sess.Token)
+	if !ok || got.User != "admin" || got.IP != "127.0.0.1" || got.UserAgent != "test-agent" {
+		t.Errorf("Validate failed: ok=%v sess=%+v", ok, got)
+	}
+	a.Logout(sess.Token)
+	if _, ok := a.Validate(sess.Token); ok {
+		t.Error("token should be invalid after logout")
+	}
+}
+
+// TestStoreBackedExpiryAndGC mirrors TestExpiryAndGC against a store-backed
+// Authenticator.
+func TestStoreBackedExpiryAndGC(t *testing.T) {
+	a := newStoreBackedAuthenticator(t, -time.Second) // sessions expire immediately
+	sess, err := a.Login("admin", "pw", SessionMeta{})
+	if err != nil {
+		t.Fatalf("Login: %v", err)
+	}
+	if _, ok := a.Validate(sess.Token); ok {
+		t.Error("expired session should be invalid")
+	}
+
+	sess2, _ := a.Login("admin", "pw", SessionMeta{})
+	a.GC()
+	if _, ok := a.Validate(sess2.Token); ok {
+		t.Error("GC should have removed the expired session")
+	}
+}
+
+// TestStoreBackedPendingTwoFactorFlow mirrors TestPendingTwoFactorFlow and
+// TestPendingTwoFactorSurvivesAWrongCode against a store-backed Authenticator:
+// the retry-without-consuming semantics and the attempt cap must hold when
+// backed by sessionstore's atomic IncrementAttempts just as they do in memory.
+func TestStoreBackedPendingTwoFactorFlow(t *testing.T) {
+	a := newStoreBackedAuthenticator(t, time.Hour)
+	token, err := a.IssuePending()
+	if err != nil {
+		t.Fatalf("IssuePending: %v", err)
+	}
+	// A wrong-code attempt (VerifyPending without ConsumePending) must not
+	// strand the login.
+	if _, ok := a.VerifyPending(token); !ok {
+		t.Fatal("first (simulated wrong-code) verify should still succeed")
+	}
+	user, ok := a.VerifyPending(token)
+	if !ok || user != "admin" {
+		t.Fatalf("VerifyPending: ok=%v user=%q", ok, user)
+	}
+	a.ConsumePending(token)
+	if _, ok := a.VerifyPending(token); ok {
+		t.Error("pending token should not be verifiable after ConsumePending")
+	}
+	if _, ok := a.VerifyPending("bogus"); ok {
+		t.Error("unknown pending token should not verify")
+	}
+}
+
+// TestStoreBackedPendingTwoFactorAttemptCap mirrors
+// TestPendingTwoFactorAttemptCap against a store-backed Authenticator.
+func TestStoreBackedPendingTwoFactorAttemptCap(t *testing.T) {
+	a := newStoreBackedAuthenticator(t, time.Hour)
+	token, err := a.IssuePending()
+	if err != nil {
+		t.Fatalf("IssuePending: %v", err)
+	}
+	for i := 0; i < maxPendingAttempts; i++ {
+		if _, ok := a.VerifyPending(token); !ok {
+			t.Fatalf("attempt %d should still be within budget", i+1)
+		}
+	}
+	if _, ok := a.VerifyPending(token); ok {
+		t.Error("pending token should be invalidated once the attempt budget is exceeded")
+	}
+}
+
+// TestStoreBackedListRevokeSessions mirrors TestListRevokeSessions against a
+// store-backed Authenticator, including deriving a session's ID from the
+// store's token hash rather than the in-memory sessionID helper.
+func TestStoreBackedListRevokeSessions(t *testing.T) {
+	a := newStoreBackedAuthenticator(t, time.Hour)
+	s1, _ := a.Login("admin", "pw", SessionMeta{IP: "1.1.1.1"})
+	s2, _ := a.Login("admin", "pw", SessionMeta{IP: "2.2.2.2"})
+
+	list := a.ListSessions(s1.Token)
+	if len(list) != 2 {
+		t.Fatalf("want 2 sessions, got %d", len(list))
+	}
+	var sawCurrent bool
+	for _, si := range list {
+		if si.Current {
+			sawCurrent = true
+		}
+		if si.ID == "" {
+			t.Error("session id should not be empty")
+		}
+	}
+	if !sawCurrent {
+		t.Error("exactly one session should be marked current")
+	}
+
+	id2 := ""
+	for _, si := range list {
+		if !si.Current {
+			id2 = si.ID
+		}
+	}
+	if !a.RevokeByID(id2) {
+		t.Fatal("RevokeByID should find the session")
+	}
+	if _, ok := a.Validate(s2.Token); ok {
+		t.Error("revoked session should be invalid")
+	}
+	if _, ok := a.Validate(s1.Token); !ok {
+		t.Error("other session should remain valid")
+	}
+	if a.RevokeByID("does-not-exist") {
+		t.Error("RevokeByID should report false for an unknown id")
+	}
+
 	s3, _ := a.Login("admin", "pw", SessionMeta{})
 	n := a.RevokeAllExcept(s1.Token)
 	if n != 1 {

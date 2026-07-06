@@ -21,11 +21,22 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"sync"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
+
+	"github.com/isi1988/Mailfold/backend/internal/sessionstore"
+)
+
+// kindSession and kindPending scope this Authenticator's rows in the shared
+// sessionstore table, so they never collide with webmail's or a domain
+// admin's own session/pending rows in the same database.
+const (
+	kindSession = "admin_session"
+	kindPending = "admin_pending"
 )
 
 // ErrInvalidCredentials is returned by CheckPassword when the supplied username
@@ -114,11 +125,40 @@ type Authenticator struct {
 	// constant-time byte compare. Empty means "no override yet".
 	passwordHash string
 	// sessions maps an active bearer token to its Session. It is the entire
-	// source of truth for which tokens are currently accepted.
+	// source of truth for which tokens are currently accepted. Unused once
+	// store is attached.
 	sessions map[string]*Session
 	// pendings maps a short-lived pending token (issued after a correct
-	// password when 2FA is required) to the user it was issued for.
+	// password when 2FA is required) to the user it was issued for. Unused
+	// once store is attached.
 	pendings map[string]*pending
+
+	// store, when attached via SetStore, persists sessions and pending tokens
+	// to the shared database instead of the in-process maps above, so they
+	// survive a restart and are visible to every backend instance behind a
+	// load balancer rather than only the one that minted them. Nil means
+	// "no database configured" — the original in-memory behavior.
+	store *sessionstore.Store
+}
+
+// sessionMeta is the JSON shape persisted alongside a session or pending
+// token in the shared store; the store itself only knows about opaque
+// tokens, subjects, and a metadata blob.
+type sessionMeta struct {
+	IP        string `json:"ip,omitempty"`
+	UserAgent string `json:"user_agent,omitempty"`
+}
+
+// SetStore attaches a durable session store, so sessions and pending 2FA
+// tokens persist in the shared database and stay valid across a restart —
+// and, more importantly, across every backend instance sharing that
+// database, which sticky-session-free horizontal scaling requires. Called
+// once at startup when a database is configured; without it, this
+// Authenticator keeps working exactly as before, entirely in memory.
+func (a *Authenticator) SetStore(store *sessionstore.Store) {
+	a.mu.Lock()
+	a.store = store
+	a.mu.Unlock()
 }
 
 // New creates an Authenticator for the single administrator credential provided
@@ -194,10 +234,27 @@ func (a *Authenticator) MintSession(meta SessionMeta) (*Session, error) {
 	now := time.Now()
 	sess := &Session{Token: token, User: a.user, CreatedAt: now, ExpiresAt: now.Add(a.ttl), IP: meta.IP, UserAgent: meta.UserAgent}
 
+	if store := a.currentStore(); store != nil {
+		metaJSON, _ := json.Marshal(sessionMeta(meta))
+		p := sessionstore.PutParams{Token: token, Kind: kindSession, Subject: a.user, Meta: string(metaJSON), Now: now, ExpiresAt: sess.ExpiresAt}
+		if err := store.Put(p); err != nil {
+			return nil, err
+		}
+		return sess, nil
+	}
+
 	a.mu.Lock()
 	a.sessions[token] = sess
 	a.mu.Unlock()
 	return sess, nil
+}
+
+// currentStore reads the attached session store, if any, under the same
+// mutex SetStore writes it under.
+func (a *Authenticator) currentStore() *sessionstore.Store {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.store
 }
 
 // IssuePending records that the password step succeeded and a second factor is
@@ -208,8 +265,19 @@ func (a *Authenticator) IssuePending() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	now := time.Now()
+	expiresAt := now.Add(pendingTTL)
+
+	if store := a.currentStore(); store != nil {
+		p := sessionstore.PutParams{Token: token, Kind: kindPending, Subject: a.user, Now: now, ExpiresAt: expiresAt}
+		if err := store.Put(p); err != nil {
+			return "", err
+		}
+		return token, nil
+	}
+
 	a.mu.Lock()
-	a.pendings[token] = &pending{user: a.user, expiresAt: time.Now().Add(pendingTTL)}
+	a.pendings[token] = &pending{user: a.user, expiresAt: expiresAt}
 	a.mu.Unlock()
 	return token, nil
 }
@@ -224,6 +292,19 @@ func (a *Authenticator) VerifyPending(token string) (string, bool) {
 	if token == "" {
 		return "", false
 	}
+
+	if store := a.currentStore(); store != nil {
+		attempts, subject, ok, err := store.IncrementAttempts(token, kindPending, time.Now())
+		if err != nil || !ok {
+			return "", false
+		}
+		if attempts > maxPendingAttempts {
+			_ = store.Delete(token, kindPending)
+			return "", false
+		}
+		return subject, true
+	}
+
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	p, ok := a.pendings[token]
@@ -245,6 +326,10 @@ func (a *Authenticator) VerifyPending(token string) (string, bool) {
 // ConsumePending invalidates a pending token after its code has verified
 // successfully, so it cannot be replayed.
 func (a *Authenticator) ConsumePending(token string) {
+	if store := a.currentStore(); store != nil {
+		_ = store.Delete(token, kindPending)
+		return
+	}
 	a.mu.Lock()
 	delete(a.pendings, token)
 	a.mu.Unlock()
@@ -257,10 +342,21 @@ func (a *Authenticator) ConsumePending(token string) {
 // cleanup even without the periodic GC sweep.
 func (a *Authenticator) Validate(token string) (*Session, bool) {
 	// Reject the empty token immediately: it can never be a real session and
-	// avoids a needless map lookup and lock acquisition.
+	// avoids a needless lookup.
 	if token == "" {
 		return nil, false
 	}
+
+	if store := a.currentStore(); store != nil {
+		row, ok, err := store.Get(token, kindSession, time.Now())
+		if err != nil || !ok {
+			return nil, false
+		}
+		var m sessionMeta
+		_ = json.Unmarshal([]byte(row.Meta), &m)
+		return &Session{Token: token, User: row.Subject, CreatedAt: row.CreatedAt, ExpiresAt: row.ExpiresAt, IP: m.IP, UserAgent: m.UserAgent}, true
+	}
+
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -281,6 +377,10 @@ func (a *Authenticator) Validate(token string) (*Session, bool) {
 // Validate of the same token fails. Deleting a token that is not present is a
 // harmless no-op, which makes logout safe to call unconditionally.
 func (a *Authenticator) Logout(token string) {
+	if store := a.currentStore(); store != nil {
+		_ = store.Delete(token, kindSession)
+		return
+	}
 	a.mu.Lock()
 	delete(a.sessions, token)
 	a.mu.Unlock()
@@ -289,6 +389,36 @@ func (a *Authenticator) Logout(token string) {
 // ListSessions returns every active session as a token-free SessionInfo, marking
 // the one matching currentToken. Ordering is not guaranteed.
 func (a *Authenticator) ListSessions(currentToken string) []SessionInfo {
+	if store := a.currentStore(); store != nil {
+		rows, err := store.ListBySubject(kindSession, a.user, time.Now())
+		if err != nil {
+			return nil
+		}
+		var currentID string
+		if currentToken != "" {
+			currentID = sessionID(currentToken)
+		}
+		out := make([]SessionInfo, 0, len(rows))
+		for _, r := range rows {
+			var m sessionMeta
+			_ = json.Unmarshal([]byte(r.Meta), &m)
+			// tokenHashToID: the store's full token hash and this package's own
+			// truncated sessionID are both hex(sha256(token)) — sessionID just
+			// takes the first 16 characters — so no raw token is needed here.
+			id := r.TokenHash[:sessionIDLen]
+			out = append(out, SessionInfo{
+				ID:        id,
+				User:      a.user,
+				CreatedAt: r.CreatedAt,
+				ExpiresAt: r.ExpiresAt,
+				IP:        m.IP,
+				UserAgent: m.UserAgent,
+				Current:   id == currentID,
+			})
+		}
+		return out
+	}
+
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	out := make([]SessionInfo, 0, len(a.sessions))
@@ -309,6 +439,20 @@ func (a *Authenticator) ListSessions(currentToken string) []SessionInfo {
 // RevokeByID logs out the single session whose SessionInfo.ID matches id. It
 // reports whether a matching session was found.
 func (a *Authenticator) RevokeByID(id string) bool {
+	if store := a.currentStore(); store != nil {
+		rows, err := store.ListBySubject(kindSession, a.user, time.Now())
+		if err != nil {
+			return false
+		}
+		for _, r := range rows {
+			if r.TokenHash[:sessionIDLen] == id {
+				deleted, err := store.DeleteByHash(r.TokenHash, kindSession)
+				return err == nil && deleted
+			}
+		}
+		return false
+	}
+
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	for tok := range a.sessions {
@@ -324,6 +468,14 @@ func (a *Authenticator) RevokeByID(id string) bool {
 // currentToken, returning how many were revoked. It is the backend for a
 // "sign out all other devices" action.
 func (a *Authenticator) RevokeAllExcept(currentToken string) int {
+	if store := a.currentStore(); store != nil {
+		n, err := store.DeleteBySubjectExcept(kindSession, a.user, currentToken)
+		if err != nil {
+			return 0
+		}
+		return n
+	}
+
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	n := 0
@@ -342,6 +494,12 @@ func (a *Authenticator) RevokeAllExcept(currentToken string) int {
 // memory used. It is safe to call periodically from a background goroutine.
 func (a *Authenticator) GC() {
 	now := time.Now()
+
+	if store := a.currentStore(); store != nil {
+		_ = store.GC(now)
+		return
+	}
+
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	for token, sess := range a.sessions {
@@ -368,6 +526,14 @@ func randomToken() (string, error) {
 	}
 	return hex.EncodeToString(buf), nil
 }
+
+// sessionIDLen is how many hex characters of a token's sha256 sessionID
+// derives — and, not coincidentally, exactly the length of a prefix of
+// sessionstore's own full (64-char) token hash, since both are hex-encodings
+// of the identical sha256(token) digest. That equivalence is what lets the
+// store-backed paths above derive a SessionInfo.ID straight from the row's
+// TokenHash without ever needing the raw token.
+const sessionIDLen = 16
 
 // sessionID derives a stable, non-reversible identifier for a bearer token, so
 // ListSessions/RevokeByID never have to expose (or accept back) the token

@@ -10,7 +10,29 @@ import (
 	"github.com/emersion/go-imap/backend/memory"
 	"github.com/emersion/go-imap/server"
 	"github.com/emersion/go-message/mail"
+
+	"github.com/isi1988/Mailfold/backend/internal/sessionstore"
 )
+
+// newStoreBackedSessions builds a Sessions with a real, temporary
+// sessionstore.Store and cipher attached, so store-backed tests exercise the
+// database path instead of the in-memory fallback the rest of this file
+// covers.
+func newStoreBackedSessions(t *testing.T, ttl time.Duration) *Sessions {
+	t.Helper()
+	store, err := sessionstore.Open("sqlite", t.TempDir()+"/session.db")
+	if err != nil {
+		t.Fatalf("sessionstore.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	cipher, err := sessionstore.NewCipher(make([]byte, 32))
+	if err != nil {
+		t.Fatalf("sessionstore.NewCipher: %v", err)
+	}
+	s := NewSessions(ttl, "webmail_session")
+	s.SetStore(store, cipher)
+	return s
+}
 
 // startIMAP launches an in-memory IMAP server and returns its address. The
 // memory backend ships with a user "username"/"password" and a sample INBOX.
@@ -211,7 +233,7 @@ func TestClientErrorPaths(t *testing.T) {
 }
 
 func TestSessions(t *testing.T) {
-	s := NewSessions(time.Hour)
+	s := NewSessions(time.Hour, "webmail_session")
 	token, _, err := s.Create("u@example.com", "pw")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
@@ -230,7 +252,7 @@ func TestSessions(t *testing.T) {
 }
 
 func TestSessionsTake(t *testing.T) {
-	s := NewSessions(time.Hour)
+	s := NewSessions(time.Hour, "webmail_session")
 	token, _, err := s.Create("u@example.com", "pw")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
@@ -249,7 +271,7 @@ func TestSessionsTake(t *testing.T) {
 }
 
 func TestSessionsTakeExpired(t *testing.T) {
-	s := NewSessions(-time.Second) // expire immediately
+	s := NewSessions(-time.Second, "webmail_session") // expire immediately
 	token, _, _ := s.Create("a", "b")
 	if _, ok := s.Take(token); ok {
 		t.Error("Take should reject an expired token")
@@ -260,7 +282,7 @@ func TestSessionsTakeExpired(t *testing.T) {
 // any failed second-factor attempt permanently stranded a pending webmail
 // login: Peek must not consume the token, so it can be verified again.
 func TestSessionsPeekSurvivesAWrongCode(t *testing.T) {
-	s := NewSessions(time.Hour)
+	s := NewSessions(time.Hour, "webmail_session")
 	token, _, err := s.Create("u@example.com", "pw")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
@@ -282,7 +304,7 @@ func TestSessionsPeekSurvivesAWrongCode(t *testing.T) {
 }
 
 func TestSessionsPeekAttemptCap(t *testing.T) {
-	s := NewSessions(time.Hour)
+	s := NewSessions(time.Hour, "webmail_session")
 	token, _, err := s.Create("u@example.com", "pw")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
@@ -298,7 +320,7 @@ func TestSessionsPeekAttemptCap(t *testing.T) {
 }
 
 func TestSessionsPeekExpiredAndEmpty(t *testing.T) {
-	s := NewSessions(-time.Second) // expire immediately
+	s := NewSessions(-time.Second, "webmail_session") // expire immediately
 	token, _, _ := s.Create("a", "b")
 	if _, ok := s.Peek(token); ok {
 		t.Error("Peek should reject an expired token")
@@ -312,7 +334,91 @@ func TestSessionsPeekExpiredAndEmpty(t *testing.T) {
 }
 
 func TestSessionExpiryAndGC(t *testing.T) {
-	s := NewSessions(-time.Second) // expire immediately
+	s := NewSessions(-time.Second, "webmail_session") // expire immediately
+	token, _, _ := s.Create("a", "b")
+	if _, ok := s.Get(token); ok {
+		t.Error("expired session should be invalid")
+	}
+	token2, _, _ := s.Create("c", "d")
+	s.GC()
+	if _, ok := s.Get(token2); ok {
+		t.Error("GC should have removed the expired session")
+	}
+}
+
+// TestStoreBackedSessions mirrors TestSessions against a store-backed
+// Sessions: the mailbox password must round-trip through encryption at rest.
+func TestStoreBackedSessions(t *testing.T) {
+	s := newStoreBackedSessions(t, time.Hour)
+	token, _, err := s.Create("u@example.com", "pw")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	cred, ok := s.Get(token)
+	if !ok || cred.Email != "u@example.com" || cred.Password != "pw" {
+		t.Fatalf("Get failed: %v %+v", ok, cred)
+	}
+	s.Delete(token)
+	if _, ok := s.Get(token); ok {
+		t.Error("session should be gone after Delete")
+	}
+}
+
+// TestStoreBackedSessionsTake mirrors TestSessionsTake against a store-backed
+// Sessions.
+func TestStoreBackedSessionsTake(t *testing.T) {
+	s := newStoreBackedSessions(t, time.Hour)
+	token, _, err := s.Create("u@example.com", "pw")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	cred, ok := s.Take(token)
+	if !ok || cred.Email != "u@example.com" || cred.Password != "pw" {
+		t.Fatalf("Take failed: %v %+v", ok, cred)
+	}
+	if _, ok := s.Take(token); ok {
+		t.Error("Take should be single-use")
+	}
+}
+
+// TestStoreBackedSessionsPeek mirrors TestSessionsPeekSurvivesAWrongCode and
+// TestSessionsPeekAttemptCap against a store-backed Sessions: the
+// atomic-increment path must preserve the same retry-without-consuming
+// semantics and attempt cap as the in-memory map.
+func TestStoreBackedSessionsPeek(t *testing.T) {
+	s := newStoreBackedSessions(t, time.Hour)
+	token, _, err := s.Create("u@example.com", "pw")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	// A wrong-code attempt (Peek without Delete) must not strand the login.
+	if _, ok := s.Peek(token); !ok {
+		t.Fatal("first (simulated wrong-code) peek should still succeed")
+	}
+	cred, ok := s.Peek(token)
+	if !ok || cred.Email != "u@example.com" || cred.Password != "pw" {
+		t.Fatalf("pending token should survive a prior failed code check: ok=%v %+v", ok, cred)
+	}
+	s.Delete(token)
+	if _, ok := s.Peek(token); ok {
+		t.Error("token should be gone after Delete")
+	}
+
+	token2, _, _ := s.Create("u@example.com", "pw")
+	for i := 0; i < maxPendingAttempts; i++ {
+		if _, ok := s.Peek(token2); !ok {
+			t.Fatalf("attempt %d should still be within budget", i+1)
+		}
+	}
+	if _, ok := s.Peek(token2); ok {
+		t.Error("token should be invalidated once the attempt budget is exceeded")
+	}
+}
+
+// TestStoreBackedSessionExpiryAndGC mirrors TestSessionExpiryAndGC against a
+// store-backed Sessions.
+func TestStoreBackedSessionExpiryAndGC(t *testing.T) {
+	s := newStoreBackedSessions(t, -time.Second) // expire immediately
 	token, _, _ := s.Create("a", "b")
 	if _, ok := s.Get(token); ok {
 		t.Error("expired session should be invalid")

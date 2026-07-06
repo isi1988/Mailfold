@@ -21,6 +21,7 @@ import (
 	"github.com/isi1988/Mailfold/backend/internal/domainadmin"
 	"github.com/isi1988/Mailfold/backend/internal/metrics"
 	"github.com/isi1988/Mailfold/backend/internal/ratelimit"
+	"github.com/isi1988/Mailfold/backend/internal/sessionstore"
 	"github.com/isi1988/Mailfold/backend/internal/webmail"
 	"github.com/isi1988/Mailfold/backend/internal/webmailuser"
 )
@@ -63,6 +64,7 @@ type Server struct {
 	loginFailures       *loginFailureTracker   // consecutive-failure streaks for the admin login-alert email
 	webAuthn            *webauthn.WebAuthn     // nil unless a database and a non-wildcard CORS origin are both available
 	webAuthnCeremonies  *webAuthnCeremonyCache // in-flight passkey registration/login challenges
+	sessionStore        *sessionstore.Store    // durable backing for admin/webmail/domain-admin sessions; nil when DBPath is empty
 	logger              *slog.Logger
 }
 
@@ -149,6 +151,20 @@ func NewServer(cfg *config.Config, mc Mailcow, authn *auth.Authenticator, limite
 		wa = openWebAuthn(cfg.CORSOrigins, logger)
 	}
 
+	domainAdminSessions := domainadmin.NewSessions(domainAdminSessionTTL)
+	webmailSessions := webmail.NewSessions(cfg.WebmailSessionTTL, "webmail_session")
+	webmailPending := webmail.NewSessions(webmailPending2FATTL, "webmail_pending")
+
+	// Open the shared session store: durable, cross-instance backing for the
+	// admin, webmail, and domain-admin session managers above, so a bearer
+	// token minted by one backend process is recognised by every other one
+	// sharing this database — the prerequisite for running more than one
+	// Mailfold instance behind a load balancer without sticky sessions. Every
+	// manager falls back to its own in-memory map when this is nil, exactly
+	// like every other optional Mailfold feature.
+	sessionStore := openSessionStore(cfg, logger)
+	wireSessionStores(cfg, sessionStore, authn, domainAdminSessions, webmailSessions, webmailPending, logger)
+
 	return &Server{
 		cfg:                 cfg,
 		mc:                  mc,
@@ -156,8 +172,8 @@ func NewServer(cfg *config.Config, mc Mailcow, authn *auth.Authenticator, limite
 		loginLimiter:        limiter,
 		metrics:             metrics.New(),
 		webmail:             wm,
-		webmailSessions:     webmail.NewSessions(cfg.WebmailSessionTTL),
-		webmailPending:      webmail.NewSessions(webmailPending2FATTL),
+		webmailSessions:     webmailSessions,
+		webmailPending:      webmailPending,
 		webmailUsers:        webmailUsers,
 		davStore:            davStore,
 		davAuth:             davAuth,
@@ -169,12 +185,13 @@ func NewServer(cfg *config.Config, mc Mailcow, authn *auth.Authenticator, limite
 		adminCipher:         adminCipher,
 		resetLimiter:        ratelimit.New(5, time.Hour),
 		domainAdminStore:    domainAdminStore,
-		domainAdminSessions: domainadmin.NewSessions(domainAdminSessionTTL),
+		domainAdminSessions: domainAdminSessions,
 		sso:                 sso,
 		auditStore:          auditStore,
 		loginFailures:       newLoginFailureTracker(),
 		webAuthn:            wa,
 		webAuthnCeremonies:  newWebAuthnCeremonyCache(),
+		sessionStore:        sessionStore,
 		logger:              logger,
 	}
 }
@@ -253,6 +270,50 @@ func openAuditStore(cfg *config.Config, logger *slog.Logger) *audit.Store {
 		return nil
 	}
 	return st
+}
+
+// openSessionStore opens the shared session-persistence store when a
+// database is configured, matching the other stores' fail-open behaviour: a
+// failure here just leaves every session manager on its original in-memory
+// map (still correct for a single instance) rather than the whole backend
+// failing to start.
+func openSessionStore(cfg *config.Config, logger *slog.Logger) *sessionstore.Store {
+	if cfg.DBPath == "" {
+		return nil
+	}
+	st, err := sessionstore.Open(cfg.DBDriver, cfg.DBPath)
+	if err != nil {
+		logger.Error("failed to open session store; sessions stay in-memory only", "error", err)
+		return nil
+	}
+	return st
+}
+
+// wireSessionStores attaches store (when non-nil) to every session manager
+// that can use it. It is split out of NewServer purely to keep that
+// constructor's own complexity readable.
+func wireSessionStores(cfg *config.Config, store *sessionstore.Store, authn *auth.Authenticator, domainAdminSessions *domainadmin.Sessions, webmailSessions, webmailPending *webmail.Sessions, logger *slog.Logger) {
+	if store == nil {
+		return
+	}
+	authn.SetStore(store)
+	domainAdminSessions.SetStore(store)
+	// The webmail session managers additionally need a cipher: unlike admin
+	// or domain-admin sessions, they always hold a plaintext mailbox
+	// password, which must never be persisted unencrypted. So they only
+	// attach the store once MAILFOLD_ADMIN_ENC_KEY is ALSO configured —
+	// without it, webmail sessions specifically stay in-memory even with a
+	// database present.
+	if len(cfg.AdminEncKey) == 0 {
+		return
+	}
+	sessCipher, err := sessionstore.NewCipher(cfg.AdminEncKey)
+	if err != nil {
+		logger.Error("failed to initialise session cipher; webmail sessions stay in-memory", "error", err)
+		return
+	}
+	webmailSessions.SetStore(store, sessCipher)
+	webmailPending.SetStore(store, sessCipher)
 }
 
 // GCWebmail evicts expired webmail sessions and pending 2FA logins. It is
