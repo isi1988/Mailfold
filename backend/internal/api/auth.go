@@ -55,6 +55,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.auth.CheckPassword(req.User, req.Password) {
+		s.recordAudit("admin", req.User, "login_failed", http.StatusUnauthorized, clientIP(r))
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
 		return
 	}
@@ -74,6 +75,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	s.recordAudit("admin", sess.User, "login", http.StatusOK, clientIP(r))
 	writeJSON(w, http.StatusOK, map[string]any{
 		"token":      sess.Token,
 		"user":       sess.User,
@@ -112,6 +114,7 @@ func (s *Server) handleLogin2FAVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.verifyTOTPOrRecovery(user, req.Code) {
+		s.recordAudit("admin", user, "login_failed", http.StatusUnauthorized, clientIP(r))
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid code"})
 		return
 	}
@@ -122,6 +125,7 @@ func (s *Server) handleLogin2FAVerify(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	s.recordAudit("admin", sess.User, "login", http.StatusOK, clientIP(r))
 	writeJSON(w, http.StatusOK, map[string]any{
 		"token":      sess.Token,
 		"user":       sess.User,
@@ -175,6 +179,9 @@ func sessionMetaFrom(r *http.Request) auth.SessionMeta {
 // 200 OK so that logging out is idempotent from the client's perspective even if
 // the token was already unknown or expired.
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if sess := sessionFrom(r); sess != nil {
+		s.recordAudit("admin", sess.User, "logout", http.StatusOK, clientIP(r))
+	}
 	s.auth.Logout(bearerToken(r))
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

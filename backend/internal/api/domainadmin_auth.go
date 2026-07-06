@@ -38,6 +38,9 @@ func (s *Server) requireDomainAdmin(next http.HandlerFunc) http.HandlerFunc {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 			return
 		}
+		if actor, _ := r.Context().Value(auditActorCtxKey).(*auditActor); actor != nil {
+			actor.actorType, actor.actor = "domain_admin", id.Username
+		}
 		next(w, r.WithContext(context.WithValue(r.Context(), domainAdminCtxKey{}, id)))
 	}
 }
@@ -83,6 +86,7 @@ func (s *Server) handleDomainAdminLogin(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if !ok || bcrypt.CompareHashAndPassword([]byte(hash), []byte(req.Password)) != nil {
+		s.recordAudit("domain_admin", req.User, "login_failed", http.StatusUnauthorized, clientIP(r))
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
 		return
 	}
@@ -93,6 +97,7 @@ func (s *Server) handleDomainAdminLogin(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if !active {
+		s.recordAudit("domain_admin", req.User, "login_failed", http.StatusUnauthorized, clientIP(r))
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
 		return
 	}
@@ -102,6 +107,7 @@ func (s *Server) handleDomainAdminLogin(w http.ResponseWriter, r *http.Request) 
 		s.writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	s.recordAudit("domain_admin", req.User, "login", http.StatusOK, clientIP(r))
 	writeJSON(w, http.StatusOK, map[string]any{
 		"token":      token,
 		"user":       req.User,
@@ -140,6 +146,9 @@ func (s *Server) currentDomainAdminScope(ctx context.Context, username string) (
 }
 
 func (s *Server) handleDomainAdminLogout(w http.ResponseWriter, r *http.Request) {
+	if id := domainAdminIdentity(r); id != nil {
+		s.recordAudit("domain_admin", id.Username, "logout", http.StatusOK, clientIP(r))
+	}
 	s.domainAdminSessions.Delete(bearerToken(r))
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

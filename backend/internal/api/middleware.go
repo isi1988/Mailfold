@@ -23,6 +23,24 @@ type ctxKey string
 // sessionFrom.
 const sessionCtxKey ctxKey = "session"
 
+// auditActorCtxKey is the context key under which withCommon attaches an empty
+// *auditActor before a request enters the mux, so whichever auth middleware
+// ends up authenticating it (requireAuth, requireDomainAdmin) can fill in the
+// caller's identity on that same pointer. withCommon reads it back once the
+// handler chain returns to attribute the audit-log entry, without needing to
+// know in advance which of the several auth tiers will end up handling the
+// request.
+const auditActorCtxKey ctxKey = "audit_actor"
+
+// auditActor is filled in by whichever auth middleware authenticates a
+// request. A zero value means the request was never authenticated (or the
+// route has no auth tier at all), which withCommon treats as "nothing to
+// attribute" for the generic mutating-action log.
+type auditActor struct {
+	actorType string // "admin" | "domain_admin"
+	actor     string // username
+}
+
 // requestIDCtxKey is the context key under which the per-request id is stored so
 // downstream handlers can include it in their own logs when useful.
 const requestIDCtxKey ctxKey = "request_id"
@@ -43,6 +61,9 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 		if !ok {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 			return
+		}
+		if actor, _ := r.Context().Value(auditActorCtxKey).(*auditActor); actor != nil {
+			actor.actorType, actor.actor = "admin", sess.User
 		}
 		// Store the validated session on the context so handlers (and
 		// sessionFrom) can access the caller identity without re-validating.
@@ -95,11 +116,17 @@ func (s *Server) withCommon(next http.Handler) http.Handler {
 		setSecurityHeaders(rw)
 		s.applyCORS(rw, r)
 
+		// Attach an empty actor for whichever auth middleware downstream ends up
+		// authenticating this request to fill in; see auditActorCtxKey.
+		actor := &auditActor{}
+		r = r.WithContext(context.WithValue(r.Context(), auditActorCtxKey, actor))
+
 		// Record request metrics once the chain returns, whatever the outcome
 		// (including a preflight or a recovered panic). Registered first so it
 		// runs last (after the recover defer below has set the final status).
 		defer func() {
 			s.metrics.Observe(r.Method, rw.status, time.Since(start))
+			s.recordMutatingAction(r, rw.status, actor)
 		}()
 
 		// A CORS preflight (OPTIONS) is answered immediately with 204 and no

@@ -12,6 +12,7 @@ import (
 
 	"github.com/isi1988/Mailfold/backend/internal/admin"
 	"github.com/isi1988/Mailfold/backend/internal/apikey"
+	"github.com/isi1988/Mailfold/backend/internal/audit"
 	"github.com/isi1988/Mailfold/backend/internal/auth"
 	"github.com/isi1988/Mailfold/backend/internal/config"
 	"github.com/isi1988/Mailfold/backend/internal/dav"
@@ -56,6 +57,7 @@ type Server struct {
 	domainAdminStore    *domainadmin.Store    // domain-admin login + SSO provider config; nil when DBPath is empty
 	domainAdminSessions *domainadmin.Sessions // domain-admin Mailfold sessions (distinct from the super-admin's and webmail's)
 	sso                 *ssoManager           // nil unless a database and the admin cipher are both available
+	auditStore          *audit.Store          // records admin/domain-admin logins and mutating actions; nil when DBPath is empty
 	logger              *slog.Logger
 }
 
@@ -129,6 +131,10 @@ func NewServer(cfg *config.Config, mc Mailcow, authn *auth.Authenticator, limite
 		sso = newSSOManager(domainAdminStore, adminCipher)
 	}
 
+	// Open the audit-log store alongside the others; a failure disables just
+	// the audit trail rather than the whole backend.
+	auditStore := openAuditStore(cfg, logger)
+
 	return &Server{
 		cfg:                 cfg,
 		mc:                  mc,
@@ -151,6 +157,7 @@ func NewServer(cfg *config.Config, mc Mailcow, authn *auth.Authenticator, limite
 		domainAdminStore:    domainAdminStore,
 		domainAdminSessions: domainadmin.NewSessions(domainAdminSessionTTL),
 		sso:                 sso,
+		auditStore:          auditStore,
 		logger:              logger,
 	}
 }
@@ -210,6 +217,22 @@ func openDomainAdminStore(cfg *config.Config, logger *slog.Logger) *domainadmin.
 	st, err := domainadmin.Open(cfg.DBDriver, cfg.DBPath)
 	if err != nil {
 		logger.Error("failed to open domain-admin store; domain-admin login and SSO disabled", "error", err)
+		return nil
+	}
+	return st
+}
+
+// openAuditStore opens the audit-log store when a database is configured,
+// matching the other stores' fail-open behaviour: without it, the admin panel
+// and domain-admin logins/actions simply go unrecorded rather than the whole
+// backend failing to start.
+func openAuditStore(cfg *config.Config, logger *slog.Logger) *audit.Store {
+	if cfg.DBPath == "" {
+		return nil
+	}
+	st, err := audit.Open(cfg.DBDriver, cfg.DBPath)
+	if err != nil {
+		logger.Error("failed to open audit-log store; audit logging disabled", "error", err)
 		return nil
 	}
 	return st
@@ -285,6 +308,7 @@ func (s *Server) Handler() http.Handler {
 	s.registerDeviceLoginRoutes(mux)
 
 	// Management resources (all require authentication).
+	s.registerAuditLogRoutes(mux)
 	s.registerStatusRoutes(mux)
 	s.registerDomainRoutes(mux)
 	s.registerDomainDNSRoutes(mux)
