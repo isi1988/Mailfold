@@ -57,7 +57,8 @@
     "admins": "Admins",
     "domainadmins": "Domain admins",
     "ssoproviders": "SSO providers",
-    "oauth2": "OAuth2 clients"
+    "oauth2": "OAuth2 clients",
+    "auditlog": "Audit log"
   },
   "shell": {
     "role": "Administrator",
@@ -383,6 +384,27 @@
     "newTitle": "New SSO provider",
     "deleteTitle": "Delete this provider?",
     "deleteMsg": "\"{{name}}\" will no longer be offered as a sign-in option."
+  },
+  "auditlog": {
+    "title": "Audit log",
+    "sub": "Every admin and domain-admin sign-in and change, in one place.",
+    "empty": "Nothing recorded yet.",
+    "col": {
+      "when": "When",
+      "actor": "Who",
+      "action": "Action",
+      "status": "Status",
+      "ip": "IP"
+    },
+    "actorType": {
+      "admin": "admin",
+      "domainAdmin": "domain admin"
+    },
+    "action": {
+      "login": "Signed in",
+      "loginFailed": "Failed sign-in",
+      "logout": "Signed out"
+    }
   },
   "resetPassword": {
     "title": "Set a new password",
