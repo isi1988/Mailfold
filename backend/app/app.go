@@ -64,6 +64,18 @@ func Run() error {
 		}
 	}()
 
+	// Separately, sweep every Web Push subscription for new mail on its own
+	// (much shorter) cadence — this is what lets a subscribed browser be
+	// notified with no tab open anywhere, unlike the in-tab SSE stream. A
+	// no-op when push notifications aren't configured.
+	pushTicker := time.NewTicker(api.PushPollInterval())
+	defer pushTicker.Stop()
+	go func() {
+		for range pushTicker.C {
+			server.PollWebPush()
+		}
+	}()
+
 	// Configure the HTTP server. ReadHeaderTimeout bounds how long a client may
 	// take to send request headers, protecting against slow-header clients that
 	// would otherwise hold connections open.

@@ -121,11 +121,19 @@ type Config struct {
 	// AES-256-GCM key that encrypts every secret Mailfold stores at rest is
 	// derived: the admin's TOTP seed and notification-sender mailbox password,
 	// a webmail user's own TOTP seed, an SSO provider's OIDC client secret,
-	// and a mailbox's cached SSO app-password. It is optional: when unset,
-	// every one of those features reports 501 rather than failing, but
-	// everything else — password change, profile, sessions — still works off
-	// DBPath alone.
+	// a mailbox's cached SSO app-password, and a Web Push subscription's
+	// mailbox password. It is optional: when unset, every one of those
+	// features reports 501 rather than failing, but everything else —
+	// password change, profile, sessions — still works off DBPath alone.
 	AdminEncKey []byte
+
+	// VAPIDContactEmail identifies the operator to push services in the
+	// "mailto:" subject of the VAPID JWT Web Push notifications are signed
+	// with — required by the Web Push protocol, and how a push service would
+	// reach the operator about a misbehaving sender. Defaults to a generic
+	// placeholder; operators running push notifications in production should
+	// set a real address.
+	VAPIDContactEmail string
 }
 
 // Load reads every configuration value from the environment, applies sensible
@@ -160,6 +168,7 @@ func Load() (*Config, error) {
 		APIKeyDefaultTTL:    getdur("MAILFOLD_APIKEY_DEFAULT_TTL", 0),
 		APIKeyMaxRecipients: int(getint64("MAILFOLD_APIKEY_MAX_RECIPIENTS", 50)),
 		ServerName:          getenv("MAILFOLD_SERVER_NAME", ""),
+		VAPIDContactEmail:   getenv("MAILFOLD_VAPID_CONTACT_EMAIL", "mailto:admin@localhost"),
 	}
 
 	// The following three values have no safe default: without an upstream

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	webpushgo "github.com/SherClockHolmes/webpush-go"
 	"github.com/go-webauthn/webauthn/webauthn"
 
 	"github.com/isi1988/Mailfold/backend/internal/admin"
@@ -24,6 +25,7 @@ import (
 	"github.com/isi1988/Mailfold/backend/internal/sessionstore"
 	"github.com/isi1988/Mailfold/backend/internal/webmail"
 	"github.com/isi1988/Mailfold/backend/internal/webmailuser"
+	"github.com/isi1988/Mailfold/backend/internal/webpush"
 )
 
 // domainAdminSessionTTL bounds how long a domain admin's Mailfold session
@@ -65,6 +67,10 @@ type Server struct {
 	webAuthn            *webauthn.WebAuthn     // nil unless a database and a non-wildcard CORS origin are both available
 	webAuthnCeremonies  *webAuthnCeremonyCache // in-flight passkey registration/login challenges
 	sessionStore        *sessionstore.Store    // durable backing for admin/webmail/domain-admin sessions; nil when DBPath is empty
+	webpushStore        *webpush.Store         // Web Push subscriptions; nil when DBPath is empty
+	webpushCipher       *webpush.Cipher        // nil when MAILFOLD_ADMIN_ENC_KEY is unset (push then reports 501)
+	vapidPublicKey      string
+	vapidPrivateKey     string
 	logger              *slog.Logger
 }
 
@@ -165,6 +171,13 @@ func NewServer(cfg *config.Config, mc Mailcow, authn *auth.Authenticator, limite
 	sessionStore := openSessionStore(cfg, logger)
 	wireSessionStores(cfg, sessionStore, authn, domainAdminSessions, webmailSessions, webmailPending, logger)
 
+	// Open Web Push support (subscriptions + VAPID keys) when a database and
+	// the admin encryption key are both available — a subscription always
+	// carries the mailbox's own encrypted IMAP password, so this feature
+	// stays off entirely without a cipher rather than persist a password in
+	// the clear.
+	webpushStore, webpushCipher, vapidPublic, vapidPrivate := openWebPush(cfg, logger)
+
 	return &Server{
 		cfg:                 cfg,
 		mc:                  mc,
@@ -192,8 +205,47 @@ func NewServer(cfg *config.Config, mc Mailcow, authn *auth.Authenticator, limite
 		webAuthn:            wa,
 		webAuthnCeremonies:  newWebAuthnCeremonyCache(),
 		sessionStore:        sessionStore,
+		webpushStore:        webpushStore,
+		webpushCipher:       webpushCipher,
+		vapidPublicKey:      vapidPublic,
+		vapidPrivateKey:     vapidPrivate,
 		logger:              logger,
 	}
+}
+
+// openWebPush opens the Web Push subscription store and initialises its
+// cipher and VAPID key pair when a database is configured, matching the
+// other stores' fail-open behaviour. The VAPID key pair is generated once
+// and persisted in the database, so every Mailfold instance sharing it ends
+// up with the same pair — required, since a browser's subscription is bound
+// to the public key it subscribed with.
+func openWebPush(cfg *config.Config, logger *slog.Logger) (*webpush.Store, *webpush.Cipher, string, string) {
+	if cfg.DBPath == "" {
+		return nil, nil, "", ""
+	}
+	st, err := webpush.Open(cfg.DBDriver, cfg.DBPath)
+	if err != nil {
+		logger.Error("failed to open Web Push store; push notifications disabled", "error", err)
+		return nil, nil, "", ""
+	}
+	if len(cfg.AdminEncKey) == 0 {
+		logger.Warn("MAILFOLD_DB_PATH is set but MAILFOLD_ADMIN_ENC_KEY is not; push notifications disabled")
+		_ = st.Close()
+		return nil, nil, "", ""
+	}
+	cipher, err := webpush.NewCipher(cfg.AdminEncKey)
+	if err != nil {
+		logger.Error("failed to initialise Web Push cipher; push notifications disabled", "error", err)
+		_ = st.Close()
+		return nil, nil, "", ""
+	}
+	public, private, err := st.GetOrCreateVAPIDKeys(webpushgo.GenerateVAPIDKeys)
+	if err != nil {
+		logger.Error("failed to obtain VAPID key pair; push notifications disabled", "error", err)
+		_ = st.Close()
+		return nil, nil, "", ""
+	}
+	return st, cipher, public, private
 }
 
 // openAdminStore opens the admin-account store when a database is configured
@@ -383,6 +435,7 @@ func (s *Server) Handler() http.Handler {
 	s.registerWebmailRoutes(mux)
 	s.registerWebmailCalendar(mux)
 	s.registerWebmailSignatureRoutes(mux)
+	s.registerWebmailPushRoutes(mux)
 	s.registerWebmailRuleRoutes(mux)
 	s.registerWebmailTOTPRoutes(mux)
 
