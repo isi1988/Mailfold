@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-webauthn/webauthn/webauthn"
+
 	"github.com/isi1988/Mailfold/backend/internal/admin"
 	"github.com/isi1988/Mailfold/backend/internal/apikey"
 	"github.com/isi1988/Mailfold/backend/internal/audit"
@@ -49,16 +51,18 @@ type Server struct {
 	davAuth             *davVerifier
 	apikeyStore         *apikey.Store
 	apikeyCipher        *apikey.Cipher
-	apikeyKeyLimit      *ratelimit.Limiter    // per-key request budget
-	apikeyIPLimit       *ratelimit.Limiter    // pre-auth per-IP guard against token guessing
-	adminStore          *admin.Store          // password/profile/2FA/notify-sender/reset-tokens; nil when DBPath is empty
-	adminCipher         *admin.Cipher         // nil when MAILFOLD_ADMIN_ENC_KEY is unset (2FA/notify-sender then report 501)
-	resetLimiter        *ratelimit.Limiter    // throttles the public forgot-password endpoint per IP
-	domainAdminStore    *domainadmin.Store    // domain-admin login + SSO provider config; nil when DBPath is empty
-	domainAdminSessions *domainadmin.Sessions // domain-admin Mailfold sessions (distinct from the super-admin's and webmail's)
-	sso                 *ssoManager           // nil unless a database and the admin cipher are both available
-	auditStore          *audit.Store          // records admin/domain-admin logins and mutating actions; nil when DBPath is empty
-	loginFailures       *loginFailureTracker  // consecutive-failure streaks for the admin login-alert email
+	apikeyKeyLimit      *ratelimit.Limiter     // per-key request budget
+	apikeyIPLimit       *ratelimit.Limiter     // pre-auth per-IP guard against token guessing
+	adminStore          *admin.Store           // password/profile/2FA/notify-sender/reset-tokens; nil when DBPath is empty
+	adminCipher         *admin.Cipher          // nil when MAILFOLD_ADMIN_ENC_KEY is unset (2FA/notify-sender then report 501)
+	resetLimiter        *ratelimit.Limiter     // throttles the public forgot-password endpoint per IP
+	domainAdminStore    *domainadmin.Store     // domain-admin login + SSO provider config; nil when DBPath is empty
+	domainAdminSessions *domainadmin.Sessions  // domain-admin Mailfold sessions (distinct from the super-admin's and webmail's)
+	sso                 *ssoManager            // nil unless a database and the admin cipher are both available
+	auditStore          *audit.Store           // records admin/domain-admin logins and mutating actions; nil when DBPath is empty
+	loginFailures       *loginFailureTracker   // consecutive-failure streaks for the admin login-alert email
+	webAuthn            *webauthn.WebAuthn     // nil unless a database and a non-wildcard CORS origin are both available
+	webAuthnCeremonies  *webAuthnCeremonyCache // in-flight passkey registration/login challenges
 	logger              *slog.Logger
 }
 
@@ -136,6 +140,15 @@ func NewServer(cfg *config.Config, mc Mailcow, authn *auth.Authenticator, limite
 	// the audit trail rather than the whole backend.
 	auditStore := openAuditStore(cfg, logger)
 
+	// Open WebAuthn/passkey support when a database is configured; it stays
+	// nil (feature off) without one, exactly like the other optional stores,
+	// and openWebAuthn itself further requires a non-wildcard CORS origin to
+	// derive a stable relying-party ID from.
+	var wa *webauthn.WebAuthn
+	if cfg.DBPath != "" {
+		wa = openWebAuthn(cfg.CORSOrigins, logger)
+	}
+
 	return &Server{
 		cfg:                 cfg,
 		mc:                  mc,
@@ -160,6 +173,8 @@ func NewServer(cfg *config.Config, mc Mailcow, authn *auth.Authenticator, limite
 		sso:                 sso,
 		auditStore:          auditStore,
 		loginFailures:       newLoginFailureTracker(),
+		webAuthn:            wa,
+		webAuthnCeremonies:  newWebAuthnCeremonyCache(),
 		logger:              logger,
 	}
 }
@@ -270,6 +285,13 @@ func (s *Server) GCAPIKeys() {
 	}
 }
 
+// GCWebAuthn discards passkey registration/login ceremonies that were begun
+// but never finished before expiring. It is intended to be called on the same
+// periodic sweep as GCWebmail.
+func (s *Server) GCWebAuthn() {
+	s.webAuthnCeremonies.GC()
+}
+
 // Handler builds the HTTP handler with all routes registered.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -293,6 +315,7 @@ func (s *Server) Handler() http.Handler {
 	// and the notification sender used to email reset links.
 	s.registerAccountRoutes(mux)
 	s.registerTOTPRoutes(mux)
+	s.registerWebAuthnRoutes(mux)
 	s.registerNotifySenderRoutes(mux)
 
 	// End-user webmail (IMAP/SMTP-backed).

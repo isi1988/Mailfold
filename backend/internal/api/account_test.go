@@ -197,9 +197,11 @@ func TestAccountProfileAndPasswordChange(t *testing.T) {
 		t.Errorf("unexpected profile: %+v", prof)
 	}
 
-	// Wrong current password is rejected.
-	if rec := do(h, http.MethodPost, "/api/account/password", token, `{"current_password":"wrong","new_password":"newlongpw"}`); rec.Code != http.StatusUnauthorized {
-		t.Errorf("password change with wrong current pw = %d, want 401", rec.Code)
+	// Wrong current password is rejected — 403, not 401, since the session
+	// itself is still valid and a 401 here would trip the frontend's global
+	// "session expired" handler and force a spurious logout.
+	if rec := do(h, http.MethodPost, "/api/account/password", token, `{"current_password":"wrong","new_password":"newlongpw"}`); rec.Code != http.StatusForbidden {
+		t.Errorf("password change with wrong current pw = %d, want 403", rec.Code)
 	}
 	// Too-short new password is rejected.
 	if rec := do(h, http.MethodPost, "/api/account/password", token, `{"current_password":"pw","new_password":"short"}`); rec.Code != http.StatusBadRequest {
@@ -285,9 +287,10 @@ func TestTOTPEnrollConfirmLoginDisable(t *testing.T) {
 	h, _, _ := newAccountTestServer(t, accountTestOpts{withDB: true, withEncKey: true})
 	token := loginToken(t, h)
 
-	// Wrong current password blocks enrollment.
-	if rec := do(h, http.MethodPost, "/api/account/2fa/enroll", token, `{"current_password":"wrong"}`); rec.Code != http.StatusUnauthorized {
-		t.Fatalf("enroll wrong pw = %d, want 401", rec.Code)
+	// Wrong current password blocks enrollment — 403, since the session
+	// itself is still valid.
+	if rec := do(h, http.MethodPost, "/api/account/2fa/enroll", token, `{"current_password":"wrong"}`); rec.Code != http.StatusForbidden {
+		t.Fatalf("enroll wrong pw = %d, want 403", rec.Code)
 	}
 
 	rec := do(h, http.MethodPost, "/api/account/2fa/enroll", token, `{"current_password":"pw"}`)
@@ -393,8 +396,8 @@ func TestTOTPEnrollConfirmLoginDisable(t *testing.T) {
 	}
 
 	// Disabling requires the current password and turns 2FA fully off.
-	if rec := do(h, http.MethodPost, "/api/account/2fa/disable", sess.Token, `{"current_password":"wrong"}`); rec.Code != http.StatusUnauthorized {
-		t.Errorf("disable wrong pw = %d, want 401", rec.Code)
+	if rec := do(h, http.MethodPost, "/api/account/2fa/disable", sess.Token, `{"current_password":"wrong"}`); rec.Code != http.StatusForbidden {
+		t.Errorf("disable wrong pw = %d, want 403", rec.Code)
 	}
 	if rec := do(h, http.MethodPost, "/api/account/2fa/disable", sess.Token, `{"current_password":"pw"}`); rec.Code != http.StatusOK {
 		t.Fatalf("disable = %d", rec.Code)
@@ -427,10 +430,11 @@ func TestNotifySenderAndPasswordResetFlow(t *testing.T) {
 	h, srv, smtpBE := newAccountTestServer(t, accountTestOpts{withDB: true, withEncKey: true, withIMAP: true})
 	token := loginToken(t, h)
 
-	// Wrong current admin password is rejected.
+	// Wrong current admin password is rejected — 403, since the session
+	// itself is still valid.
 	body := `{"current_password":"wrong","mailbox":"username","password":"password"}`
-	if rec := do(h, http.MethodPut, "/api/account/notify-sender", token, body); rec.Code != http.StatusUnauthorized {
-		t.Errorf("notify-sender put wrong admin pw = %d, want 401", rec.Code)
+	if rec := do(h, http.MethodPut, "/api/account/notify-sender", token, body); rec.Code != http.StatusForbidden {
+		t.Errorf("notify-sender put wrong admin pw = %d, want 403", rec.Code)
 	}
 	// A mailbox that fails IMAP verification is rejected.
 	badMailbox := `{"current_password":"pw","mailbox":"username","password":"not-the-real-password"}`

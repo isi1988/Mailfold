@@ -216,3 +216,68 @@ func TestKnownDeviceLifecycle(t *testing.T) {
 		t.Fatalf("RecordDevice (repeat): %v", err)
 	}
 }
+
+func TestWebAuthnCredentialLifecycle(t *testing.T) {
+	st := openTestStore(t)
+	now := time.Now()
+
+	creds, err := st.ListWebAuthnCredentials("admin")
+	if err != nil {
+		t.Fatalf("ListWebAuthnCredentials: %v", err)
+	}
+	if len(creds) != 0 {
+		t.Fatalf("want 0 credentials before enrollment, got %d", len(creds))
+	}
+
+	c := WebAuthnCredential{
+		Username:     "admin",
+		CredentialID: []byte{1, 2, 3},
+		PublicKey:    []byte{4, 5, 6},
+		SignCount:    0,
+		Transports:   "internal,hybrid",
+		Name:         "MacBook Touch ID",
+	}
+	if err := st.AddWebAuthnCredential(c, now); err != nil {
+		t.Fatalf("AddWebAuthnCredential: %v", err)
+	}
+
+	creds, err = st.ListWebAuthnCredentials("admin")
+	if err != nil {
+		t.Fatalf("ListWebAuthnCredentials: %v", err)
+	}
+	if len(creds) != 1 {
+		t.Fatalf("want 1 credential after enrollment, got %d", len(creds))
+	}
+	got := creds[0]
+	if got.Name != c.Name || got.Transports != c.Transports || got.SignCount != 0 {
+		t.Errorf("unexpected stored credential: %+v", got)
+	}
+	if string(got.CredentialID) != string(c.CredentialID) || string(got.PublicKey) != string(c.PublicKey) {
+		t.Errorf("credential id/public key not round-tripped: %+v", got)
+	}
+
+	// A credential enrolled for a different user must not show up here.
+	other, err := st.ListWebAuthnCredentials("someone-else")
+	if err != nil {
+		t.Fatalf("ListWebAuthnCredentials(someone-else): %v", err)
+	}
+	if len(other) != 0 {
+		t.Fatalf("want 0 credentials for a different user, got %d", len(other))
+	}
+
+	if err := st.UpdateWebAuthnSignCount(c.CredentialID, 7); err != nil {
+		t.Fatalf("UpdateWebAuthnSignCount: %v", err)
+	}
+	creds, _ = st.ListWebAuthnCredentials("admin")
+	if creds[0].SignCount != 7 {
+		t.Errorf("want sign_count 7 after update, got %d", creds[0].SignCount)
+	}
+
+	if err := st.DeleteWebAuthnCredential("admin", got.ID); err != nil {
+		t.Fatalf("DeleteWebAuthnCredential: %v", err)
+	}
+	creds, _ = st.ListWebAuthnCredentials("admin")
+	if len(creds) != 0 {
+		t.Fatalf("want 0 credentials after delete, got %d", len(creds))
+	}
+}

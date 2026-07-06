@@ -271,9 +271,10 @@ func TestWebmailTOTPEnrollConfirmLoginDisable(t *testing.T) {
 		t.Fatalf("status before enroll = %d %s", rec.Code, rec.Body.String())
 	}
 
-	// Wrong current (real IMAP) password blocks enrollment.
-	if rec := do(h, http.MethodPost, "/api/webmail/2fa/enroll", tok, `{"current_password":"wrong"}`); rec.Code != http.StatusUnauthorized {
-		t.Fatalf("enroll wrong pw = %d, want 401", rec.Code)
+	// Wrong current (real IMAP) password blocks enrollment — 403, since the
+	// session itself is still valid.
+	if rec := do(h, http.MethodPost, "/api/webmail/2fa/enroll", tok, `{"current_password":"wrong"}`); rec.Code != http.StatusForbidden {
+		t.Fatalf("enroll wrong pw = %d, want 403", rec.Code)
 	}
 
 	rec := do(h, http.MethodPost, "/api/webmail/2fa/enroll", tok, `{"current_password":"password"}`)
@@ -383,8 +384,8 @@ func TestWebmailTOTPEnrollConfirmLoginDisable(t *testing.T) {
 	}
 
 	// Disabling requires the current (real) password and turns 2FA fully off.
-	if rec := do(h, http.MethodPost, "/api/webmail/2fa/disable", sess.Token, `{"current_password":"wrong"}`); rec.Code != http.StatusUnauthorized {
-		t.Errorf("disable wrong pw = %d, want 401", rec.Code)
+	if rec := do(h, http.MethodPost, "/api/webmail/2fa/disable", sess.Token, `{"current_password":"wrong"}`); rec.Code != http.StatusForbidden {
+		t.Errorf("disable wrong pw = %d, want 403", rec.Code)
 	}
 	if rec := do(h, http.MethodPost, "/api/webmail/2fa/disable", sess.Token, `{"current_password":"password"}`); rec.Code != http.StatusOK {
 		t.Fatalf("disable = %d", rec.Code)

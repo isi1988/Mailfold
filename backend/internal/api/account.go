@@ -100,7 +100,7 @@ func (s *Server) handlePasswordChange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.auth.CheckPassword(s.cfg.AdminUser, req.CurrentPassword) {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "current password is incorrect"})
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "current password is incorrect"})
 		return
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)

@@ -44,7 +44,7 @@ func TestAuditLogRecordsMutatingActionsNotReads(t *testing.T) {
 		t.Fatalf("me = %d", rec.Code)
 	}
 	// ...but a mutating POST (regardless of its own business-logic outcome) is.
-	if rec := do(h, http.MethodPost, "/api/account/2fa/enroll", token, `{"current_password":"wrong"}`); rec.Code != http.StatusUnauthorized {
+	if rec := do(h, http.MethodPost, "/api/account/2fa/enroll", token, `{"current_password":"wrong"}`); rec.Code != http.StatusForbidden {
 		t.Fatalf("enroll with wrong password = %d", rec.Code)
 	}
 

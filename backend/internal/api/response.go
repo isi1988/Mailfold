@@ -7,6 +7,12 @@ import (
 	"github.com/isi1988/Mailfold/backend/internal/mailcow"
 )
 
+// errSignInAgain is the shared response body for a pending-login token that
+// has expired, been exhausted, or was already redeemed — every second-factor
+// verification path (TOTP/recovery, WebAuthn) reports the same message so a
+// client can treat them identically.
+const errSignInAgain = "sign in again"
+
 // itemsRequest is the shared request body shape for operations that act on a
 // list of item identifiers, such as delete and other bulk actions. It models
 // the JSON object {"items": [...]}. A single shared type keeps the wire

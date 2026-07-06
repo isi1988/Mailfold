@@ -113,6 +113,17 @@ func (s *Store) migrate() error {
     last_seen    ` + s.d.IntType() + ` NOT NULL,
     PRIMARY KEY (username, fingerprint)
 )`,
+		`CREATE TABLE IF NOT EXISTS admin_webauthn_credential (
+    id             ` + s.d.IntType() + ` PRIMARY KEY,
+    username       TEXT NOT NULL,
+    credential_id  ` + s.d.BlobType() + ` NOT NULL,
+    public_key     ` + s.d.BlobType() + ` NOT NULL,
+    sign_count     INTEGER NOT NULL DEFAULT 0,
+    transports     TEXT NOT NULL DEFAULT '',
+    name           TEXT NOT NULL DEFAULT '',
+    created_at     ` + s.d.IntType() + ` NOT NULL,
+    UNIQUE (credential_id)
+)`,
 	}
 	for _, stmt := range stmts {
 		if _, err := s.db.Exec(stmt); err != nil {
@@ -311,5 +322,71 @@ func (s *Store) RecordDevice(username, fingerprint string, now time.Time) error 
 	_, err := s.exec(`INSERT INTO admin_known_device (username, fingerprint, first_seen, last_seen) VALUES (?, ?, ?, ?)
         ON CONFLICT(username, fingerprint) DO UPDATE SET last_seen = excluded.last_seen`,
 		username, fingerprint, storage.Unix(now), storage.Unix(now))
+	return err
+}
+
+// WebAuthnCredential is one enrolled security key or passkey for the admin
+// account. CredentialID/PublicKey/SignCount/Transports round-trip through the
+// go-webauthn library unchanged; Name is a caller-chosen label (e.g. "MacBook
+// Touch ID") shown in Settings so multiple credentials can be told apart.
+type WebAuthnCredential struct {
+	ID           int64
+	Username     string
+	CredentialID []byte
+	PublicKey    []byte
+	SignCount    uint32
+	// Transports is a comma-joined list of the authenticator's reported
+	// transports (e.g. "internal,hybrid"); empty when the authenticator
+	// didn't report any.
+	Transports string
+	Name       string
+	CreatedAt  time.Time
+}
+
+// ListWebAuthnCredentials returns every credential enrolled for username,
+// oldest first.
+func (s *Store) ListWebAuthnCredentials(username string) ([]WebAuthnCredential, error) {
+	rows, err := s.db.Query(s.d.Rebind(`SELECT id, credential_id, public_key, sign_count, transports, name, created_at
+        FROM admin_webauthn_credential WHERE username = ? ORDER BY id`), username)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []WebAuthnCredential
+	for rows.Next() {
+		c := WebAuthnCredential{Username: username}
+		var createdAt int64
+		if err := rows.Scan(&c.ID, &c.CredentialID, &c.PublicKey, &c.SignCount, &c.Transports, &c.Name, &createdAt); err != nil {
+			return nil, err
+		}
+		c.CreatedAt = storage.FromUnix(createdAt)
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// AddWebAuthnCredential stores a newly-registered credential.
+func (s *Store) AddWebAuthnCredential(c WebAuthnCredential, now time.Time) error {
+	_, err := s.exec(`INSERT INTO admin_webauthn_credential (username, credential_id, public_key, sign_count, transports, name, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		c.Username, c.CredentialID, c.PublicKey, c.SignCount, c.Transports, c.Name, storage.Unix(now))
+	return err
+}
+
+// DeleteWebAuthnCredential revokes one of username's credentials by its
+// database id, scoped to username so one admin can never delete another
+// account's credential (moot today with a single admin, but cheap to get
+// right).
+func (s *Store) DeleteWebAuthnCredential(username string, id int64) error {
+	_, err := s.exec(`DELETE FROM admin_webauthn_credential WHERE username = ? AND id = ?`, username, id)
+	return err
+}
+
+// UpdateWebAuthnSignCount persists the authenticator's signature counter
+// after a successful login, so a future clone-detection comparison has an
+// up-to-date baseline.
+func (s *Store) UpdateWebAuthnSignCount(credentialID []byte, count uint32) error {
+	_, err := s.exec(`UPDATE admin_webauthn_credential SET sign_count = ? WHERE credential_id = ?`, count, credentialID)
 	return err
 }

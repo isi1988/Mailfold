@@ -61,13 +61,25 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if s.totpEnabled() {
+	totpOn := s.totpEnabled()
+	webAuthnOn := s.hasWebAuthnCredentials()
+	if totpOn || webAuthnOn {
 		pendingToken, err := s.auth.IssuePending()
 		if err != nil {
 			s.writeError(w, http.StatusInternalServerError, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"needs_2fa": true, "pending_token": pendingToken})
+		// methods tells the client which second-factor UI to offer — a code
+		// field, a "use your passkey" button, or both — rather than making it
+		// guess or try one blindly.
+		var methods []string
+		if totpOn {
+			methods = append(methods, "totp")
+		}
+		if webAuthnOn {
+			methods = append(methods, "webauthn")
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"needs_2fa": true, "pending_token": pendingToken, "methods": methods})
 		return
 	}
 
@@ -113,7 +125,7 @@ func (s *Server) handleLogin2FAVerify(w http.ResponseWriter, r *http.Request) {
 	}
 	user, ok := s.auth.VerifyPending(req.PendingToken)
 	if !ok {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "sign in again"})
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": errSignInAgain})
 		return
 	}
 	if !s.verifyTOTPOrRecovery(user, req.Code) {

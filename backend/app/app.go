@@ -60,6 +60,7 @@ func Run() error {
 			server.GCWebmail()
 			server.GCAPIKeys()
 			server.GCSSO()
+			server.GCWebAuthn()
 		}
 	}()
 

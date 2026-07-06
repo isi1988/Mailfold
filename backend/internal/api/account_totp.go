@@ -53,7 +53,7 @@ func (s *Server) handleTOTPEnroll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.auth.CheckPassword(s.cfg.AdminUser, req.CurrentPassword) {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "current password is incorrect"})
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "current password is incorrect"})
 		return
 	}
 
@@ -146,7 +146,7 @@ func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.auth.CheckPassword(s.cfg.AdminUser, req.CurrentPassword) {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "current password is incorrect"})
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "current password is incorrect"})
 		return
 	}
 	if err := s.adminStore.SetTOTP(s.cfg.AdminUser, false, nil, nil, time.Now()); err != nil {

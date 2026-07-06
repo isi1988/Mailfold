@@ -71,7 +71,7 @@ func (s *Server) handleWebmailTOTPEnroll(w http.ResponseWriter, r *http.Request)
 	}
 	email := webmailCreds(r).Email
 	if err := s.webmail.Verify(email, req.CurrentPassword); err != nil {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "current password is incorrect"})
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "current password is incorrect"})
 		return
 	}
 
@@ -162,7 +162,7 @@ func (s *Server) handleWebmailTOTPDisable(w http.ResponseWriter, r *http.Request
 	}
 	email := webmailCreds(r).Email
 	if err := s.webmail.Verify(email, req.CurrentPassword); err != nil {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "current password is incorrect"})
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "current password is incorrect"})
 		return
 	}
 	if err := s.webmailUsers.SetTOTP(email, false, nil, nil, time.Now()); err != nil {
@@ -271,7 +271,7 @@ func (s *Server) handleWebmailTOTPVerify(w http.ResponseWriter, r *http.Request)
 	}
 	cred, ok := s.webmailPending.Peek(req.PendingToken)
 	if !ok {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "sign in again"})
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": errSignInAgain})
 		return
 	}
 	if !s.verifyWebmailTOTPOrRecovery(cred.Email, req.Code) {
