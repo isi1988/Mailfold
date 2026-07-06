@@ -162,7 +162,10 @@ Run the whole mailcow server from one calm UI:
   SPF, DKIM and DMARC against the live zone.
 - **Aliases** — a mailbox-picker for recipients and a catch-all-for-domain
   toggle.
-- **Mail queue** — flush for redelivery, or discard everything outright.
+- **Mail queue** — flush for redelivery, or discard everything outright; the
+  same ready/queued/stuck counts the table shows are also drawn as pens of
+  cow-envelopes at the top of the page, playing on Mailfold's own
+  "Cow-Managed" branding.
 - **Quarantine** — release or delete held messages.
 - **Spam policy** — per-domain allow/block lists, plus custom Rspamd rule
   blocks for finer-grained scoring and whitelisting.
