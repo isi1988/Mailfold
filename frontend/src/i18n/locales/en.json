@@ -206,6 +206,7 @@
       "tabs": {
         "signature": "Signature",
         "rules": "Rules",
+        "notifications": "Notifications",
         "security": "Security"
       },
       "signature": {
@@ -234,6 +235,22 @@
         "failed": "Something went wrong",
         "deleteTitle": "Delete rule",
         "deleteMsg": "Delete rule \"{{name}}\"? This cannot be undone."
+      },
+      "notifications": {
+        "hint": "Get a system notification for new mail on this device, even with no Mailfold tab open.",
+        "unsupported": "This browser doesn't support push notifications.",
+        "thisDevice": "This device",
+        "thisDeviceOn": "Notifications are on for this device.",
+        "thisDeviceOff": "Notifications are off for this device.",
+        "thisDeviceTag": "this device",
+        "enable": "Enable",
+        "enabling": "Enabling…",
+        "disable": "Disable",
+        "enabled": "Notifications enabled",
+        "disabledThisDevice": "Notifications disabled for this device",
+        "removed": "Device removed",
+        "failed": "Something went wrong",
+        "devices": "Subscribed devices"
       },
       "security": {
         "hint": "Optional two-factor authentication for signing into this mailbox.",

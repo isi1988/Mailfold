@@ -181,6 +181,12 @@ export const wm = {
     // verify does not use req(): it runs before any session token exists.
     verify: (pendingToken, code) => req('POST', '/api/webmail/2fa/verify', { pending_token: pendingToken, code }),
   },
+  push: {
+    vapidPublicKey: () => req('GET', '/api/webmail/push/vapid-public-key'),
+    subscriptions: () => req('GET', '/api/webmail/push/subscriptions'),
+    subscribe: subscription => req('POST', '/api/webmail/push/subscribe', subscription),
+    unsubscribe: endpoint => req('DELETE', '/api/webmail/push/subscribe', { endpoint }),
+  },
 };
 
 // subscribeMail opens a Server-Sent Events stream that fires onMail(data) when

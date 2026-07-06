@@ -13,6 +13,7 @@ import { ConfirmModal } from '../ds/components/organisms/ConfirmModal.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { useT } from '../i18n/index.jsx';
 import { wm } from '../api/webmail.js';
+import { isPushSupported, getPushSubscription, enablePush, disablePush } from '../lib/push.js';
 
 function errText(err, fallback) {
   return (err && err.body && err.body.error) || (err && err.message) || fallback;
@@ -410,6 +411,111 @@ function SecurityTab() {
   );
 }
 
+// --- Notifications tab ---
+
+// NotificationsTab lets the mailbox turn on Web Push for the current device
+// (works even with no Mailfold tab open — the whole point versus the
+// existing in-tab "new mail" toast) and manage every device that has ever
+// subscribed, the same way Settings' Active sessions list manages sessions.
+function NotificationsTab() {
+  const t = useT();
+  const s = k => t('webmail.settings.notifications.' + k);
+  const { toast } = useToast();
+  const supported = isPushSupported();
+  const [subs, setSubs] = useState([]);
+  const [thisEndpoint, setThisEndpoint] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+
+  async function reload() {
+    const [list, currentSub] = await Promise.all([wm.push.subscriptions(), getPushSubscription()]);
+    setSubs(list || []);
+    setThisEndpoint(currentSub ? currentSub.endpoint : null);
+  }
+
+  useEffect(() => {
+    if (!supported) { setLoading(false); return; }
+    reload().catch(() => {}).finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const thisDeviceOn = !!thisEndpoint && subs.some(sub => sub.endpoint === thisEndpoint);
+
+  async function enable() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await enablePush();
+      toast(s('enabled'));
+      await reload();
+    } catch (err) {
+      toast(s('failed'), errText(err, ''));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function disableThisDevice() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await disablePush();
+      toast(s('disabledThisDevice'));
+      await reload();
+    } catch (err) {
+      toast(s('failed'), errText(err, ''));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeOne(endpoint) {
+    try {
+      await wm.push.unsubscribe(endpoint);
+      if (endpoint === thisEndpoint) await disablePush().catch(() => {});
+      toast(s('removed'));
+      await reload();
+    } catch (err) {
+      toast(s('failed'), errText(err, ''));
+    }
+  }
+
+  if (!supported) {
+    return <div className="mf-u-faint" style={{ fontSize: 12.5 }}>{s('unsupported')}</div>;
+  }
+  if (loading) return <div className="mf-u-muted" style={{ fontSize: 13, padding: '10px 0' }}>{t('common.loading')}</div>;
+
+  return (
+    <>
+      <div className="mf-u-faint" style={{ fontSize: 12.5, marginBottom: 14, lineHeight: 1.5 }}>{s('hint')}</div>
+      <div className="mf-row mf-row--between" style={{ padding: '4px 0 14px' }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{s('thisDevice')}</div>
+          <div className="mf-u-faint" style={{ fontSize: 12 }}>{thisDeviceOn ? s('thisDeviceOn') : s('thisDeviceOff')}</div>
+        </div>
+        {thisDeviceOn
+          ? <Button variant="danger" size="sm" onClick={disableThisDevice} disabled={busy}>{s('disable')}</Button>
+          : <Button variant="primary" size="sm" onClick={enable} disabled={busy}>{busy ? s('enabling') : s('enable')}</Button>}
+      </div>
+      {subs.length > 0 && (
+        <>
+          <div className="mf-u-faint" style={{ fontSize: 12, marginBottom: 6 }}>{s('devices')}</div>
+          {subs.map(sub => (
+            <div key={sub.id} className="mf-row mf-row--between" style={{ padding: '8px 0', borderTop: '1px solid var(--hair-soft)' }}>
+              <span className="mf-u-mono mf-truncate" style={{ fontSize: 12, maxWidth: 300 }}>
+                {sub.endpoint}{sub.endpoint === thisEndpoint ? ' — ' + s('thisDeviceTag') : ''}
+              </span>
+              <Button variant="ghost" size="sm" title={t('common.delete')} onClick={() => removeOne(sub.endpoint)}>
+                <Icon name="trash" size={15} />
+              </Button>
+            </div>
+          ))}
+        </>
+      )}
+    </>
+  );
+}
+
 // --- Drawer shell ---
 
 export function WebmailSettingsDrawer({ onClose }) {
@@ -420,6 +526,7 @@ export function WebmailSettingsDrawer({ onClose }) {
         items={[
           { id: 'signature', label: t('webmail.settings.tabs.signature'), content: <SignatureTab /> },
           { id: 'rules', label: t('webmail.settings.tabs.rules'), content: <RulesTab /> },
+          { id: 'notifications', label: t('webmail.settings.tabs.notifications'), content: <NotificationsTab /> },
           { id: 'security', label: t('webmail.settings.tabs.security'), content: <SecurityTab /> },
         ]}
       />
