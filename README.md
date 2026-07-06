@@ -320,6 +320,39 @@ React SPA  ──▶  Mailfold Go backend  ──▶  mailcow API (/api/v1/...)
 The Go backend authenticates to mailcow with an API key, exposes a clean
 REST surface to the frontend, and serves the built SPA.
 
+## Scaling: sessions survive a restart and a load balancer
+
+Every bearer-token session Mailfold issues — the admin's, a webmail
+mailbox's, and a domain admin's, plus the pending token in between the
+password and TOTP/passkey steps of a login — is backed by the same database
+already used for DAV, API keys, and the audit log
+([`backend/internal/sessionstore`](backend/internal/sessionstore)). No new
+environment variable is needed: it activates automatically whenever
+`MAILFOLD_DB_PATH` is set, exactly like every other optional store in this
+codebase. Without a database configured, every session manager falls back to
+its original in-process map — correct for a single instance, but unable to
+recognize a token minted by another one.
+
+This is what makes running more than one Mailfold instance behind a load
+balancer *without sticky sessions* possible: a token minted by instance A is
+validated by instance B by reading the same row, not by asking A. Only its
+hash is ever stored (never the raw token, matching password-reset and
+API-key tokens elsewhere in this codebase), and a webmail session's mailbox
+password — needed on every IMAP/SMTP call — is additionally AES-256-GCM
+encrypted at rest, using the same `MAILFOLD_ADMIN_ENC_KEY` that already
+protects TOTP secrets and the notify-sender password; without that key,
+webmail sessions specifically stay in-memory even with a database present,
+rather than ever persisting a password unencrypted.
+
+Two smaller pieces of transient state deliberately stay per-process rather
+than move to the database, since losing one mid-flight just costs a retry
+rather than an established session: login rate limiters, and the few-minute
+WebAuthn/passkey and SSO ceremony challenges. A load balancer without sticky
+sessions can occasionally land a passkey or SSO callback on a different
+instance than the one that started it — the fix is simply to try again — but
+can never land on an instance that doesn't recognize an already-signed-in
+user.
+
 ## Editions (open-core)
 
 Mailfold is open-core. The community edition in this repository is
