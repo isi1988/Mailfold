@@ -177,3 +177,42 @@ func TestResetTokenLifecycle(t *testing.T) {
 		t.Fatalf("ConsumeResetToken should reject an unknown token: ok=%v err=%v", ok, err)
 	}
 }
+
+func TestKnownDeviceLifecycle(t *testing.T) {
+	st := openTestStore(t)
+	now := time.Now()
+
+	known, err := st.IsKnownDevice("admin", "fp-1")
+	if err != nil {
+		t.Fatalf("IsKnownDevice: %v", err)
+	}
+	if known {
+		t.Error("a fingerprint never recorded should not be known")
+	}
+
+	if err := st.RecordDevice("admin", "fp-1", now); err != nil {
+		t.Fatalf("RecordDevice: %v", err)
+	}
+	known, err = st.IsKnownDevice("admin", "fp-1")
+	if err != nil {
+		t.Fatalf("IsKnownDevice: %v", err)
+	}
+	if !known {
+		t.Error("fingerprint should be known after RecordDevice")
+	}
+
+	// A different fingerprint for the same user is still unknown.
+	known, err = st.IsKnownDevice("admin", "fp-2")
+	if err != nil {
+		t.Fatalf("IsKnownDevice: %v", err)
+	}
+	if known {
+		t.Error("a different fingerprint should not be known")
+	}
+
+	// Recording the same fingerprint again (e.g. a later sign-in) must not
+	// error — it should update last_seen in place rather than conflict.
+	if err := st.RecordDevice("admin", "fp-1", now.Add(time.Hour)); err != nil {
+		t.Fatalf("RecordDevice (repeat): %v", err)
+	}
+}

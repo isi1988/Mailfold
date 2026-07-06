@@ -58,6 +58,7 @@ type Server struct {
 	domainAdminSessions *domainadmin.Sessions // domain-admin Mailfold sessions (distinct from the super-admin's and webmail's)
 	sso                 *ssoManager           // nil unless a database and the admin cipher are both available
 	auditStore          *audit.Store          // records admin/domain-admin logins and mutating actions; nil when DBPath is empty
+	loginFailures       *loginFailureTracker  // consecutive-failure streaks for the admin login-alert email
 	logger              *slog.Logger
 }
 
@@ -158,6 +159,7 @@ func NewServer(cfg *config.Config, mc Mailcow, authn *auth.Authenticator, limite
 		domainAdminSessions: domainadmin.NewSessions(domainAdminSessionTTL),
 		sso:                 sso,
 		auditStore:          auditStore,
+		loginFailures:       newLoginFailureTracker(),
 		logger:              logger,
 	}
 }

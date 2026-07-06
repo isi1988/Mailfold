@@ -56,6 +56,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	if !s.auth.CheckPassword(req.User, req.Password) {
 		s.recordAudit("admin", req.User, "login_failed", http.StatusUnauthorized, clientIP(r))
+		s.alertOnFailedLogin(req.User, r)
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
 		return
 	}
@@ -76,6 +77,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.recordAudit("admin", sess.User, "login", http.StatusOK, clientIP(r))
+	s.loginFailures.Reset(sess.User)
+	s.alertOnNewDevice(sess.User, r)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"token":      sess.Token,
 		"user":       sess.User,
@@ -115,6 +118,7 @@ func (s *Server) handleLogin2FAVerify(w http.ResponseWriter, r *http.Request) {
 	}
 	if !s.verifyTOTPOrRecovery(user, req.Code) {
 		s.recordAudit("admin", user, "login_failed", http.StatusUnauthorized, clientIP(r))
+		s.alertOnFailedLogin(user, r)
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid code"})
 		return
 	}
@@ -126,6 +130,8 @@ func (s *Server) handleLogin2FAVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.recordAudit("admin", sess.User, "login", http.StatusOK, clientIP(r))
+	s.loginFailures.Reset(sess.User)
+	s.alertOnNewDevice(sess.User, r)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"token":      sess.Token,
 		"user":       sess.User,

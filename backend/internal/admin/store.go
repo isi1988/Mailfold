@@ -106,6 +106,13 @@ func (s *Store) migrate() error {
     expires_at  ` + s.d.IntType() + ` NOT NULL,
     used_at     ` + s.d.IntType() + ` NOT NULL DEFAULT 0
 )`,
+		`CREATE TABLE IF NOT EXISTS admin_known_device (
+    username     TEXT NOT NULL,
+    fingerprint  TEXT NOT NULL,
+    first_seen   ` + s.d.IntType() + ` NOT NULL,
+    last_seen    ` + s.d.IntType() + ` NOT NULL,
+    PRIMARY KEY (username, fingerprint)
+)`,
 	}
 	for _, stmt := range stmts {
 		if _, err := s.db.Exec(stmt); err != nil {
@@ -285,4 +292,24 @@ func (s *Store) ConsumeResetToken(tokenHash string, now time.Time) (string, bool
 		return "", false, err
 	}
 	return username, true, nil
+}
+
+// IsKnownDevice reports whether fingerprint has signed in as username before.
+func (s *Store) IsKnownDevice(username, fingerprint string) (bool, error) {
+	var n int
+	err := s.db.QueryRow(s.d.Rebind(`SELECT COUNT(*) FROM admin_known_device WHERE username = ? AND fingerprint = ?`), username, fingerprint).Scan(&n)
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
+// RecordDevice records (or refreshes the last-seen time of) a device
+// fingerprint for username, so a later sign-in from the same device is not
+// treated as new.
+func (s *Store) RecordDevice(username, fingerprint string, now time.Time) error {
+	_, err := s.exec(`INSERT INTO admin_known_device (username, fingerprint, first_seen, last_seen) VALUES (?, ?, ?, ?)
+        ON CONFLICT(username, fingerprint) DO UPDATE SET last_seen = excluded.last_seen`,
+		username, fingerprint, storage.Unix(now), storage.Unix(now))
+	return err
 }
