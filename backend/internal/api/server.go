@@ -23,6 +23,7 @@ import (
 	"github.com/isi1988/Mailfold/backend/internal/metrics"
 	"github.com/isi1988/Mailfold/backend/internal/ratelimit"
 	"github.com/isi1988/Mailfold/backend/internal/sessionstore"
+	"github.com/isi1988/Mailfold/backend/internal/sharedmailbox"
 	"github.com/isi1988/Mailfold/backend/internal/webmail"
 	"github.com/isi1988/Mailfold/backend/internal/webmailuser"
 	"github.com/isi1988/Mailfold/backend/internal/webpush"
@@ -71,6 +72,7 @@ type Server struct {
 	webpushCipher       *webpush.Cipher        // nil when MAILFOLD_ADMIN_ENC_KEY is unset (push then reports 501)
 	vapidPublicKey      string
 	vapidPrivateKey     string
+	sharedMailboxes     *sharedmailbox.Store // team mailboxes + assignment/notes; nil when DBPath is empty
 	logger              *slog.Logger
 }
 
@@ -178,6 +180,12 @@ func NewServer(cfg *config.Config, mc Mailcow, authn *auth.Authenticator, limite
 	// the clear.
 	webpushStore, webpushCipher, vapidPublic, vapidPrivate := openWebPush(cfg, logger)
 
+	// Open shared/team mailbox support alongside the others; a failure
+	// disables just this feature. It additionally needs the admin cipher
+	// (opened above) to decrypt each shared mailbox's delegated
+	// app-password, exactly like SSO's cached mailbox credential.
+	sharedMailboxes := openSharedMailboxStore(cfg, logger)
+
 	return &Server{
 		cfg:                 cfg,
 		mc:                  mc,
@@ -209,8 +217,27 @@ func NewServer(cfg *config.Config, mc Mailcow, authn *auth.Authenticator, limite
 		webpushCipher:       webpushCipher,
 		vapidPublicKey:      vapidPublic,
 		vapidPrivateKey:     vapidPrivate,
+		sharedMailboxes:     sharedMailboxes,
 		logger:              logger,
 	}
+}
+
+// openSharedMailboxStore opens the shared/team mailbox store when a database
+// is configured, matching the other stores' fail-open behaviour. Unlike
+// webpush, it needs no cipher of its own: a shared mailbox's delegated
+// app-password is encrypted with the admin cipher at the point it is minted
+// (see handleCreateSharedMailbox), the same secret-encryption path SSO's
+// cached mailbox credential already uses.
+func openSharedMailboxStore(cfg *config.Config, logger *slog.Logger) *sharedmailbox.Store {
+	if cfg.DBPath == "" {
+		return nil
+	}
+	st, err := sharedmailbox.Open(cfg.DBDriver, cfg.DBPath)
+	if err != nil {
+		logger.Error("failed to open shared mailbox store; shared mailboxes disabled", "error", err)
+		return nil
+	}
+	return st
 }
 
 // openWebPush opens the Web Push subscription store and initialises its
@@ -438,6 +465,7 @@ func (s *Server) Handler() http.Handler {
 	s.registerWebmailPushRoutes(mux)
 	s.registerWebmailRuleRoutes(mux)
 	s.registerWebmailTOTPRoutes(mux)
+	s.registerWebmailSharedRoutes(mux)
 
 	// Self-hosted CardDAV/CalDAV (contacts/calendar), when configured.
 	s.registerDAV(mux)
@@ -453,6 +481,7 @@ func (s *Server) Handler() http.Handler {
 	s.registerDomainDNSRoutes(mux)
 	s.registerMailboxRoutes(mux)
 	s.registerMailboxBulkRoutes(mux)
+	s.registerSharedMailboxAdminRoutes(mux)
 	s.registerAliasRoutes(mux)
 	s.registerDKIMRoutes(mux)
 	s.registerSyncJobRoutes(mux)

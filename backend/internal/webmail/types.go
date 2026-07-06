@@ -31,6 +31,13 @@ type MessageHeader struct {
 	// Preview is a short plain-text snippet of the body, shown under the subject
 	// in the message list.
 	Preview string `json:"preview"`
+	// AssignedTo and NotesCount are never set by this package — IMAP has no
+	// concept of either. The api layer fills them in after fetching headers,
+	// only when the session belongs to a shared mailbox (see
+	// internal/api/webmail_shared.go), so an ordinary mailbox's messages
+	// never carry them.
+	AssignedTo string `json:"assigned_to,omitempty"`
+	NotesCount int    `json:"notes_count,omitempty"`
 }
 
 // Attachment describes a non-inline message part.

@@ -3,6 +3,7 @@ package webmail
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"sync"
 	"time"
 
@@ -25,6 +26,20 @@ type Credentials struct {
 	// consumed) credential, e.g. the second-factor step of a login. Real,
 	// already-established sessions never touch it.
 	Attempts int
+	// ActingAs is set only for a session minted on behalf of a shared
+	// mailbox (see internal/api/webmail_shared.go): the email of the real
+	// webmail user operating it, used to attribute message assignments and
+	// notes to a person rather than to the shared mailbox itself. Empty for
+	// an ordinary session.
+	ActingAs string
+}
+
+// sessionMeta is the JSON shape stored in a durable session row's Meta
+// column (see sessionstore.Row). It currently holds only ActingAs; kept as
+// a struct (rather than a bare string) so a future field can be added
+// without another storage-format migration.
+type sessionMeta struct {
+	ActingAs string `json:"acting_as,omitempty"`
 }
 
 // maxPendingAttempts bounds how many codes can be tried against one pending
@@ -84,6 +99,19 @@ func (s *Sessions) currentBackend() (*sessionstore.Store, *sessionstore.Cipher) 
 
 // Create stores the credentials under a fresh random token and returns it.
 func (s *Sessions) Create(email, password string) (string, time.Time, error) {
+	return s.mintSession(email, password, "")
+}
+
+// CreateActingAs is Create, but additionally records actingAs — the real
+// webmail user operating this session — for a session minted on behalf of a
+// shared mailbox (see internal/api/webmail_shared.go), so message
+// assignments and notes can be attributed to a person rather than to the
+// shared mailbox itself.
+func (s *Sessions) CreateActingAs(email, password, actingAs string) (string, time.Time, error) {
+	return s.mintSession(email, password, actingAs)
+}
+
+func (s *Sessions) mintSession(email, password, actingAs string) (string, time.Time, error) {
 	buf := make([]byte, 32)
 	if _, err := rand.Read(buf); err != nil {
 		return "", time.Time{}, err
@@ -97,7 +125,11 @@ func (s *Sessions) Create(email, password string) (string, time.Time, error) {
 		if err != nil {
 			return "", time.Time{}, err
 		}
-		p := sessionstore.PutParams{Token: token, Kind: s.kind, Subject: email, Secret: enc, SecretNonce: nonce, Now: now, ExpiresAt: exp}
+		meta, err := json.Marshal(sessionMeta{ActingAs: actingAs})
+		if err != nil {
+			return "", time.Time{}, err
+		}
+		p := sessionstore.PutParams{Token: token, Kind: s.kind, Subject: email, Secret: enc, SecretNonce: nonce, Meta: string(meta), Now: now, ExpiresAt: exp}
 		if err := store.Put(p); err != nil {
 			return "", time.Time{}, err
 		}
@@ -105,7 +137,7 @@ func (s *Sessions) Create(email, password string) (string, time.Time, error) {
 	}
 
 	s.mu.Lock()
-	s.m[token] = &Credentials{Email: email, Password: password, ExpiresAt: exp}
+	s.m[token] = &Credentials{Email: email, Password: password, ExpiresAt: exp, ActingAs: actingAs}
 	s.mu.Unlock()
 	return token, exp, nil
 }
@@ -269,5 +301,12 @@ func decryptRow(row sessionstore.Row, cipher *sessionstore.Cipher) (*Credentials
 	if err != nil {
 		return nil, false
 	}
-	return &Credentials{Email: row.Subject, Password: string(plain), ExpiresAt: row.ExpiresAt}, true
+	cred := &Credentials{Email: row.Subject, Password: string(plain), ExpiresAt: row.ExpiresAt}
+	if row.Meta != "" {
+		var m sessionMeta
+		if err := json.Unmarshal([]byte(row.Meta), &m); err == nil {
+			cred.ActingAs = m.ActingAs
+		}
+	}
+	return cred, true
 }

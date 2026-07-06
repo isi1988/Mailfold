@@ -251,11 +251,13 @@ func (s *Server) handleWebmailFolders(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleWebmailMessages(w http.ResponseWriter, r *http.Request) {
 	cred := webmailCreds(r)
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	msgs, err := s.webmail.Messages(cred.Email, cred.Password, folderParam(r), limit)
+	folder := folderParam(r)
+	msgs, err := s.webmail.Messages(cred.Email, cred.Password, folder, limit)
 	if err != nil {
 		s.writeError(w, http.StatusBadGateway, err)
 		return
 	}
+	s.enrichShared(r, folder, msgs)
 	writeJSON(w, http.StatusOK, msgs)
 }
 
@@ -388,11 +390,13 @@ func (s *Server) handleWebmailSearch(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "query parameter q is required"})
 		return
 	}
-	msgs, err := s.webmail.Search(cred.Email, cred.Password, folderParam(r), q)
+	folder := folderParam(r)
+	msgs, err := s.webmail.Search(cred.Email, cred.Password, folder, q)
 	if err != nil {
 		s.writeError(w, http.StatusBadGateway, err)
 		return
 	}
+	s.enrichShared(r, folder, msgs)
 	writeJSON(w, http.StatusOK, msgs)
 }
 

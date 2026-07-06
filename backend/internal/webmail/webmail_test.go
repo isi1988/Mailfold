@@ -430,6 +430,46 @@ func TestStoreBackedSessionExpiryAndGC(t *testing.T) {
 	}
 }
 
+// TestCreateActingAsInMemory covers the in-memory fallback path: ActingAs
+// must round-trip alongside the ordinary email/password.
+func TestCreateActingAsInMemory(t *testing.T) {
+	s := NewSessions(time.Hour, "webmail_session")
+	token, _, err := s.CreateActingAs("support@example.com", "app-pw", "alice@example.com")
+	if err != nil {
+		t.Fatalf("CreateActingAs: %v", err)
+	}
+	cred, ok := s.Get(token)
+	if !ok || cred.Email != "support@example.com" || cred.Password != "app-pw" || cred.ActingAs != "alice@example.com" {
+		t.Fatalf("Get after CreateActingAs = %v %+v, want support@example.com/app-pw/alice@example.com", ok, cred)
+	}
+	// An ordinary Create must leave ActingAs empty.
+	token2, _, _ := s.Create("u@example.com", "pw")
+	cred2, _ := s.Get(token2)
+	if cred2.ActingAs != "" {
+		t.Errorf("Create should leave ActingAs empty, got %q", cred2.ActingAs)
+	}
+}
+
+// TestCreateActingAsStoreBacked mirrors TestCreateActingAsInMemory against a
+// store-backed Sessions: ActingAs is round-tripped through the durable
+// store's Meta column, not just the in-memory map.
+func TestCreateActingAsStoreBacked(t *testing.T) {
+	s := newStoreBackedSessions(t, time.Hour)
+	token, _, err := s.CreateActingAs("support@example.com", "app-pw", "alice@example.com")
+	if err != nil {
+		t.Fatalf("CreateActingAs: %v", err)
+	}
+	cred, ok := s.Get(token)
+	if !ok || cred.Email != "support@example.com" || cred.Password != "app-pw" || cred.ActingAs != "alice@example.com" {
+		t.Fatalf("Get after CreateActingAs = %v %+v, want support@example.com/app-pw/alice@example.com", ok, cred)
+	}
+	token2, _, _ := s.Create("u@example.com", "pw")
+	cred2, _ := s.Get(token2)
+	if cred2.ActingAs != "" {
+		t.Errorf("Create should leave ActingAs empty, got %q", cred2.ActingAs)
+	}
+}
+
 func TestCheckSince(t *testing.T) {
 	c := NewClient(startIMAP(t), "", false, false)
 
