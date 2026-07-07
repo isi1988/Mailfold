@@ -316,6 +316,19 @@ paths:
     post: { tags: [webmail], summary: End the webmail session, responses: { "200": { description: Logged out. } } }
   /api/webmail/folders:
     get: { tags: [webmail], summary: List the user's mail folders, responses: { "200": { $ref: "#/components/responses/Upstream" }, "401": { $ref: "#/components/responses/Unauthorized" } } }
+    post:
+      tags: [webmail]
+      summary: Create a mail folder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+      responses: { "200": { description: Created. }, "400": { description: Missing name. }, "401": { $ref: "#/components/responses/Unauthorized" } }
   /api/webmail/messages:
     get:
       tags: [webmail]
@@ -398,20 +411,6 @@ paths:
                 folder: { type: string, default: INBOX }
                 uid: { type: integer }
       responses: { "200": { description: OK. }, "401": { $ref: "#/components/responses/Unauthorized" } }
-  /api/webmail/folders:
-    post:
-      tags: [webmail]
-      summary: Create a mail folder
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [name]
-              properties:
-                name: { type: string }
-      responses: { "200": { description: Created. }, "400": { description: Missing name. }, "401": { $ref: "#/components/responses/Unauthorized" } }
   /api/webmail/search:
     get:
       tags: [webmail]
