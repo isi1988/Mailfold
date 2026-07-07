@@ -399,6 +399,7 @@ func (s *Server) handleWebAuthnLoginFinish(w http.ResponseWriter, r *http.Reques
 	}
 	cred, err := s.webAuthn.FinishLogin(user, session, r)
 	if err != nil {
+		s.logger.Warn("passkey login verification failed", "user", username, "error", err)
 		s.recordAudit("admin", username, "login_failed", http.StatusUnauthorized, clientIP(r))
 		s.alertOnFailedLogin(username, r)
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "passkey verification failed"})
