@@ -175,7 +175,10 @@ Run the whole mailcow server from one calm UI:
 - **Dashboard** — container health, storage, mail queue at a glance.
 - **Mailboxes** — quotas, a usage bar, last login, per-mailbox app
   passwords, Sieve filters, rate limits and temporary aliases in a
-  slide-over drawer, plus bulk creation from a CSV file.
+  slide-over drawer, plus bulk creation from a CSV file. The drawer also
+  shows ready-to-copy **client settings** (IMAP/SMTP host, port, and
+  username) for handing off to whoever is setting up a mail client, shown
+  whenever `MAILFOLD_SERVER_NAME` is configured.
 - **Domains** — a detail page per domain with DKIM key management, rate
   limits, and a live DNS check that verifies MX, the mail host's A record,
   SPF, DKIM and DMARC against the live zone.
