@@ -107,6 +107,11 @@ func (s *Server) loadWebAuthnUser(username string) (*webAuthnUser, error) {
 			PublicKey:     c.PublicKey,
 			Transport:     splitTransports(c.Transports),
 			Authenticator: webauthn.Authenticator{SignCount: c.SignCount},
+			// BackupEligible must round-trip exactly as stored at
+			// registration: FinishLogin hard-rejects an assertion whose
+			// reported value differs from this one (see the
+			// WebAuthnCredential.BackupEligible doc comment).
+			Flags: webauthn.CredentialFlags{BackupEligible: c.BackupEligible, BackupState: c.BackupState},
 		}
 	}
 	return &webAuthnUser{username: username, credentials: creds}, nil
@@ -282,12 +287,14 @@ func (s *Server) handleWebAuthnRegisterFinish(w http.ResponseWriter, r *http.Req
 		return
 	}
 	err = s.adminStore.AddWebAuthnCredential(admin.WebAuthnCredential{
-		Username:     s.cfg.AdminUser,
-		CredentialID: cred.ID,
-		PublicKey:    cred.PublicKey,
-		SignCount:    cred.Authenticator.SignCount,
-		Transports:   joinTransports(cred.Transport),
-		Name:         name,
+		Username:       s.cfg.AdminUser,
+		CredentialID:   cred.ID,
+		PublicKey:      cred.PublicKey,
+		SignCount:      cred.Authenticator.SignCount,
+		Transports:     joinTransports(cred.Transport),
+		BackupEligible: cred.Flags.BackupEligible,
+		BackupState:    cred.Flags.BackupState,
+		Name:           name,
 	}, time.Now())
 	if err != nil {
 		s.writeError(w, http.StatusInternalServerError, err)
@@ -407,6 +414,9 @@ func (s *Server) handleWebAuthnLoginFinish(w http.ResponseWriter, r *http.Reques
 	}
 	if err := s.adminStore.UpdateWebAuthnSignCount(cred.ID, cred.Authenticator.SignCount); err != nil {
 		s.logger.Error("failed to update WebAuthn sign count", "error", err)
+	}
+	if err := s.adminStore.UpdateWebAuthnBackupState(cred.ID, cred.Flags.BackupState); err != nil {
+		s.logger.Error("failed to update WebAuthn backup state", "error", err)
 	}
 	s.auth.ConsumePending(pendingToken)
 

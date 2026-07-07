@@ -9,6 +9,7 @@ package admin
 
 import (
 	"database/sql"
+	"strings"
 	"time"
 
 	"github.com/isi1988/Mailfold/backend/storage"
@@ -120,6 +121,8 @@ func (s *Store) migrate() error {
     public_key     ` + s.d.BlobType() + ` NOT NULL,
     sign_count     INTEGER NOT NULL DEFAULT 0,
     transports     TEXT NOT NULL DEFAULT '',
+    backup_eligible INTEGER NOT NULL DEFAULT 0,
+    backup_state    INTEGER NOT NULL DEFAULT 0,
     name           TEXT NOT NULL DEFAULT '',
     created_at     ` + s.d.IntType() + ` NOT NULL,
     UNIQUE (credential_id)
@@ -127,6 +130,30 @@ func (s *Store) migrate() error {
 	}
 	for _, stmt := range stmts {
 		if _, err := s.db.Exec(stmt); err != nil {
+			return err
+		}
+	}
+	return s.addWebAuthnFlagColumns()
+}
+
+// addWebAuthnFlagColumns adds the backup_eligible/backup_state columns to a
+// pre-existing admin_webauthn_credential table (the table itself predates
+// this pair of columns — see the WebAuthnCredential doc comment for why they
+// were added). Unlike every other table above, this can't be a plain
+// CREATE TABLE IF NOT EXISTS: the table may already exist without them.
+// Neither SQLite nor Postgres support "ADD COLUMN IF NOT EXISTS" the same
+// way, so this just attempts the ALTER and tolerates the one error that
+// means "already migrated" on either engine, surfacing anything else.
+func (s *Store) addWebAuthnFlagColumns() error {
+	for _, column := range []string{
+		`ALTER TABLE admin_webauthn_credential ADD COLUMN backup_eligible INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE admin_webauthn_credential ADD COLUMN backup_state INTEGER NOT NULL DEFAULT 0`,
+	} {
+		if _, err := s.db.Exec(column); err != nil {
+			msg := err.Error()
+			if strings.Contains(msg, "duplicate column") || strings.Contains(msg, "already exists") {
+				continue
+			}
 			return err
 		}
 	}
@@ -339,14 +366,28 @@ type WebAuthnCredential struct {
 	// transports (e.g. "internal,hybrid"); empty when the authenticator
 	// didn't report any.
 	Transports string
-	Name       string
-	CreatedAt  time.Time
+	// BackupEligible records whether the authenticator reported itself as
+	// eligible for backup/sync (e.g. an iCloud Keychain or Google Password
+	// Manager passkey) at registration time. go-webauthn hard-rejects a
+	// login whose assertion reports a different BackupEligible value than
+	// what was stored at registration — per its own docs this flag "should
+	// NEVER change" for a given credential, so it is captured once here and
+	// never touched again.
+	BackupEligible bool
+	// BackupState records whether the authenticator reported the credential
+	// as actually backed up/synced. Unlike BackupEligible this can
+	// legitimately change over a credential's lifetime (e.g. once iCloud
+	// Keychain finishes its first sync), so it is refreshed after every
+	// successful login.
+	BackupState bool
+	Name        string
+	CreatedAt   time.Time
 }
 
 // ListWebAuthnCredentials returns every credential enrolled for username,
 // oldest first.
 func (s *Store) ListWebAuthnCredentials(username string) ([]WebAuthnCredential, error) {
-	rows, err := s.db.Query(s.d.Rebind(`SELECT id, credential_id, public_key, sign_count, transports, name, created_at
+	rows, err := s.db.Query(s.d.Rebind(`SELECT id, credential_id, public_key, sign_count, transports, backup_eligible, backup_state, name, created_at
         FROM admin_webauthn_credential WHERE username = ? ORDER BY id`), username)
 	if err != nil {
 		return nil, err
@@ -357,9 +398,12 @@ func (s *Store) ListWebAuthnCredentials(username string) ([]WebAuthnCredential, 
 	for rows.Next() {
 		c := WebAuthnCredential{Username: username}
 		var createdAt int64
-		if err := rows.Scan(&c.ID, &c.CredentialID, &c.PublicKey, &c.SignCount, &c.Transports, &c.Name, &createdAt); err != nil {
+		var backupEligible, backupState int
+		if err := rows.Scan(&c.ID, &c.CredentialID, &c.PublicKey, &c.SignCount, &c.Transports, &backupEligible, &backupState, &c.Name, &createdAt); err != nil {
 			return nil, err
 		}
+		c.BackupEligible = backupEligible != 0
+		c.BackupState = backupState != 0
 		c.CreatedAt = storage.FromUnix(createdAt)
 		out = append(out, c)
 	}
@@ -368,10 +412,17 @@ func (s *Store) ListWebAuthnCredentials(username string) ([]WebAuthnCredential, 
 
 // AddWebAuthnCredential stores a newly-registered credential.
 func (s *Store) AddWebAuthnCredential(c WebAuthnCredential, now time.Time) error {
-	_, err := s.exec(`INSERT INTO admin_webauthn_credential (username, credential_id, public_key, sign_count, transports, name, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		c.Username, c.CredentialID, c.PublicKey, c.SignCount, c.Transports, c.Name, storage.Unix(now))
+	_, err := s.exec(`INSERT INTO admin_webauthn_credential (username, credential_id, public_key, sign_count, transports, backup_eligible, backup_state, name, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		c.Username, c.CredentialID, c.PublicKey, c.SignCount, c.Transports, boolInt(c.BackupEligible), boolInt(c.BackupState), c.Name, storage.Unix(now))
 	return err
+}
+
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // DeleteWebAuthnCredential revokes one of username's credentials by its
@@ -388,5 +439,14 @@ func (s *Store) DeleteWebAuthnCredential(username string, id int64) error {
 // up-to-date baseline.
 func (s *Store) UpdateWebAuthnSignCount(credentialID []byte, count uint32) error {
 	_, err := s.exec(`UPDATE admin_webauthn_credential SET sign_count = ? WHERE credential_id = ?`, count, credentialID)
+	return err
+}
+
+// UpdateWebAuthnBackupState persists the authenticator's current
+// backup/sync state after a successful login (see WebAuthnCredential's
+// BackupState doc comment for why, unlike BackupEligible, this one is
+// expected to change over time).
+func (s *Store) UpdateWebAuthnBackupState(credentialID []byte, backupState bool) error {
+	_, err := s.exec(`UPDATE admin_webauthn_credential SET backup_state = ? WHERE credential_id = ?`, boolInt(backupState), credentialID)
 	return err
 }

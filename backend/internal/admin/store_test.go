@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"database/sql"
 	"testing"
 	"time"
 )
@@ -230,12 +231,13 @@ func TestWebAuthnCredentialLifecycle(t *testing.T) {
 	}
 
 	c := WebAuthnCredential{
-		Username:     "admin",
-		CredentialID: []byte{1, 2, 3},
-		PublicKey:    []byte{4, 5, 6},
-		SignCount:    0,
-		Transports:   "internal,hybrid",
-		Name:         "MacBook Touch ID",
+		Username:       "admin",
+		CredentialID:   []byte{1, 2, 3},
+		PublicKey:      []byte{4, 5, 6},
+		SignCount:      0,
+		Transports:     "internal,hybrid",
+		BackupEligible: true,
+		Name:           "MacBook Touch ID",
 	}
 	if err := st.AddWebAuthnCredential(c, now); err != nil {
 		t.Fatalf("AddWebAuthnCredential: %v", err)
@@ -254,6 +256,23 @@ func TestWebAuthnCredentialLifecycle(t *testing.T) {
 	}
 	if string(got.CredentialID) != string(c.CredentialID) || string(got.PublicKey) != string(c.PublicKey) {
 		t.Errorf("credential id/public key not round-tripped: %+v", got)
+	}
+	// A synced (backup-eligible) passkey must round-trip that flag exactly —
+	// go-webauthn hard-rejects a login whose assertion reports a different
+	// BackupEligible value than what was stored at registration.
+	if !got.BackupEligible || got.BackupState {
+		t.Errorf("want BackupEligible=true BackupState=false right after enrollment, got %+v", got)
+	}
+
+	if err := st.UpdateWebAuthnBackupState(c.CredentialID, true); err != nil {
+		t.Fatalf("UpdateWebAuthnBackupState: %v", err)
+	}
+	creds, _ = st.ListWebAuthnCredentials("admin")
+	if !creds[0].BackupState {
+		t.Error("want BackupState=true after UpdateWebAuthnBackupState")
+	}
+	if !creds[0].BackupEligible {
+		t.Error("BackupEligible must be untouched by UpdateWebAuthnBackupState")
 	}
 
 	// A credential enrolled for a different user must not show up here.
@@ -280,4 +299,59 @@ func TestWebAuthnCredentialLifecycle(t *testing.T) {
 	if len(creds) != 0 {
 		t.Fatalf("want 0 credentials after delete, got %d", len(creds))
 	}
+}
+
+// TestMigrateAddsWebAuthnFlagColumnsToPreExistingTable simulates a database
+// created before backup_eligible/backup_state existed — the actual shape of
+// every already-deployed Mailfold instance — and confirms Open's migration
+// adds them via ALTER TABLE without erroring, and that reopening an
+// already-migrated database is equally safe (the "column already exists"
+// branch in addWebAuthnFlagColumns).
+func TestMigrateAddsWebAuthnFlagColumnsToPreExistingTable(t *testing.T) {
+	path := t.TempDir() + "/legacy.db"
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	if _, err := raw.Exec(`CREATE TABLE admin_webauthn_credential (
+        id INTEGER PRIMARY KEY,
+        username TEXT NOT NULL,
+        credential_id BLOB NOT NULL,
+        public_key BLOB NOT NULL,
+        sign_count INTEGER NOT NULL DEFAULT 0,
+        transports TEXT NOT NULL DEFAULT '',
+        name TEXT NOT NULL DEFAULT '',
+        created_at INTEGER NOT NULL,
+        UNIQUE (credential_id)
+    )`); err != nil {
+		t.Fatalf("create legacy table: %v", err)
+	}
+	if _, err := raw.Exec(`INSERT INTO admin_webauthn_credential (username, credential_id, public_key, sign_count, created_at) VALUES ('admin', X'01', X'02', 0, 0)`); err != nil {
+		t.Fatalf("seed legacy row: %v", err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	st, err := Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("Open on a pre-existing legacy database: %v", err)
+	}
+	defer func() { _ = st.Close() }()
+
+	creds, err := st.ListWebAuthnCredentials("admin")
+	if err != nil {
+		t.Fatalf("ListWebAuthnCredentials after migration: %v", err)
+	}
+	if len(creds) != 1 || creds[0].BackupEligible || creds[0].BackupState {
+		t.Fatalf("migrated legacy row = %+v, want one row with both flags false (the safe default)", creds)
+	}
+
+	// Reopening again must not error either — the ALTER TABLE branch must be
+	// idempotent, not just safe to run once.
+	st2, err := Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("second Open on the now-migrated database: %v", err)
+	}
+	_ = st2.Close()
 }

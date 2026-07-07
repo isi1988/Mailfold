@@ -179,3 +179,66 @@ func TestWebAuthnEnrollAndLogin(t *testing.T) {
 		t.Fatal("login should mint a session directly once no passkey is enrolled")
 	}
 }
+
+// TestWebAuthnLoginWithBackupEligibleCredential covers a synced passkey (an
+// iCloud Keychain or Google Password Manager credential, simulated here via
+// BackupEligible: true) — go-webauthn hard-rejects a login whose assertion
+// reports a different BackupEligible value than what was stored at
+// registration, so this fails unless that flag is round-tripped through
+// storage between the register and login ceremonies (see
+// WebAuthnCredential.BackupEligible's doc comment). A real Touch ID passkey
+// with iCloud Keychain sync enabled hit exactly this failure in production.
+func TestWebAuthnLoginWithBackupEligibleCredential(t *testing.T) {
+	h, srv := newWebAuthnTestServer(t)
+	if srv.webAuthn == nil {
+		t.Fatal("expected WebAuthn to be enabled with a non-wildcard CORS origin")
+	}
+
+	rp := virtualwebauthn.RelyingParty{Name: "Mailfold", ID: "mailfold.example", Origin: "https://mailfold.example"}
+	authenticator := virtualwebauthn.NewAuthenticatorWithOptions(virtualwebauthn.AuthenticatorOptions{BackupEligible: true})
+	cred := virtualwebauthn.NewCredential(virtualwebauthn.KeyTypeEC2)
+
+	token := loginToken(t, h)
+	rec := do(h, http.MethodPost, "/api/account/webauthn/register/begin", token, `{"current_password":"pw"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("register/begin: want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	attestationOptions, err := virtualwebauthn.ParseAttestationOptions(rec.Body.String())
+	if err != nil {
+		t.Fatalf("ParseAttestationOptions: %v", err)
+	}
+	authenticator.AddCredential(cred)
+	attestationResponse := virtualwebauthn.CreateAttestationResponse(rp, authenticator, cred, *attestationOptions)
+
+	rec = do(h, http.MethodPost, "/api/account/webauthn/register/finish?name=Synced+Key", token, attestationResponse)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("register/finish: want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	rec = do(h, http.MethodPost, "/api/auth/login", "", `{"user":"admin","password":"pw"}`)
+	var loginOut struct {
+		PendingToken string `json:"pending_token"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &loginOut)
+
+	rec = do(h, http.MethodPost, "/api/auth/2fa/webauthn/begin", "", `{"pending_token":"`+loginOut.PendingToken+`"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("2fa/webauthn/begin: want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	assertionOptions, err := virtualwebauthn.ParseAssertionOptions(rec.Body.String())
+	if err != nil {
+		t.Fatalf("ParseAssertionOptions: %v", err)
+	}
+	assertionResponse := virtualwebauthn.CreateAssertionResponse(rp, authenticator, cred, *assertionOptions)
+
+	rec = do(h, http.MethodPost, "/api/auth/2fa/webauthn/finish?pending_token="+loginOut.PendingToken, "", assertionResponse)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("a backup-eligible passkey must still verify on login: want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var sessOut struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &sessOut); err != nil || sessOut.Token == "" {
+		t.Fatalf("decode session: err=%v body=%s", err, rec.Body.String())
+	}
+}
