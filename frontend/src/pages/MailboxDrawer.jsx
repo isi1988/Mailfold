@@ -343,6 +343,64 @@ function TempAliasesSection({ mailbox }) {
   );
 }
 
+// Standard mailcow client ports: IMAP over implicit TLS, and SMTP submission
+// with STARTTLS — the combination mailcow's own docs recommend for a new
+// mail client, and stable across deployments (mailcow rarely reassigns them).
+const IMAP_PORT = 993;
+const SMTP_PORT = 587;
+
+/**
+ * Client settings — the host/port/username an admin needs to hand off to
+ * whoever is configuring a mail client (Outlook, Thunderbird, a phone) for
+ * this mailbox. The password is deliberately never shown here: Mailfold
+ * never retains a mailbox's plaintext password past the request that set
+ * it, so there is nothing to reveal beyond what was just typed into the
+ * reset field above. Hidden entirely when MAILFOLD_SERVER_NAME isn't
+ * configured, matching the topbar status indicator's own precedent.
+ */
+function ClientSettingsSection({ mailbox }) {
+  const t = useT();
+  const { toast } = useToast();
+  const { data } = useApi('/api/status/server', []);
+  const server = data && data.name;
+  if (!server) return null;
+
+  const summary = [
+    `${t('mailboxes.clientSettings.username')}: ${mailbox}`,
+    `${t('mailboxes.clientSettings.imap')}: ${server}:${IMAP_PORT} (SSL/TLS)`,
+    `${t('mailboxes.clientSettings.smtp')}: ${server}:${SMTP_PORT} (STARTTLS)`,
+  ].join('\n');
+
+  async function copyAll() {
+    try {
+      await navigator.clipboard.writeText(summary);
+      toast(t('mailboxes.clientSettings.copied'));
+    } catch {
+      /* clipboard may be unavailable; the values are still shown below */
+    }
+  }
+
+  return (
+    <Section title={t('mailboxes.clientSettings.title')} hint={t('mailboxes.clientSettings.hint')}>
+      <div style={{ fontSize: 12.5, lineHeight: 2 }}>
+        <div className="mf-row mf-row--between">
+          <span className="mf-u-faint">{t('mailboxes.clientSettings.username')}</span>
+          <span className="mf-u-mono" style={{ color: 'var(--ink)' }}>{mailbox}</span>
+        </div>
+        <div className="mf-row mf-row--between">
+          <span className="mf-u-faint">{t('mailboxes.clientSettings.imap')}</span>
+          <span className="mf-u-mono" style={{ color: 'var(--ink)' }}>{server}:{IMAP_PORT} · SSL/TLS</span>
+        </div>
+        <div className="mf-row mf-row--between">
+          <span className="mf-u-faint">{t('mailboxes.clientSettings.smtp')}</span>
+          <span className="mf-u-mono" style={{ color: 'var(--ink)' }}>{server}:{SMTP_PORT} · STARTTLS</span>
+        </div>
+      </div>
+      <Button variant="secondary" size="sm" onClick={copyAll} style={{ marginTop: 10 }}>{t('mailboxes.clientSettings.copy')}</Button>
+    </Section>
+  );
+}
+
 /**
  * Create / edit a mailbox in a right-hand slide-over.
  *   mode      'create' | 'edit'
@@ -464,6 +522,7 @@ export function MailboxDrawer({ mode, mailbox, domains = [], onClose, onSaved, o
 
       {editing && (
         <>
+          <ClientSettingsSection mailbox={mailbox.username} />
           <AppPasswordsSection mailbox={mailbox.username} />
           <FiltersSection mailbox={mailbox.username} />
           <RateLimitSection mailbox={mailbox.username} />

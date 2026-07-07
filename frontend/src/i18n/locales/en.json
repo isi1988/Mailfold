@@ -539,6 +539,15 @@
       "created": "Created",
       "done": "Done"
     },
+    "clientSettings": {
+      "title": "Client settings",
+      "hint": "Hand these to whoever is setting up this mailbox in Outlook, Thunderbird, or a phone's mail app. The password is whatever was last set for this mailbox — Mailfold never stores it.",
+      "username": "Username",
+      "imap": "IMAP (incoming)",
+      "smtp": "SMTP (outgoing)",
+      "copy": "Copy settings",
+      "copied": "Client settings copied."
+    },
     "appPw": {
       "added": "App password created.",
       "empty": "No app passwords yet.",
