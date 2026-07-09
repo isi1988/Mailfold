@@ -57,7 +57,7 @@ export function SyncJobsPage() {
     const job = confirmJob;
     setConfirmJob(null);
     try {
-      await api.del('/api/syncjobs', { items: [job.id] });
+      await api.del('/api/syncjobs', { items: [String(job.id)] });
       toast(t('syncjobs.form.deleted', { job: decodeIdnAddress(job.user1 || job.host1 || job.id) }));
       reload();
     } catch (err) {
@@ -217,7 +217,7 @@ function SyncJobDrawer({ mode, job, mailboxes = [], onClose, onSaved, onDelete }
           delete1: deleteSource ? '1' : '0',
         };
         if (password1) attr.password1 = password1;
-        await api.put('/api/syncjobs', { items: [job.id], attr });
+        await api.put('/api/syncjobs', { items: [String(job.id)], attr });
         toast(t('syncjobs.form.updated', { job: decodeIdnAddress(user1.trim() || host1.trim()) }));
       } else {
         await api.post('/api/syncjobs', {

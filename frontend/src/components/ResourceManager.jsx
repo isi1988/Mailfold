@@ -173,8 +173,11 @@ export function ResourceManager({
   const [confirm, setConfirm] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  const idOf = row => row[idKey];
-  const nameOf = row => (describe ? describe(row) : String(idOf(row) ?? ''));
+  // String(...): the backend's items array is always []string (even for
+  // resources with a numeric database id, e.g. idKey="id") — a bare number
+  // fails Go's json.Unmarshal with "cannot unmarshal number into ... string".
+  const idOf = row => String(row[idKey] ?? '');
+  const nameOf = row => (describe ? describe(row) : idOf(row));
 
   const rows = asList(data);
   const filtered = q && filterKeys.length
