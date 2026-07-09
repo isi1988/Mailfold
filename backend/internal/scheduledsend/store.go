@@ -244,27 +244,10 @@ func (s *Store) ClaimDue(now time.Time, limit int) ([]ScheduledSend, error) {
 		}
 	}()
 
-	rows, err := tx.Query(s.d.Rebind(`SELECT id FROM scheduled_send
-        WHERE status = ? AND scheduled_at <= ?
-        ORDER BY scheduled_at ASC LIMIT ?`), StatusPending, storage.Unix(now), limit)
+	ids, err := selectDueIDs(tx, s.d, now, limit)
 	if err != nil {
 		return nil, err
 	}
-	var ids []int64
-	for rows.Next() {
-		var id int64
-		if err := rows.Scan(&id); err != nil {
-			_ = rows.Close()
-			return nil, err
-		}
-		ids = append(ids, id)
-	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
-		return nil, err
-	}
-	_ = rows.Close()
-
 	if len(ids) == 0 {
 		if err := tx.Commit(); err != nil {
 			return nil, err
@@ -273,21 +256,12 @@ func (s *Store) ClaimDue(now time.Time, limit int) ([]ScheduledSend, error) {
 		return nil, nil
 	}
 
-	for _, id := range ids {
-		if _, err := tx.Exec(s.d.Rebind(`UPDATE scheduled_send SET status = ?, claimed_at = ? WHERE id = ? AND status = ?`),
-			StatusSending, storage.Unix(now), id, StatusPending); err != nil {
-			return nil, err
-		}
+	if err := claimIDs(tx, s.d, ids, now); err != nil {
+		return nil, err
 	}
-
-	claimed := make([]ScheduledSend, 0, len(ids))
-	for _, id := range ids {
-		row := tx.QueryRow(s.d.Rebind(`SELECT `+columns+` FROM scheduled_send WHERE id = ?`), id)
-		r, err := scanRow(row)
-		if err != nil {
-			return nil, err
-		}
-		claimed = append(claimed, r)
+	claimed, err := loadRowsByID(tx, s.d, ids)
+	if err != nil {
+		return nil, err
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -295,6 +269,56 @@ func (s *Store) ClaimDue(now time.Time, limit int) ([]ScheduledSend, error) {
 	}
 	committed = true
 	return claimed, nil
+}
+
+// selectDueIDs returns the ids of every 'pending' row whose scheduled_at has
+// arrived, soonest first, capped at limit.
+func selectDueIDs(tx *sql.Tx, d storage.Dialect, now time.Time, limit int) ([]int64, error) {
+	rows, err := tx.Query(d.Rebind(`SELECT id FROM scheduled_send
+        WHERE status = ? AND scheduled_at <= ?
+        ORDER BY scheduled_at ASC LIMIT ?`), StatusPending, storage.Unix(now), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// claimIDs transitions exactly the given ids from 'pending' to 'sending',
+// stamping claimed_at. The WHERE ... AND status = 'pending' guard is what
+// makes a claim safe to repeat: a row already moved off 'pending' by another
+// caller simply matches zero rows here instead of being claimed twice.
+func claimIDs(tx *sql.Tx, d storage.Dialect, ids []int64, now time.Time) error {
+	for _, id := range ids {
+		if _, err := tx.Exec(d.Rebind(`UPDATE scheduled_send SET status = ?, claimed_at = ? WHERE id = ? AND status = ?`),
+			StatusSending, storage.Unix(now), id, StatusPending); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// loadRowsByID re-reads each id in full, in the order given.
+func loadRowsByID(tx *sql.Tx, d storage.Dialect, ids []int64) ([]ScheduledSend, error) {
+	out := make([]ScheduledSend, 0, len(ids))
+	for _, id := range ids {
+		row := tx.QueryRow(d.Rebind(`SELECT `+columns+` FROM scheduled_send WHERE id = ?`), id)
+		r, err := scanRow(row)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, nil
 }
 
 // MarkSent transitions a claimed row to 'sent'.

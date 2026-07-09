@@ -189,31 +189,11 @@ func NewServer(cfg *config.Config, mc Mailcow, authn *auth.Authenticator, limite
 	sharedMailboxes := openSharedMailboxStore(cfg, logger)
 
 	// Open the scheduled-send (send-later/undo-send) store alongside the
-	// others. Dispatch needs to mint/reuse a mailcow app-password long after
-	// any browser session is gone, via the exact same ssoWebmailCredential
-	// helper SSO logins use — which itself requires both domainAdminStore
-	// (where the cached credential lives) and adminCipher (to encrypt/
-	// decrypt it) to be non-nil. So this feature stays off whenever either
-	// of those is unavailable, even if DBPath alone would otherwise be
-	// enough to open the store.
-	var scheduledSends *scheduledsend.Store
-	if domainAdminStore != nil && adminCipher != nil {
-		scheduledSends = openScheduledSendStore(cfg, logger)
-	}
+	// others, gated on the credential machinery dispatch needs (see the
+	// helper's own doc comment), and self-heal anything a prior crash left
+	// mid-dispatch.
+	scheduledSends := openScheduledSendStoreWithCredentials(cfg, domainAdminStore, adminCipher, logger)
 	SetUndoSendWindow(cfg.UndoSendWindow)
-	// Self-heal any 'sending' rows orphaned by a crash mid-dispatch before
-	// the first real poll tick runs. Done here (constructor) rather than on
-	// the ticker's first tick so it happens exactly once regardless of how
-	// many times DispatchScheduledSends itself is called, and so it runs
-	// even in tests that call DispatchScheduledSends directly without going
-	// through app's ticker at all.
-	if scheduledSends != nil {
-		if n, err := scheduledSends.ResetStale(time.Now().Add(-scheduledSendStaleAfter)); err != nil {
-			logger.Error("scheduled-send: reset stale rows failed", "error", err)
-		} else if n > 0 {
-			logger.Warn("scheduled-send: reset crash-orphaned rows back to pending", "count", n)
-		}
-	}
 
 	return &Server{
 		cfg:                 cfg,
@@ -286,6 +266,31 @@ func openScheduledSendStore(cfg *config.Config, logger *slog.Logger) *scheduleds
 		return nil
 	}
 	return st
+}
+
+// openScheduledSendStoreWithCredentials wraps openScheduledSendStore with the
+// credential gate it depends on (see that function's doc comment) and the
+// one-time crash-recovery sweep. Done here, in the constructor, rather than
+// on the dispatch ticker's first tick so it happens exactly once regardless
+// of how many times DispatchScheduledSends itself is later called, and so it
+// runs even in tests that call DispatchScheduledSends directly without going
+// through app's ticker at all.
+func openScheduledSendStoreWithCredentials(cfg *config.Config, domainAdminStore *domainadmin.Store, adminCipher *admin.Cipher, logger *slog.Logger) *scheduledsend.Store {
+	if domainAdminStore == nil || adminCipher == nil {
+		return nil
+	}
+	store := openScheduledSendStore(cfg, logger)
+	if store == nil {
+		return nil
+	}
+	n, err := store.ResetStale(time.Now().Add(-scheduledSendStaleAfter))
+	switch {
+	case err != nil:
+		logger.Error("scheduled-send: reset stale rows failed", "error", err)
+	case n > 0:
+		logger.Warn("scheduled-send: reset crash-orphaned rows back to pending", "count", n)
+	}
+	return store
 }
 
 // openWebPush opens the Web Push subscription store and initialises its
