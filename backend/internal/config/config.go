@@ -134,6 +134,13 @@ type Config struct {
 	// placeholder; operators running push notifications in production should
 	// set a real address.
 	VAPIDContactEmail string
+
+	// UndoSendWindow is how far in the future a "Send" click is actually
+	// scheduled for when the caller does not name an explicit send time —
+	// the grace period during which the compose UI can offer an "Undo send"
+	// action before the scheduled-send dispatcher actually submits the
+	// message.
+	UndoSendWindow time.Duration
 }
 
 // Load reads every configuration value from the environment, applies sensible
@@ -169,6 +176,7 @@ func Load() (*Config, error) {
 		APIKeyMaxRecipients: int(getint64("MAILFOLD_APIKEY_MAX_RECIPIENTS", 50)),
 		ServerName:          getenv("MAILFOLD_SERVER_NAME", ""),
 		VAPIDContactEmail:   getenv("MAILFOLD_VAPID_CONTACT_EMAIL", "mailto:admin@localhost"),
+		UndoSendWindow:      getdur("MAILFOLD_UNDO_SEND_WINDOW", 10*time.Second),
 	}
 
 	// The following three values have no safe default: without an upstream

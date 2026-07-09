@@ -41,6 +41,8 @@ func (s *Server) registerWebmailRoutes(mux *http.ServeMux) {
 	// The events stream authenticates from a query parameter, not a bearer
 	// header, because the browser EventSource API cannot set request headers.
 	mux.HandleFunc("GET /api/webmail/events", s.handleWebmailEvents)
+	// Send-later / undo-send: see webmail_scheduled.go.
+	s.registerWebmailScheduledRoutes(mux)
 }
 
 // externalSyncRequest describes an external IMAP account the user wants to pull

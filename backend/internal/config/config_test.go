@@ -37,6 +37,9 @@ func TestLoadDefaults(t *testing.T) {
 		t.Errorf("rate/body defaults wrong: max=%d window=%v body=%d",
 			cfg.LoginRateMax, cfg.LoginRateWindow, cfg.MaxBodyBytes)
 	}
+	if cfg.UndoSendWindow != 10*time.Second {
+		t.Errorf("UndoSendWindow=%v, want 10s default", cfg.UndoSendWindow)
+	}
 }
 
 func TestLoadOverrides(t *testing.T) {
@@ -49,6 +52,7 @@ func TestLoadOverrides(t *testing.T) {
 	t.Setenv("MAILFOLD_LOGIN_RATE_MAX", "10")
 	t.Setenv("MAILFOLD_LOGIN_RATE_WINDOW", "30s")
 	t.Setenv("MAILFOLD_MAX_BODY_BYTES", "2048")
+	t.Setenv("MAILFOLD_UNDO_SEND_WINDOW", "20s")
 
 	cfg, err := Load()
 	if err != nil {
@@ -69,6 +73,9 @@ func TestLoadOverrides(t *testing.T) {
 	}
 	if len(cfg.CORSOrigins) != 2 {
 		t.Errorf("CORSOrigins=%v", cfg.CORSOrigins)
+	}
+	if cfg.UndoSendWindow != 20*time.Second {
+		t.Errorf("UndoSendWindow=%v, want 20s override", cfg.UndoSendWindow)
 	}
 }
 

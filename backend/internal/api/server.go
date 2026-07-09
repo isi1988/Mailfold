@@ -22,6 +22,7 @@ import (
 	"github.com/isi1988/Mailfold/backend/internal/domainadmin"
 	"github.com/isi1988/Mailfold/backend/internal/metrics"
 	"github.com/isi1988/Mailfold/backend/internal/ratelimit"
+	"github.com/isi1988/Mailfold/backend/internal/scheduledsend"
 	"github.com/isi1988/Mailfold/backend/internal/sessionstore"
 	"github.com/isi1988/Mailfold/backend/internal/sharedmailbox"
 	"github.com/isi1988/Mailfold/backend/internal/webmail"
@@ -73,6 +74,7 @@ type Server struct {
 	vapidPublicKey      string
 	vapidPrivateKey     string
 	sharedMailboxes     *sharedmailbox.Store // team mailboxes + assignment/notes; nil when DBPath is empty
+	scheduledSends      *scheduledsend.Store // send-later/undo-send queue; nil when DBPath is empty
 	logger              *slog.Logger
 }
 
@@ -186,6 +188,33 @@ func NewServer(cfg *config.Config, mc Mailcow, authn *auth.Authenticator, limite
 	// app-password, exactly like SSO's cached mailbox credential.
 	sharedMailboxes := openSharedMailboxStore(cfg, logger)
 
+	// Open the scheduled-send (send-later/undo-send) store alongside the
+	// others. Dispatch needs to mint/reuse a mailcow app-password long after
+	// any browser session is gone, via the exact same ssoWebmailCredential
+	// helper SSO logins use — which itself requires both domainAdminStore
+	// (where the cached credential lives) and adminCipher (to encrypt/
+	// decrypt it) to be non-nil. So this feature stays off whenever either
+	// of those is unavailable, even if DBPath alone would otherwise be
+	// enough to open the store.
+	var scheduledSends *scheduledsend.Store
+	if domainAdminStore != nil && adminCipher != nil {
+		scheduledSends = openScheduledSendStore(cfg, logger)
+	}
+	SetUndoSendWindow(cfg.UndoSendWindow)
+	// Self-heal any 'sending' rows orphaned by a crash mid-dispatch before
+	// the first real poll tick runs. Done here (constructor) rather than on
+	// the ticker's first tick so it happens exactly once regardless of how
+	// many times DispatchScheduledSends itself is called, and so it runs
+	// even in tests that call DispatchScheduledSends directly without going
+	// through app's ticker at all.
+	if scheduledSends != nil {
+		if n, err := scheduledSends.ResetStale(time.Now().Add(-scheduledSendStaleAfter)); err != nil {
+			logger.Error("scheduled-send: reset stale rows failed", "error", err)
+		} else if n > 0 {
+			logger.Warn("scheduled-send: reset crash-orphaned rows back to pending", "count", n)
+		}
+	}
+
 	return &Server{
 		cfg:                 cfg,
 		mc:                  mc,
@@ -218,6 +247,7 @@ func NewServer(cfg *config.Config, mc Mailcow, authn *auth.Authenticator, limite
 		vapidPublicKey:      vapidPublic,
 		vapidPrivateKey:     vapidPrivate,
 		sharedMailboxes:     sharedMailboxes,
+		scheduledSends:      scheduledSends,
 		logger:              logger,
 	}
 }
@@ -235,6 +265,24 @@ func openSharedMailboxStore(cfg *config.Config, logger *slog.Logger) *sharedmail
 	st, err := sharedmailbox.Open(cfg.DBDriver, cfg.DBPath)
 	if err != nil {
 		logger.Error("failed to open shared mailbox store; shared mailboxes disabled", "error", err)
+		return nil
+	}
+	return st
+}
+
+// openScheduledSendStore opens the scheduled-send (send-later/undo-send)
+// store when a database is configured, matching the other stores' fail-open
+// behaviour. Callers are additionally responsible for only calling this once
+// domainAdminStore and adminCipher are known to be non-nil (see NewServer):
+// unlike sharedMailboxes, this store's very ability to ever dispatch a queued
+// message depends on ssoWebmailCredential, which requires both.
+func openScheduledSendStore(cfg *config.Config, logger *slog.Logger) *scheduledsend.Store {
+	if cfg.DBPath == "" {
+		return nil
+	}
+	st, err := scheduledsend.Open(cfg.DBDriver, cfg.DBPath)
+	if err != nil {
+		logger.Error("failed to open scheduled-send store; send-later/undo-send disabled", "error", err)
 		return nil
 	}
 	return st

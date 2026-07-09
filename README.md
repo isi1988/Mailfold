@@ -108,6 +108,15 @@ A built-in three-pane webmail client (folders · message list · reader):
   live new-mail notifications over SSE.
 - **Compose** is a rich-text editor (bold/italic/lists/links, sending HTML);
   sent mail is saved to Sent, and folders and labels can be created inline.
+- **Send later & undo send** — every "Send" is actually queued a short grace
+  period out (`MAILFOLD_UNDO_SEND_WINDOW`, default 10s), during which an
+  **Undo** bar with a live countdown can pull it back before it ever leaves
+  the server. The same queue also powers an explicit **Send later**: pick a
+  date and time from the composer and the message waits in a **Scheduled**
+  view (with a cancel action) until then. A background dispatcher delivers
+  each message using the same cached mailcow app-password mechanism SSO
+  logins use, so it never needs to persist a mailbox's real password.
+  Requires `MAILFOLD_DB_PATH` and `MAILFOLD_ADMIN_ENC_KEY`.
 - **Multi-account** — hold several linked Mailfold mailboxes in one place
   and switch between them, or connect an **external IMAP mailbox** (Gmail,
   Yandex, …) that syncs into the same inbox.

@@ -20,6 +20,7 @@ import { useT } from '../i18n/index.jsx';
 import { wm, downloadAttachment, subscribeMail } from '../api/webmail.js';
 import { ConfirmModal } from '../ds/components/organisms/ConfirmModal.jsx';
 import { ComposeModal } from './ComposeModal.jsx';
+import { UndoSendBar } from './UndoSendBar.jsx';
 import { AddAccountModal } from './AddAccountModal.jsx';
 import { WebmailSettingsDrawer } from './WebmailSettingsDrawer.jsx';
 import { CalendarView } from './CalendarView.jsx';
@@ -197,10 +198,20 @@ function WebmailClient() {
   const [sharedMembers, setSharedMembers] = useState(null);
   const [notes, setNotes] = useState([]);
   const [noteDraft, setNoteDraft] = useState('');
+  // pendingUndo drives the UndoSendBar — set from ComposeModal's onSent()
+  // for a normal (implicit undo-window) send, cleared when the bar dismisses.
+  const [pendingUndo, setPendingUndo] = useState(null);
+  const [scheduled, setScheduled] = useState([]);
+  const [cancelTarget, setCancelTarget] = useState(null); // scheduled item pending cancel confirmation
 
   useEffect(() => {
     wm.shared.members().then(setSharedMembers).catch(() => setSharedMembers(null));
   }, []);
+
+  const loadScheduled = useCallback(() => {
+    wm.listScheduled().then(list => setScheduled(Array.isArray(list) ? list : [])).catch(() => {});
+  }, []);
+  useEffect(() => { loadScheduled(); }, [loadScheduled]);
 
   const { sys: sysFolders, custom: customFolders } = useMemo(() => classifyFolders(folders), [folders]);
 
@@ -350,6 +361,18 @@ function WebmailClient() {
     }
   }
 
+  async function cancelScheduledItem(item) {
+    try {
+      await wm.cancelScheduled(item.id);
+      toast(t('webmail.scheduled.canceled'));
+      loadScheduled();
+    } catch (err) {
+      toast(t('webmail.actionFailed'), (err && err.message) || '');
+    } finally {
+      setCancelTarget(null);
+    }
+  }
+
   function reply(m) {
     const sender = m.from && m.from[0] ? m.from[0].email : '';
     const subj = m.subject || '';
@@ -379,6 +402,7 @@ function WebmailClient() {
   }
 
   function selectFolder(name) { setFilterMode(null); setFolder(name); }
+  function selectScheduled() { setFilterMode('scheduled'); loadScheduled(); }
 
   async function createFolder() {
     const name = (window.prompt(t('webmail.folderNamePrompt')) || '').trim();
@@ -416,6 +440,7 @@ function WebmailClient() {
   const unreadCount = messages.filter(m => !hasFlag(m.flags, '\\Seen')).length;
   const listTitle = filterMode === 'starred'
     ? t('webmail.starred')
+    : filterMode === 'scheduled' ? t('webmail.scheduled.title')
     : filterMode && filterMode.startsWith('label:') ? filterMode.slice(6) : folderLeaf(folder);
 
   // Collapse deep quote history once here rather than in the render below —
@@ -466,6 +491,9 @@ function WebmailClient() {
           onClick={() => setFilterMode('starred')} style={{ cursor: 'pointer' }} />
         <FolderItem icon={<Icon name="clock" size={14} style={{ color: 'var(--faint)' }} />} label={t('webmail.snoozed')}
           onClick={() => toast(t('webmail.snoozeUnavailable'))} style={{ cursor: 'pointer' }} />
+        <FolderItem icon={<Icon name="clock" size={14} style={{ color: filterMode === 'scheduled' ? 'var(--accent-ink)' : 'var(--faint)' }} />} label={t('webmail.scheduled.title')}
+          active={filterMode === 'scheduled'} count={scheduled.length > 0 ? scheduled.length : undefined}
+          onClick={selectScheduled} style={{ cursor: 'pointer' }} />
 
         {sysFolders.map(f => {
           const isActive = f.name === folder && !filterMode;
@@ -508,11 +536,28 @@ function WebmailClient() {
         <div className="mf-webmail__list-head">
           <Checkbox />
           <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{listTitle}</span>
-          <span className="mf-u-faint" style={{ fontSize: 12 }}>{unreadCount} {t('webmail.unread')}</span>
-          <SearchInput sm className="mf-spacer" placeholder={t('webmail.search')} value={q} onChange={e => setQ(e.target.value)} style={{ width: 150 }} />
+          {filterMode === 'scheduled'
+            ? <span className="mf-u-faint" style={{ fontSize: 12 }}>{scheduled.length}</span>
+            : <span className="mf-u-faint" style={{ fontSize: 12 }}>{unreadCount} {t('webmail.unread')}</span>}
+          {filterMode !== 'scheduled' && (
+            <SearchInput sm className="mf-spacer" placeholder={t('webmail.search')} value={q} onChange={e => setQ(e.target.value)} style={{ width: 150 }} />
+          )}
         </div>
         <div style={{ overflow: 'auto', flex: 1 }}>
-          {loadingList ? <Loading /> : error ? <ErrorState error={error} onRetry={() => loadMessages(folder)} />
+          {filterMode === 'scheduled' ? (
+            scheduled.length === 0 ? <Empty message={t('webmail.scheduled.empty')} /> : (
+              scheduled.map(item => (
+                <div key={item.id} className="mf-row" style={{ gap: 10, padding: '10px 16px', borderBottom: '1px solid var(--hair-soft)', alignItems: 'flex-start' }}>
+                  <div className="mf-min0" style={{ flex: 1 }}>
+                    <div className="mf-truncate" style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{(item.to || []).join(', ') || t('webmail.noSubject')}</div>
+                    <div className="mf-truncate" style={{ fontSize: 12.5, color: 'var(--muted)' }}>{item.subject || t('webmail.noSubject')}</div>
+                    <div className="mf-u-faint" style={{ fontSize: 11.5, marginTop: 2 }}>{t('webmail.scheduled.scheduledFor', { time: fullDateTime(item.scheduledAt) })}</div>
+                  </div>
+                  <Button variant="link" size="sm" onClick={() => setCancelTarget(item)}>{t('common.cancel')}</Button>
+                </div>
+              ))
+            )
+          ) : loadingList ? <Loading /> : error ? <ErrorState error={error} onRetry={() => loadMessages(folder)} />
             : filtered.length === 0 ? <Empty message={t('webmail.empty')} />
               : filtered.map(m => (
                 <MailListItem key={m.uid}
@@ -636,7 +681,11 @@ function WebmailClient() {
         <ComposeModal
           initial={typeof composing === 'object' ? composing : {}}
           onClose={() => setComposing(false)}
-          onSent={() => loadMessages(folder)}
+          onSent={scheduleInfo => {
+            loadMessages(folder);
+            loadScheduled();
+            if (scheduleInfo) setPendingUndo(scheduleInfo);
+          }}
         />
       )}
       {addingAccount && <AddAccountModal onClose={() => setAddingAccount(false)} />}
@@ -649,6 +698,19 @@ function WebmailClient() {
           onCancel={() => setConfirmLogout(false)}
           onConfirm={logout}
         />
+      )}
+      {cancelTarget && (
+        <ConfirmModal
+          title={t('webmail.scheduled.cancelTitle')}
+          msg={t('webmail.scheduled.cancelMsg', { subject: cancelTarget.subject || t('webmail.noSubject') })}
+          cta={t('common.cancel')}
+          danger
+          onCancel={() => setCancelTarget(null)}
+          onConfirm={() => cancelScheduledItem(cancelTarget)}
+        />
+      )}
+      {pendingUndo && (
+        <UndoSendBar info={pendingUndo} onDismiss={() => { setPendingUndo(null); loadMessages(folder); loadScheduled(); }} />
       )}
     </div>
       </>

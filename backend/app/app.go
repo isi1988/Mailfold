@@ -76,6 +76,19 @@ func Run() error {
 		}
 	}()
 
+	// Separately, dispatch due "send later"/"undo send" queued messages on
+	// their own (much shorter) cadence. server.NewServer already resets any
+	// rows orphaned by a crash mid-send back to 'pending' once at startup, so
+	// this ticker only ever needs to claim and deliver genuinely due rows. A
+	// no-op when the feature isn't configured.
+	scheduledSendTicker := time.NewTicker(api.ScheduledSendPollInterval())
+	defer scheduledSendTicker.Stop()
+	go func() {
+		for range scheduledSendTicker.C {
+			server.DispatchScheduledSends()
+		}
+	}()
+
 	// Configure the HTTP server. ReadHeaderTimeout bounds how long a client may
 	// take to send request headers, protecting against slow-header clients that
 	// would otherwise hold connections open.

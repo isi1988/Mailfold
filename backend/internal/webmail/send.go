@@ -47,6 +47,12 @@ func (m *OutgoingMessage) validate() error {
 	return nil
 }
 
+// ValidateOutgoing exposes validate to other packages (e.g. the scheduled-send
+// create endpoint, which must reject a CRLF-injection attempt at creation
+// time with 400 rather than only discovering it when the dispatcher later
+// calls Send).
+func ValidateOutgoing(m *OutgoingMessage) error { return m.validate() }
+
 // recipients returns every envelope recipient (To + Cc + Bcc).
 func (m *OutgoingMessage) recipients() []string {
 	out := make([]string, 0, len(m.To)+len(m.Cc)+len(m.Bcc))

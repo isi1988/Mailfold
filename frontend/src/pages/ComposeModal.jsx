@@ -57,7 +57,9 @@ const RtSep = () => <div style={{ width: 1, height: 18, background: 'var(--hair-
  * Compose slide-over with a rich-text body.
  *   initial   { to, cc, bcc, subject, text, html } — prefill for reply/forward
  *   onClose   () => void
- *   onSent    () => void
+ *   onSent    (scheduleInfo) => void — scheduleInfo is {id, scheduledAt} for a
+ *             normal ("implicit undo window") send, or null/undefined for an
+ *             explicit "send later" schedule.
  */
 export function ComposeModal({ initial = {}, onClose, onSent }) {
   const t = useT();
@@ -69,6 +71,8 @@ export function ComposeModal({ initial = {}, onClose, onSent }) {
   const [ccShown, setCcShown] = useState(cc.length > 0 || bcc.length > 0);
   const [subject, setSubject] = useState(initial.subject || '');
   const [busy, setBusy] = useState(false);
+  const [showSchedulePicker, setShowSchedulePicker] = useState(false);
+  const [scheduleValue, setScheduleValue] = useState('');
   const editorRef = useRef(null);
 
   // Seed the editor with any prefilled body once, keeping the caret usable.
@@ -84,6 +88,9 @@ export function ComposeModal({ initial = {}, onClose, onSent }) {
     if (editorRef.current) editorRef.current.focus();
   }
 
+  // send() is now a "schedule with no explicit time" call — the server
+  // defaults scheduledAt to a short undo window, so this is cancelable for a
+  // few seconds via the UndoSendBar that WebmailPage renders from onSent().
   async function send() {
     if (busy) return;
     if (to.length === 0) { toast(t('webmail.composer.needRecipient')); return; }
@@ -91,9 +98,34 @@ export function ComposeModal({ initial = {}, onClose, onSent }) {
     const html = editorRef.current ? editorRef.current.innerHTML : '';
     const text = editorRef.current ? editorRef.current.innerText : '';
     try {
-      await wm.send({ to, cc, bcc, subject, html, text });
-      toast(t('webmail.sent'));
-      onSent();
+      const res = await wm.scheduleSend({ to, cc, bcc, subject, html, text });
+      onSent(res && res.id != null ? { id: res.id, scheduledAt: res.scheduledAt } : null);
+      onClose();
+    } catch (err) {
+      toast(t('webmail.sendFailed'), errText(err, ''));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // sendLater() is the explicit "Send later" flow: the confirmed date/time is
+  // sent as sendAt, so this is a normal far-future schedule, not the short
+  // implicit undo window — no UndoSendBar for this one.
+  async function sendLater() {
+    if (busy) return;
+    if (to.length === 0) { toast(t('webmail.composer.needRecipient')); return; }
+    if (!scheduleValue) return;
+    // new Date(aDatetimeLocalString) parses it as local time already, so
+    // .toISOString() gives the correct UTC instant with no extra offset math.
+    const when = new Date(scheduleValue);
+    if (isNaN(when) || when <= new Date()) { toast(t('webmail.composer.scheduleInvalid')); return; }
+    setBusy(true);
+    const html = editorRef.current ? editorRef.current.innerHTML : '';
+    const text = editorRef.current ? editorRef.current.innerText : '';
+    try {
+      await wm.scheduleSend({ to, cc, bcc, subject, html, text, sendAt: when.toISOString() });
+      toast(t('webmail.composer.scheduled', { time: when.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) }));
+      onSent(null);
       onClose();
     } catch (err) {
       toast(t('webmail.sendFailed'), errText(err, ''));
@@ -184,8 +216,28 @@ export function ComposeModal({ initial = {}, onClose, onSent }) {
           />
         </div>
 
-        <div className="mf-drawer__foot">
+        <div className="mf-drawer__foot" style={{ position: 'relative' }}>
           <Button variant="primary" onClick={send} disabled={busy}>{busy ? t('webmail.sending') : t('webmail.send')}</Button>
+          <div
+            title={t('webmail.composer.sendLater')}
+            onClick={() => setShowSchedulePicker(s => !s)}
+            style={{ width: 32, height: 32, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--faint)', border: '1px solid var(--hair)' }}
+          >
+            <svg width="15" height="15" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.5" /><path d="M10 6.5V10l2.5 1.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+          </div>
+          {showSchedulePicker && (
+            <div style={{ position: 'absolute', bottom: '100%', left: 0, marginBottom: 8, padding: 12, background: 'var(--surface)', border: '1px solid var(--hair)', borderRadius: 10, boxShadow: 'var(--shadow-modal)', display: 'flex', flexDirection: 'column', gap: 8, zIndex: 1 }}>
+              <span style={{ fontSize: 12, color: 'var(--faint)' }}>{t('webmail.composer.sendLater')}</span>
+              <input
+                type="datetime-local"
+                className="mf-input"
+                value={scheduleValue}
+                onChange={e => setScheduleValue(e.target.value)}
+                style={{ fontSize: 13 }}
+              />
+              <Button variant="primary" size="sm" onClick={sendLater} disabled={busy || !scheduleValue}>{t('webmail.composer.confirmSchedule')}</Button>
+            </div>
+          )}
           <Button variant="link" className="mf-spacer" onClick={onClose}>{t('webmail.composer.discard')}</Button>
         </div>
       </div>

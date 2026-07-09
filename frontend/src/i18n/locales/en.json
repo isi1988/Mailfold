@@ -124,6 +124,21 @@
     "flagged": "Flagged",
     "snoozed": "Snoozed",
     "snoozeUnavailable": "Snoozing isn't available yet.",
+    "scheduled": {
+      "title": "Scheduled",
+      "empty": "No scheduled messages.",
+      "scheduledFor": "Scheduled for {{time}}",
+      "canceled": "Scheduled send canceled",
+      "cancelTitle": "Cancel scheduled message?",
+      "cancelMsg": "Cancel sending \"{{subject}}\"? This cannot be undone."
+    },
+    "undoSend": {
+      "sendingIn_one": "Message sending in {{count}} second",
+      "sendingIn_other": "Message sending in {{count}} seconds",
+      "undo": "Undo",
+      "undone": "Send undone",
+      "tooLate": "Too late to undo — already sent"
+    },
     "folders": "Folders",
     "newFolder": "New folder",
     "labels": "Labels",
@@ -158,6 +173,10 @@
       "bodyPlaceholder": "Write your message…",
       "discard": "Discard",
       "needRecipient": "Add at least one recipient.",
+      "sendLater": "Send later",
+      "confirmSchedule": "Schedule",
+      "scheduled": "Scheduled for {{time}}",
+      "scheduleInvalid": "Pick a time in the future.",
       "heading": "Heading",
       "bold": "Bold",
       "italic": "Italic",

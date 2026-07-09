@@ -431,6 +431,88 @@ paths:
         "200": { description: Attachment bytes., content: { application/octet-stream: { schema: { type: string, format: binary } } } }
         "400": { description: Invalid uid. }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/webmail/scheduled:
+    post:
+      tags: [webmail]
+      summary: Queue a message for future delivery (send-later / undo-send)
+      description: >
+        Validates and queues a message. When sendAt is omitted, the message is
+        scheduled after the server's short undo-send window (MAILFOLD_UNDO_SEND_WINDOW,
+        default 10s) — this is how a normal "Send" click now behaves, giving the
+        caller a brief window to cancel. When sendAt is provided, the message is
+        scheduled for that explicit future instant ("Send later"). Returns 501 when
+        MAILFOLD_DB_PATH or MAILFOLD_ADMIN_ENC_KEY is not configured.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                to: { type: array, items: { type: string } }
+                cc: { type: array, items: { type: string } }
+                bcc: { type: array, items: { type: string } }
+                subject: { type: string }
+                text: { type: string }
+                html: { type: string }
+                sendAt: { type: string, format: date-time, description: "Optional RFC3339 timestamp; must be strictly in the future." }
+      responses:
+        "201":
+          description: Queued.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: integer }
+                  scheduledAt: { type: string, format: date-time }
+                  status: { type: string, enum: [pending] }
+        "400": { description: Invalid message (no recipients, CRLF injection, or an invalid/past sendAt). }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "501": { description: Send-later/undo-send is not configured. }
+    get:
+      tags: [webmail]
+      summary: List the caller's own pending/in-flight scheduled sends (soonest first)
+      description: Omits text/html bodies — this is a summary view only.
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: integer }
+                    to: { type: array, items: { type: string } }
+                    cc: { type: array, items: { type: string } }
+                    bcc: { type: array, items: { type: string } }
+                    subject: { type: string }
+                    scheduledAt: { type: string, format: date-time }
+                    status: { type: string, enum: [pending, sending] }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "501": { description: Send-later/undo-send is not configured. }
+  /api/webmail/scheduled/{id}:
+    delete:
+      tags: [webmail]
+      summary: Cancel a still-pending scheduled send (undo send)
+      description: >
+        Only a row still in status 'pending' and owned by the caller can be canceled.
+        Returns 404 both when the id does not exist and when it is no longer
+        'pending' (already claimed by the dispatcher or already terminal) — this
+        implementation does not distinguish the two cases.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Canceled.
+          content:
+            application/json:
+              schema: { type: object, properties: { status: { type: string, enum: [canceled] } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { description: Not found, not owned by the caller, or no longer pending. }
+        "501": { description: Send-later/undo-send is not configured. }
   /api/filters:
     get: { tags: [filters], summary: List Sieve filters, responses: { "200": { $ref: "#/components/responses/Upstream" } } }
     post: { tags: [filters], summary: Create a Sieve filter, requestBody: { $ref: "#/components/requestBodies/Attr" }, responses: { "200": { $ref: "#/components/responses/Action" } } }

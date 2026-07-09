@@ -132,6 +132,12 @@ export const wm = {
   message: (folder, uid) => req('GET', '/api/webmail/message?' + q({ folder, uid })),
   search: (folder, query) => req('GET', '/api/webmail/search?' + q({ folder, q: query })),
   send: msg => req('POST', '/api/webmail/send', msg),
+  // scheduleSend is now what a normal "Send" does — POST /api/webmail/scheduled
+  // with no sendAt defaults server-side to a short undo window. Passing an
+  // explicit sendAt schedules further out ("Send later").
+  scheduleSend: msg => req('POST', '/api/webmail/scheduled', msg),
+  listScheduled: () => req('GET', '/api/webmail/scheduled'),
+  cancelScheduled: id => req('DELETE', '/api/webmail/scheduled/' + id),
   flag: (folder, uid, flag, set) => req('POST', '/api/webmail/flag', { folder, uid, flag, set }),
   del: (folder, uid) => req('POST', '/api/webmail/delete', { folder, uid }),
   move: (folder, uid, target) => req('POST', '/api/webmail/move', { folder, uid, target }),
