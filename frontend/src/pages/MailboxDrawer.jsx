@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Drawer } from '../ds/components/organisms/Drawer.jsx';
+import { ConfirmModal } from '../ds/components/organisms/ConfirmModal.jsx';
 import { FormField } from '../ds/components/molecules/FormField.jsx';
 import { Input } from '../ds/components/atoms/Input.jsx';
 import { Toggle } from '../ds/components/atoms/Toggle.jsx';
@@ -64,9 +65,37 @@ function normalizeRows(data) {
   return [];
 }
 
+// The protocols an app password can be scoped to. mailcow's API expects
+// these as an array of the enabled keys (NOT an object of booleans — sending
+// an object silently creates a password with every protocol OFF, which is
+// exactly the bug this list's shape exists to prevent regressing to).
+const APP_PW_PROTOCOLS = ['imap_access', 'smtp_access', 'dav_access', 'eas_access', 'pop3_access', 'sieve_access'];
+
+function ProtocolPicker({ selected, onToggle }) {
+  const t = useT();
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', marginTop: 10 }}>
+      {APP_PW_PROTOCOLS.map(p => (
+        <label key={p} className="mf-row" style={{ gap: 6, fontSize: 12.5, color: 'var(--muted)', cursor: 'pointer' }}>
+          <input type="checkbox" checked={selected.includes(p)} onChange={() => onToggle(p)} />
+          {t('mailboxes.appPw.protocol.' + p)}
+        </label>
+      ))}
+    </div>
+  );
+}
+
 /**
  * App passwords — per-mailbox credentials for IMAP/SMTP clients that can be
  * revoked without touching the primary password. Edit-mode only.
+ *
+ * mailcow's `edit/app-passwd` API accepts requests without error but never
+ * actually applies them — the admin UI itself only ever edits through a
+ * separate HTML form (edit.php), never this JSON endpoint, so it's
+ * effectively dead/untested on mailcow's side. "Editing" here is therefore
+ * implemented as create-the-replacement-first, then delete-the-original —
+ * safer than mailcow's own semantics would be if they worked, since the
+ * mailbox is never left without a matching credential mid-operation.
  */
 function AppPasswordsSection({ mailbox }) {
   const t = useT();
@@ -74,12 +103,32 @@ function AppPasswordsSection({ mailbox }) {
   const { data, loading, reload } = useApi('/api/app-passwords/' + encodeURIComponent(mailbox), [mailbox]);
   const [name, setName] = useState('');
   const [pw, setPw] = useState('');
+  const [protocols, setProtocols] = useState(APP_PW_PROTOCOLS);
   const [busy, setBusy] = useState(false);
+  const [editingId, setEditingId] = useState(null); // id being replaced, or null when adding fresh
+  const [confirmDelete, setConfirmDelete] = useState(null);
   const rows = asList(data);
 
-  async function add() {
+  const toggleProtocol = p => setProtocols(cur => (cur.includes(p) ? cur.filter(x => x !== p) : [...cur, p]));
+
+  function resetForm() {
+    setEditingId(null);
+    setName('');
+    setPw('');
+    setProtocols(APP_PW_PROTOCOLS);
+  }
+
+  function startEdit(row) {
+    setEditingId(row.id);
+    setName(row.name || '');
+    setPw('');
+    setProtocols(APP_PW_PROTOCOLS.filter(p => row[p]));
+  }
+
+  async function submit() {
     if (busy) return;
     if (!name.trim() || pw.length < 8) { toast(t('mailboxes.appPw.invalid')); return; }
+    if (protocols.length === 0) { toast(t('mailboxes.appPw.noProtocols')); return; }
     setBusy(true);
     try {
       await api.post('/api/app-passwords', {
@@ -88,24 +137,25 @@ function AppPasswordsSection({ mailbox }) {
         app_passwd: pw,
         app_passwd2: pw,
         active: '1',
-        protocols: {
-          imap_access: '1', smtp_access: '1', dav_access: '1',
-          eas_access: '1', pop3_access: '1', sieve_access: '1',
-        },
+        protocols,
       });
-      toast(t('mailboxes.appPw.added'));
-      setName(''); setPw('');
+      if (editingId != null) await api.del('/api/app-passwords', { items: [String(editingId)] });
+      toast(editingId != null ? t('mailboxes.appPw.updated') : t('mailboxes.appPw.added'));
+      resetForm();
       reload();
     } catch (err) {
       toast(t('mailboxes.appPw.failed'), errText(err, ''));
     } finally { setBusy(false); }
   }
 
-  async function remove(id) {
+  async function doDelete() {
+    const row = confirmDelete;
+    setConfirmDelete(null);
     setBusy(true);
     try {
-      await api.del('/api/app-passwords', { items: [id] });
+      await api.del('/api/app-passwords', { items: [String(row.id)] });
       toast(t('mailboxes.appPw.removed'));
+      if (editingId === row.id) resetForm();
       reload();
     } catch (err) {
       toast(t('mailboxes.appPw.failed'), errText(err, ''));
@@ -120,27 +170,49 @@ function AppPasswordsSection({ mailbox }) {
         <div className="mf-u-faint" style={{ fontSize: 12.5 }}>{t('mailboxes.appPw.empty')}</div>
       ) : (
         rows.map(r => (
-          <SectionRow
-            key={r.id}
-            onRemove={() => remove(r.id)}
-            removeLabel={t('common.delete')}
-            busy={busy}
-          >
-            <span style={{ fontSize: 13, color: 'var(--ink)' }}>{r.name || t('mailboxes.appPw.unnamed')}</span>
-          </SectionRow>
+          <div key={r.id} className="mf-row mf-row--between" style={{ gap: 8, padding: '7px 0', borderBottom: '1px solid var(--hair)' }}>
+            <div className="mf-min0" style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, color: 'var(--ink)' }}>{r.name || t('mailboxes.appPw.unnamed')}</div>
+              <div className="mf-u-faint" style={{ fontSize: 11, marginTop: 2 }}>
+                {APP_PW_PROTOCOLS.filter(p => r[p]).map(p => t('mailboxes.appPw.protocol.' + p)).join(', ') || t('mailboxes.appPw.noProtocols')}
+              </div>
+            </div>
+            <div className="mf-row" style={{ gap: 2, flex: 'none' }}>
+              <Button variant="ghost" size="sm" onClick={() => startEdit(r)} disabled={busy}>{t('common.edit')}</Button>
+              <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(r)} disabled={busy}>{t('common.delete')}</Button>
+            </div>
+          </div>
         ))
       )}
       <div style={{ marginTop: 12 }}>
+        {editingId != null && (
+          <div className="mf-u-faint" style={{ fontSize: 11.5, marginBottom: 8, lineHeight: 1.5 }}>{t('mailboxes.appPw.editingHint')}</div>
+        )}
         <Input placeholder={t('mailboxes.appPw.namePlaceholder')} value={name} onChange={e => setName(e.target.value)} style={{ width: '100%' }} />
         <div className="mf-row" style={{ gap: 8, marginTop: 8 }}>
           <Input className="mf-spacer" type="text" mono placeholder={t('mailboxes.appPw.pwPlaceholder')} value={pw} onChange={e => setPw(e.target.value)} />
           <Button variant="secondary" size="sm" onClick={() => setPw(randomPassword())}>{t('mailboxes.form.generate')}</Button>
         </div>
-        <div className="mf-row mf-row--between" style={{ marginTop: 8 }}>
-          <span />
-          <Button variant="primary" size="sm" onClick={add} disabled={busy}>{t('common.add')}</Button>
+        <ProtocolPicker selected={protocols} onToggle={toggleProtocol} />
+        <div className="mf-row mf-row--between" style={{ marginTop: 10 }}>
+          {editingId != null
+            ? <Button variant="link" size="sm" onClick={resetForm}>{t('common.cancel')}</Button>
+            : <span />}
+          <Button variant="primary" size="sm" onClick={submit} disabled={busy}>
+            {editingId != null ? t('common.save') : t('common.add')}
+          </Button>
         </div>
       </div>
+      {confirmDelete && (
+        <ConfirmModal
+          title={t('mailboxes.appPw.deleteTitle')}
+          msg={t('mailboxes.appPw.deleteMsg', { name: confirmDelete.name || t('mailboxes.appPw.unnamed') })}
+          cta={t('common.delete')}
+          danger
+          onCancel={() => setConfirmDelete(null)}
+          onConfirm={doDelete}
+        />
+      )}
     </Section>
   );
 }
@@ -182,7 +254,7 @@ function FiltersSection({ mailbox }) {
   async function remove(id) {
     setBusy(true);
     try {
-      await api.del('/api/filters', { items: [id] });
+      await api.del('/api/filters', { items: [String(id)] });
       toast(t('mailboxes.filters.removed'));
       reload();
     } catch (err) {

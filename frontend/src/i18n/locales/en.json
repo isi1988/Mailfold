@@ -550,15 +550,28 @@
     },
     "appPw": {
       "added": "App password created.",
+      "updated": "App password updated.",
       "empty": "No app passwords yet.",
       "failed": "Could not update app passwords.",
       "hint": "Per-app credentials so a mail client can sign in without the main password. Revoke one without touching the others.",
       "invalid": "Enter a name and a password of at least 8 characters.",
+      "noProtocols": "Select at least one protocol.",
       "namePlaceholder": "Name (e.g. Phone)",
       "pwPlaceholder": "Password",
       "removed": "App password removed.",
       "title": "App passwords",
-      "unnamed": "Untitled"
+      "unnamed": "Untitled",
+      "editingHint": "Editing replaces this app password with a new one under the same name — mailcow has no way to change an existing one's password or protocols in place. Set a new password below.",
+      "deleteTitle": "Delete this app password?",
+      "deleteMsg": "\"{{name}}\" will stop working immediately for any client still using it.",
+      "protocol": {
+        "imap_access": "IMAP",
+        "smtp_access": "SMTP",
+        "dav_access": "CalDAV/CardDAV",
+        "eas_access": "ActiveSync",
+        "pop3_access": "POP3",
+        "sieve_access": "Sieve filters"
+      }
     },
     "filters": {
       "added": "Filter added.",
